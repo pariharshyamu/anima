@@ -86,6 +86,7 @@ npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo
 npm run dev:portrait  # the character gallery (?seed=N · ?wardrobe=1 · ?view=face)
+npm run dev:hoops     # MEADOW HOOPS — a complete single-file basketball game (all three libraries)
 ```
 
 ## License
