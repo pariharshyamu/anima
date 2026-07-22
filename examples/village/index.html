@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Havenbrook — a medieval village (GAMA × SCENA × ANIMA)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; color: #eef2f7;
+        font: 14px/1.5 system-ui, sans-serif; user-select: none;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 36em;
+      }
+      code { background: rgba(255,255,255,0.12); padding: 0 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <strong>Havenbrook</strong> — the whole trilogy at once.<br />
+      <b>SCENA</b> builds the world and every prop: a town hall with a bell
+      tower, cottages, a market, a fountain, banners, bunting, braziers and
+      carts. <b>ANIMA</b> fills it with seeded farmers, villagers and knights
+      (full rigs) plus a VAT crowd. <b>GAMA</b> walks them down the lanes,
+      steering around the buildings. Try
+      <code>?view=aerial</code>, <code>?view=plaza</code>,
+      <code>?view=street</code>, or <code>?t=0.95</code> for dusk.
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
