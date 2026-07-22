@@ -37,6 +37,8 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **`retargetClip(rig, gltf.scene, clip)`** — play real animation assets (Mixamo and friends) on ANIMA bodies. The solve is exact: each frame, every mapped bone receives the source's world-rotation delta composed down the actual hierarchy — differing rest poses, extra bones (Mixamo's Spine1), centimeter units and name prefixes are all absorbed. `inPlace` strips ground-plane root motion.
 - **Sockets** — `attach(rig, 'handRight', torch)`: named, height-scaled attachment points (hands, back, hips, head) that ride their bones through every animation. A SCENA prop's `.object` attaches directly.
 - **Accessories** — seeded modular gear (`cap`, `hat`, `backpack`, `pouch`, `shoulderPads`) merged into the same single-draw-call body mesh; `'auto'` (default) rolls per seed, so crowds come pre-equipped.
+- **`bakeVAT(rig, clip)`** — Vertex Animation Textures: a clip's skinned deformation baked into float textures (positions *and* normals, loop-seamless), replayed entirely on the GPU.
+- **`Crowd`** — background characters at scale: N seeded villagers as a handful of VAT `InstancedMesh`es — no skeletons, no mixers, no per-character CPU cost. Per-instance phase offsets and tints keep shared bodies looking individual; `crowd.followRoute(road.route, { surface: terrain.heightAt })` sends the whole crowd walking a SCENA road at the bake's stride-matched speed. Heroes stay heroes: full rigs near the camera, the crowd fills the distance.
 
 ## The family handshake
 
@@ -66,13 +68,13 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 - [x] v0.1 "The Body": seeded rigged humanoid, procedural idle/walk/run, blending locomotion controller, GAMA/SCENA handshake
 - [x] v0.2 "The Craft": foot IK with terrain planting + slope pelvis, look-at chains, additive overlays with bone masks, footstep events
 - [x] v0.3 "The Others": exact Mixamo/glTF clip retargeting, attachment sockets, seeded modular accessories
-- [ ] v0.4 "The Crowd": vertex-animation-texture baking, crowd LOD tiers, village population presets
+- [x] v0.4 "The Crowd": VAT baking (positions + normals), instanced crowds with per-instance phase/tint, route-following walkers
 
 ## Development
 
 ```bash
 npm install
-npm test          # 34 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear)
+npm test          # 41 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo

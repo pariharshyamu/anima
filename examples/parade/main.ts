@@ -11,6 +11,7 @@ import {
   attach,
   createHumanoid,
   createWaveClip,
+  Crowd,
   FootIK,
   LookAt,
   Locomotion,
@@ -138,6 +139,13 @@ for (let i = 0; i < 6; i++) {
   });
   if (i === 5) loco.overlay(createWaveClip(rig), { fadeIn: 0.1 });
 }
+
+// --- The crowd: 60 more villagers as VAT InstancedMeshes — three draw
+// calls, no skeletons, no mixers. They walk the same road as the heroes.
+const crowd = new Crowd({ count: 60, seed: 9 });
+scene.add(crowd.group);
+crowd.followRoute(road.route, { surface: terrain.heightAt });
+game.onUpdate((t) => crowd.update(t.delta));
 
 const scratch = new Vector3();
 game.onUpdate((t) => {

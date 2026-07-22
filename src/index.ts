@@ -13,6 +13,7 @@ export {
 } from './humanoid';
 export { retargetClip, MIXAMO_MAP, type RetargetOptions } from './retarget';
 export { getSocket, attach, type SocketName } from './sockets';
+export { bakeVAT, Crowd, type VATData, type CrowdOptions, type RouteOptions } from './vat';
 export {
   createLocomotionClips,
   type GaitOptions,
