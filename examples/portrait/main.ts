@@ -32,17 +32,39 @@ ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
 // A row of seeded villagers, idling and breathing, facing the camera.
-const baseSeed = parseInt(new URLSearchParams(location.search).get('seed') ?? '300', 10);
+// ?seed=N reseeds · ?view=face zooms in · ?wardrobe=1 shows a curated
+// outfit row (dress, tunic+skirt, jacket, apron, shorts).
+const params = new URLSearchParams(location.search);
+const baseSeed = parseInt(params.get('seed') ?? '300', 10);
 const characters: Locomotion[] = [];
+const curated = params.get('wardrobe') !== null;
 for (let i = 0; i < 5; i++) {
-  const rig = createHumanoid({ seed: baseSeed + i });
-  rig.object.position.set((i - 2) * 0.75, 0, -i * 0.001);
+  const rig = curated
+    ? createHumanoid({
+        seed: baseSeed + i,
+        bodyType: (['feminine', 'feminine', 'masculine', 'neutral', 'masculine'] as const)[i],
+        outfit: [
+          { top: 'dress' as const, sleeves: 'short' as const, collar: true, belt: true },
+          { top: 'shirt' as const, bottom: 'skirt' as const, sleeves: 'long' as const },
+          { top: 'jacket' as const, bottom: 'pants' as const, sleeves: 'long' as const },
+          { top: 'apron' as const, bottom: 'pants' as const, belt: true },
+          { top: 'tunic' as const, bottom: 'shorts' as const, belt: true },
+        ][i],
+        accessories: 'none',
+      })
+    : createHumanoid({ seed: baseSeed + i });
+  rig.object.position.set((i - 2) * 0.85, 0, -i * 0.001);
   scene.add(rig.object);
   characters.push(new Locomotion(rig));
 }
 
-camera.position.set(0, 1.5, 3.1);
-camera.lookAt(0, 1.35, 0);
+if (params.get('view') === 'face') {
+  camera.position.set(0, 1.5, 3.1);
+  camera.lookAt(0, 1.35, 0);
+} else {
+  camera.position.set(0, 1.15, 5.0);
+  camera.lookAt(0, 0.98, 0);
+}
 
 let last = performance.now();
 renderer.setAnimationLoop(() => {

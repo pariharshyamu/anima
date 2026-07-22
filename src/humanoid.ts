@@ -69,6 +69,44 @@ export interface FaceOptions {
   facialHair?: 'none' | 'mustache' | 'beard' | 'full';
 }
 
+/** Figure multipliers (1 = neutral). */
+export interface BodyTypeParams {
+  shoulders: number;
+  waist: number;
+  hips: number;
+  /** Bust prominence 0–1. */
+  chest: number;
+}
+
+export type BodyType = 'feminine' | 'masculine' | 'neutral' | BodyTypeParams;
+
+const BODY_PRESETS: Record<'feminine' | 'masculine' | 'neutral', BodyTypeParams> = {
+  feminine: { shoulders: 0.88, waist: 0.85, hips: 1.08, chest: 0.85 },
+  masculine: { shoulders: 1.09, waist: 1.0, hips: 0.94, chest: 0 },
+  neutral: { shoulders: 1.0, waist: 0.94, hips: 1.0, chest: 0 },
+};
+
+export type TopGarment = 'shirt' | 'tunic' | 'dress' | 'jacket' | 'apron';
+export type BottomGarment = 'pants' | 'shorts' | 'skirt';
+
+/** Garment layers. Seeded when omitted; `dress` ignores `bottom`. */
+export interface WardrobeOptions {
+  top?: TopGarment;
+  bottom?: BottomGarment;
+  sleeves?: 'long' | 'short';
+  collar?: boolean;
+  belt?: boolean;
+}
+
+/** Explicit color overrides (each defaults to a seeded palette pick). */
+export interface ColorOptions {
+  skin?: number;
+  hair?: number;
+  top?: number;
+  bottom?: number;
+  boots?: number;
+}
+
 export interface HumanoidOptions {
   seed?: number;
   /** Standing height in world units. Default seeded 1.6–1.85. */
@@ -76,6 +114,12 @@ export interface HumanoidOptions {
   /** Body width multiplier: ~0.85 slim … 1.2 broad. Default seeded. */
   build?: number;
   palette?: OutfitPalette;
+  /** Figure: a preset name or explicit multipliers. Default seeded. */
+  bodyType?: BodyType;
+  /** Garment layers. Default seeded. */
+  outfit?: WardrobeOptions;
+  /** Explicit colors. Default seeded palette picks. */
+  colors?: ColorOptions;
   /**
    * Gear: an explicit list, `'auto'` for a seeded pick (default), or
    * `'none'`. Accessories ride their bones through every animation.
@@ -85,6 +129,31 @@ export interface HumanoidOptions {
   face?: FaceOptions;
   /** Hair style/color — seeded when omitted. */
   hair?: { style?: HairStyle; color?: number };
+}
+
+/**
+ * Every decision `createHumanoid` would make for these options, fully
+ * resolved — the character-creator surface. Feed it back (tweaked or
+ * not) and the resulting mesh is byte-identical to building from the
+ * original options: `createHumanoid(describeHumanoid(o)) ≡ createHumanoid(o)`.
+ */
+export interface ResolvedHumanoid extends HumanoidOptions {
+  seed: number;
+  height: number;
+  build: number;
+  bodyType: BodyTypeParams;
+  outfit: Required<WardrobeOptions>;
+  colors: Required<ColorOptions>;
+  accessories: Accessory[];
+  face: Required<{
+    eyes: Required<NonNullable<FaceOptions['eyes']>>;
+    brows: Required<NonNullable<FaceOptions['brows']>>;
+    nose: Required<NonNullable<FaceOptions['nose']>>;
+    mouth: Required<NonNullable<FaceOptions['mouth']>>;
+    ears: Required<NonNullable<FaceOptions['ears']>>;
+    facialHair: NonNullable<FaceOptions['facialHair']>;
+  }>;
+  hair: { style: HairStyle; color: number };
 }
 
 export interface HumanoidRig {
@@ -98,6 +167,8 @@ export interface HumanoidRig {
   legLength: number;
   /** Steering footprint, SCENA/GAMA-compatible. */
   obstacleRadius: number;
+  /** Every decision that built this character (creator-UI ready). */
+  description: ResolvedHumanoid;
 }
 
 interface PartSpec {
@@ -110,25 +181,165 @@ interface PartSpec {
 }
 
 /**
- * A seeded, rigged, skinned low-poly humanoid — a playable character
- * before any asset pipeline exists. The skeleton is animation-ready
- * (feed it to `createLocomotionClips` + `Locomotion`), the body is one
- * vertex-colored SkinnedMesh (a single draw call), and each body part is
- * rigidly skinned to its bone — robust and intentionally stylized.
+ * Resolve every seeded decision for a character WITHOUT building it —
+ * the character-creator API. Returns a plain, JSON-serializable object;
+ * tweak any field and pass it to `createHumanoid`.
  *
  * ```ts
- * const villager = createHumanoid({ seed: 7 });
- * scene.add(villager.object);
- * const loco = new Locomotion(villager);
- * game.onUpdate((t) => loco.update(t.delta, agent.velocity));
+ * const spec = describeHumanoid({ seed: 7 });
+ * spec.face.mouth.smile = 1;
+ * spec.hair.style = 'ponytail';
+ * spec.outfit.top = 'dress';
+ * const rig = createHumanoid(spec);
  * ```
  */
-export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
-  const rng = new Rng(options.seed ?? 1);
+export function describeHumanoid(options: HumanoidOptions = {}): ResolvedHumanoid {
+  const seed = options.seed ?? 1;
+  const rng = new Rng(seed);
   const palette = options.palette ?? DEFAULT_OUTFIT;
-  const H = options.height ?? rng.range(1.6, 1.85);
+  const pick = (pool: number[]): number => rng.pick(pool);
+
+  const height = options.height ?? rng.range(1.6, 1.85);
   const build = options.build ?? rng.range(0.9, 1.12);
-  const w = build;
+  const skinRoll = pick(palette.skin);
+  const hairRoll = pick(palette.hair);
+  const topRoll = pick(palette.shirt);
+  const bottomRoll = pick(palette.pants);
+  const bootsRoll = pick(palette.boots);
+  const colors: Required<ColorOptions> = {
+    skin: options.colors?.skin ?? skinRoll,
+    hair: options.colors?.hair ?? hairRoll,
+    top: options.colors?.top ?? topRoll,
+    bottom: options.colors?.bottom ?? bottomRoll,
+    boots: options.colors?.boots ?? bootsRoll,
+  };
+
+  let accessories: Accessory[];
+  if (options.accessories === 'none') accessories = [];
+  else if (Array.isArray(options.accessories)) accessories = [...options.accessories];
+  else {
+    accessories = [];
+    if (rng.next() < 0.35) accessories.push(rng.pick(['cap', 'hat'] as const));
+    if (rng.next() < 0.3) accessories.push('backpack');
+    if (rng.next() < 0.35) accessories.push('pouch');
+    if (rng.next() < 0.15) accessories.push('shoulderPads');
+  }
+
+  const face = options.face ?? {};
+  const resolvedFace: ResolvedHumanoid['face'] = {
+    eyes: {
+      size: face.eyes?.size ?? rng.range(0.85, 1.2),
+      spacing: face.eyes?.spacing ?? rng.range(0.9, 1.15),
+      color: face.eyes?.color ?? pick(palette.eyes),
+    },
+    brows: {
+      angle: face.brows?.angle ?? rng.range(-0.3, 0.3),
+      thickness: face.brows?.thickness ?? rng.range(0.8, 1.4),
+    },
+    nose: {
+      width: face.nose?.width ?? rng.range(0.8, 1.3),
+      length: face.nose?.length ?? rng.range(0.8, 1.35),
+    },
+    mouth: {
+      width: face.mouth?.width ?? rng.range(0.8, 1.2),
+      smile: face.mouth?.smile ?? rng.range(-0.5, 1),
+    },
+    ears: { size: face.ears?.size ?? rng.range(0.85, 1.25) },
+    facialHair:
+      face.facialHair ??
+      (rng.next() < 0.18
+        ? 'mustache'
+        : rng.next() < 0.14
+          ? 'beard'
+          : rng.next() < 0.1
+            ? 'full'
+            : 'none'),
+  };
+
+  // Wardrobe + figure draw from an independent stream, so overriding any
+  // earlier field never reshuffles someone's clothes (and vice versa).
+  const wardrobeRng = new Rng((seed ^ 0x51ab7e2d) >>> 0);
+  let bodyType: BodyTypeParams;
+  if (typeof options.bodyType === 'object') {
+    bodyType = { ...options.bodyType };
+  } else {
+    const roll = wardrobeRng.next();
+    const name =
+      options.bodyType ?? (roll < 0.42 ? 'masculine' : roll < 0.84 ? 'feminine' : 'neutral');
+    const preset = BODY_PRESETS[name];
+    bodyType = {
+      shoulders: preset.shoulders * wardrobeRng.range(0.97, 1.03),
+      waist: preset.waist * wardrobeRng.range(0.97, 1.03),
+      hips: preset.hips * wardrobeRng.range(0.97, 1.03),
+      chest: preset.chest === 0 ? 0 : Math.min(1, preset.chest * wardrobeRng.range(0.85, 1.15)),
+    };
+  }
+
+  const feminineLean = bodyType.chest > 0.3;
+  const topPick = wardrobeRng.next();
+  const top: TopGarment =
+    options.outfit?.top ??
+    (feminineLean
+      ? topPick < 0.34 ? 'shirt' : topPick < 0.5 ? 'tunic' : topPick < 0.78 ? 'dress' : topPick < 0.9 ? 'jacket' : 'apron'
+      : topPick < 0.48 ? 'shirt' : topPick < 0.7 ? 'tunic' : topPick < 0.82 ? 'jacket' : topPick < 0.92 ? 'apron' : 'dress');
+  const bottomPick = wardrobeRng.next();
+  const bottom: BottomGarment =
+    options.outfit?.bottom ??
+    (bottomPick < 0.6 ? 'pants' : bottomPick < 0.78 ? 'shorts' : 'skirt');
+  const sleeves = options.outfit?.sleeves ?? (wardrobeRng.next() < 0.5 ? 'long' : 'short');
+  const collar = options.outfit?.collar ?? wardrobeRng.next() < 0.3;
+  const belt = options.outfit?.belt ?? wardrobeRng.next() < 0.35;
+
+  return {
+    seed,
+    palette,
+    height,
+    build,
+    bodyType,
+    outfit: { top, bottom, sleeves, collar, belt },
+    colors,
+    accessories,
+    face: resolvedFace,
+    hair: {
+      style: options.hair?.style ?? seededHairStyle(rng, accessories),
+      color: options.hair?.color ?? colors.hair,
+    },
+  };
+}
+
+function seededHairStyle(rng: Rng, accessories: Accessory[]): HairStyle {
+  const roll = rng.next();
+  let style: HairStyle =
+    roll < 0.1 ? 'bald'
+    : roll < 0.35 ? 'cap'
+    : roll < 0.5 ? 'side-part'
+    : roll < 0.62 ? 'bob'
+    : roll < 0.74 ? 'ponytail'
+    : roll < 0.82 ? 'bun'
+    : roll < 0.92 ? 'long'
+    : 'spiky';
+  if ((accessories.includes('hat') || accessories.includes('cap')) && style !== 'bald') {
+    style = 'cap';
+  }
+  return style;
+}
+
+/**
+ * A seeded, rigged, skinned low-poly humanoid — a playable character
+ * before any asset pipeline exists: body type, outfit, face, hair and
+ * gear all resolved from the seed (see `describeHumanoid` to inspect and
+ * override any of it). One vertex-colored SkinnedMesh, one draw call.
+ */
+export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
+  const spec = describeHumanoid(options);
+  const { height: H, build: w, bodyType, outfit, colors, accessories } = spec;
+  const S = bodyType.shoulders;
+  const W = bodyType.waist;
+  const P = bodyType.hips;
+  // Geometry details + color jitter come from seed-only streams, so a
+  // described spec rebuilds byte-identically however it was produced.
+  const detailRng = new Rng((spec.seed ^ 0x2f6e1b45) >>> 0);
+  const jitterRng = new Rng((spec.seed ^ 0x7c93a501) >>> 0);
 
   const upLegLen = 0.24 * H;
   const loLegLen = 0.22 * H;
@@ -146,18 +357,18 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     ['Chest', 'Spine', [0, 0.07 * H, 0]],
     ['Neck', 'Chest', [0, 0.115 * H, 0]],
     ['Head', 'Neck', [0, 0.035 * H, 0]],
-    ['LeftShoulder', 'Chest', [0.075 * H * w, 0.095 * H, 0]],
+    ['LeftShoulder', 'Chest', [0.075 * H * w * S, 0.095 * H, 0]],
     ['LeftArm', 'LeftShoulder', [0.04 * H, 0, 0]],
     ['LeftForeArm', 'LeftArm', [armLen, 0, 0]],
     ['LeftHand', 'LeftForeArm', [foreLen, 0, 0]],
-    ['RightShoulder', 'Chest', [-0.075 * H * w, 0.095 * H, 0]],
+    ['RightShoulder', 'Chest', [-0.075 * H * w * S, 0.095 * H, 0]],
     ['RightArm', 'RightShoulder', [-0.04 * H, 0, 0]],
     ['RightForeArm', 'RightArm', [-armLen, 0, 0]],
     ['RightHand', 'RightForeArm', [-foreLen, 0, 0]],
-    ['LeftUpLeg', 'Hips', [0.055 * H * w, -0.02 * H, 0]],
+    ['LeftUpLeg', 'Hips', [0.055 * H * w * P, -0.02 * H, 0]],
     ['LeftLeg', 'LeftUpLeg', [0, -upLegLen, 0]],
     ['LeftFoot', 'LeftLeg', [0, -loLegLen, 0]],
-    ['RightUpLeg', 'Hips', [-0.055 * H * w, -0.02 * H, 0]],
+    ['RightUpLeg', 'Hips', [-0.055 * H * w * P, -0.02 * H, 0]],
     ['RightLeg', 'RightUpLeg', [0, -upLegLen, 0]],
     ['RightFoot', 'RightLeg', [0, -loLegLen, 0]],
   ];
@@ -179,34 +390,40 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     }
   }
 
-  // --- Body parts: bone-local boxes, rigidly skinned. Seeded colors.
-  const pick = (pool: number[]): number => rng.pick(pool);
-  const skin = pick(palette.skin);
-  const hair = pick(palette.hair);
-  const shirt = pick(palette.shirt);
-  const pants = pick(palette.pants);
-  const boots = pick(palette.boots);
+  // --- Wardrobe-aware coloring of body segments.
+  const { skin, boots } = colors;
+  const hair = spec.hair.color;
+  const topColor = colors.top;
+  const bottomColor = colors.bottom;
+  const dress = outfit.top === 'dress';
+  const hipsColor = dress || outfit.top === 'tunic' ? topColor
+    : outfit.bottom === 'skirt' ? bottomColor
+    : bottomColor;
+  const upLegColor = dress || outfit.bottom === 'skirt' ? skin
+    : bottomColor;
+  const loLegColor = dress || outfit.bottom === 'skirt' || outfit.bottom === 'shorts' ? skin : bottomColor;
+  const foreArmColor = outfit.sleeves === 'long' ? topColor : skin;
 
   const arm = (side: 'Left' | 'Right'): PartSpec[] => {
     const s = side === 'Left' ? 1 : -1;
     return [
-      { bone: `${side}Shoulder`, size: [0.055 * H, 0.055 * H, 0.06 * H], offset: [s * 0.012 * H, 0.004 * H, 0], color: shirt },
-      { bone: `${side}Arm`, size: [armLen, 0.048 * H * w, 0.052 * H * w], offset: [s * armLen * 0.5, 0, 0], color: shirt },
-      { bone: `${side}ForeArm`, size: [foreLen, 0.04 * H, 0.044 * H], offset: [s * foreLen * 0.5, 0, 0], color: skin },
+      { bone: `${side}Shoulder`, size: [0.055 * H, 0.055 * H, 0.06 * H], offset: [s * 0.012 * H, 0.004 * H, 0], color: topColor },
+      { bone: `${side}Arm`, size: [armLen, 0.048 * H * w, 0.052 * H * w], offset: [s * armLen * 0.5, 0, 0], color: topColor },
+      { bone: `${side}ForeArm`, size: [foreLen, 0.04 * H, 0.044 * H], offset: [s * foreLen * 0.5, 0, 0], color: foreArmColor },
       { bone: `${side}Hand`, size: [0.055 * H, 0.036 * H, 0.05 * H], offset: [s * 0.027 * H, 0, 0], color: skin },
     ] as PartSpec[];
   };
   const leg = (side: 'Left' | 'Right'): PartSpec[] =>
     [
-      { bone: `${side}UpLeg`, size: [0.062 * H * w, upLegLen, 0.068 * H * w], offset: [0, -upLegLen * 0.5, 0], color: pants },
-      { bone: `${side}Leg`, size: [0.052 * H * w, loLegLen, 0.058 * H * w], offset: [0, -loLegLen * 0.5, 0], color: pants },
+      { bone: `${side}UpLeg`, size: [0.062 * H * w, upLegLen, 0.068 * H * w], offset: [0, -upLegLen * 0.5, 0], color: upLegColor },
+      { bone: `${side}Leg`, size: [0.052 * H * w, loLegLen, 0.058 * H * w], offset: [0, -loLegLen * 0.5, 0], color: loLegColor },
       { bone: `${side}Foot`, size: [0.058 * H, ankleH, 0.115 * H], offset: [0, -ankleH * 0.5, 0.026 * H], color: boots },
     ] as PartSpec[];
 
   const parts: PartSpec[] = [
-    { bone: 'Hips', size: [0.16 * H * w, 0.075 * H, 0.095 * H * w], offset: [0, 0.012 * H, 0], color: pants },
-    { bone: 'Spine', size: [0.15 * H * w, 0.085 * H, 0.088 * H * w], offset: [0, 0.035 * H, 0], color: shirt },
-    { bone: 'Chest', size: [0.17 * H * w, 0.125 * H, 0.098 * H * w], offset: [0, 0.055 * H, 0], color: shirt },
+    { bone: 'Hips', size: [0.16 * H * w * P, 0.075 * H, 0.095 * H * w * P], offset: [0, 0.012 * H, 0], color: hipsColor },
+    { bone: 'Spine', size: [0.15 * H * w * W, 0.085 * H, 0.088 * H * w * W], offset: [0, 0.035 * H, 0], color: topColor },
+    { bone: 'Chest', size: [0.17 * H * w * S, 0.125 * H, 0.098 * H * w], offset: [0, 0.055 * H, 0], color: topColor },
     { bone: 'Neck', size: [0.042 * H, 0.05 * H, 0.042 * H], offset: [0, 0.014 * H, 0], color: skin },
     { bone: 'Head', size: [0.11 * H, 0.115 * H, 0.115 * H], offset: [0, 0.065 * H, 0], color: skin },
     ...arm('Left'),
@@ -215,20 +432,49 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     ...leg('Right'),
   ];
 
-  // --- Accessories: extra rigid parts on the right bones. Seeded 'auto'
-  // draws AFTER the base body, so base looks stay stable per seed.
-  let accessories: Accessory[];
-  if (options.accessories === 'none') accessories = [];
-  else if (Array.isArray(options.accessories)) accessories = options.accessories;
-  else {
-    accessories = [];
-    if (rng.next() < 0.35) accessories.push(rng.pick(['cap', 'hat'] as const));
-    if (rng.next() < 0.3) accessories.push('backpack');
-    if (rng.next() < 0.35) accessories.push('pouch');
-    if (rng.next() < 0.15) accessories.push('shoulderPads');
+  // --- Figure: bust box for feminine builds (clothed in the top color).
+  if (bodyType.chest > 0.05) {
+    parts.push({
+      bone: 'Chest',
+      size: [0.125 * H * w, 0.052 * H, 0.05 * H * bodyType.chest],
+      offset: [0, 0.045 * H, 0.049 * H * w],
+      color: topColor,
+    });
   }
-  const leather = pick(palette.boots);
-  const cloth = pick(palette.shirt);
+
+  // --- Garment layers.
+  if (outfit.top === 'tunic') {
+    parts.push({ bone: 'Hips', size: [0.15 * H * w * P, 0.06 * H, 0.1 * H * w], offset: [0, -0.048 * H, 0], color: topColor });
+  } else if (dress) {
+    parts.push(
+      { bone: 'Hips', size: [0.17 * H * w * P, 0.1 * H, 0.115 * H * w], offset: [0, -0.075 * H, 0], color: topColor },
+      { bone: 'Hips', size: [0.2 * H * w * P, 0.1 * H, 0.14 * H * w], offset: [0, -0.165 * H, 0], color: topColor }
+    );
+  } else if (outfit.top === 'jacket') {
+    parts.push({ bone: 'Chest', size: [0.05 * H, 0.115 * H, 0.01 * H], offset: [0, 0.05 * H, 0.05 * H * w], color: colors.bottom });
+  } else if (outfit.top === 'apron') {
+    parts.push(
+      { bone: 'Chest', size: [0.09 * H, 0.1 * H, 0.01 * H], offset: [0, 0.045 * H, 0.051 * H * w], color: 0xd8d2c2 },
+      { bone: 'Hips', size: [0.13 * H, 0.095 * H, 0.01 * H], offset: [0, -0.04 * H, 0.05 * H * w], color: 0xd8d2c2 }
+    );
+  }
+  if (!dress && outfit.bottom === 'skirt') {
+    parts.push({ bone: 'Hips', size: [0.18 * H * w * P, 0.095 * H, 0.125 * H * w], offset: [0, -0.072 * H, 0], color: bottomColor });
+  }
+  if (outfit.collar || outfit.top === 'jacket') {
+    const collarColor = new Color(topColor).offsetHSL(0, 0, -0.09).getHex();
+    parts.push({ bone: 'Neck', size: [0.058 * H, 0.02 * H, 0.052 * H], offset: [0, 0.006 * H, 0.004 * H], color: collarColor });
+  }
+  if (outfit.belt) {
+    parts.push(
+      { bone: 'Hips', size: [0.164 * H * w * P, 0.024 * H, 0.099 * H * w * P], offset: [0, 0.05 * H, 0], color: boots },
+      { bone: 'Hips', size: [0.024 * H, 0.02 * H, 0.012 * H], offset: [0, 0.05 * H, 0.05 * H * w * P], color: 0xc9b060 }
+    );
+  }
+
+  // --- Accessories.
+  const leather = boots;
+  const cloth = topColor;
   for (const accessory of accessories) {
     if (accessory === 'cap') {
       parts.push(
@@ -249,7 +495,7 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
       parts.push({
         bone: 'Hips',
         size: [0.055 * H, 0.06 * H, 0.045 * H],
-        offset: [rng.pick([-1, 1]) * 0.095 * H, -0.005 * H, 0.02 * H],
+        offset: [detailRng.pick([-1, 1]) * 0.095 * H, -0.005 * H, 0.02 * H],
         color: leather,
       });
     } else {
@@ -264,86 +510,47 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     }
   }
 
-  // --- The face: seeded features, every one overridable. Drawn AFTER
-  // accessories so earlier seeds keep their body, outfit and gear.
-  const face = options.face ?? {};
-  const eyeScale = face.eyes?.size ?? rng.range(0.85, 1.2);
-  const eyeSpacing = face.eyes?.spacing ?? rng.range(0.9, 1.15);
-  const eyeColor = face.eyes?.color ?? pick(palette.eyes);
-  const browAngle = face.brows?.angle ?? rng.range(-0.3, 0.3);
-  const browThickness = face.brows?.thickness ?? rng.range(0.8, 1.4);
-  const noseWidth = face.nose?.width ?? rng.range(0.8, 1.3);
-  const noseLength = face.nose?.length ?? rng.range(0.8, 1.35);
-  const mouthWidth = face.mouth?.width ?? rng.range(0.8, 1.2);
-  const smile = face.mouth?.smile ?? rng.range(-0.5, 1);
-  const earSize = face.ears?.size ?? rng.range(0.85, 1.25);
-  const facialHair =
-    face.facialHair ??
-    (rng.next() < 0.18
-      ? 'mustache'
-      : rng.next() < 0.14
-        ? 'beard'
-        : rng.next() < 0.1
-          ? 'full'
-          : 'none');
+  // --- The face.
+  const face = spec.face;
   const lip = new Color(skin).offsetHSL(0.005, 0.1, -0.13).getHex();
-
-  const faceZ = 0.0565 * H; // just proud of the head box's front
+  const faceZ = 0.0565 * H;
   for (const s of [1, -1]) {
-    const ex = s * 0.027 * H * eyeSpacing;
+    const ex = s * 0.027 * H * face.eyes.spacing;
     parts.push(
-      { bone: 'Head', size: [0.026 * H * eyeScale, 0.02 * H * eyeScale, 0.008 * H], offset: [ex, 0.078 * H, faceZ], color: 0xf4f2ec },
-      { bone: 'Head', size: [0.012 * H * eyeScale, 0.013 * H * eyeScale, 0.007 * H], offset: [ex, 0.076 * H, faceZ + 0.004 * H], color: eyeColor },
-      { bone: 'Head', size: [0.033 * H, 0.008 * H * browThickness, 0.008 * H], offset: [ex * 1.05, 0.098 * H, faceZ + 0.001 * H], color: hair, rotation: [0, 0, s * browAngle] },
-      { bone: 'Head', size: [0.012 * H, 0.03 * H * earSize, 0.024 * H], offset: [s * 0.0605 * H, 0.062 * H, -0.004 * H], color: skin }
+      { bone: 'Head', size: [0.026 * H * face.eyes.size, 0.02 * H * face.eyes.size, 0.008 * H], offset: [ex, 0.078 * H, faceZ], color: 0xf4f2ec },
+      { bone: 'Head', size: [0.012 * H * face.eyes.size, 0.013 * H * face.eyes.size, 0.007 * H], offset: [ex, 0.076 * H, faceZ + 0.004 * H], color: face.eyes.color },
+      { bone: 'Head', size: [0.033 * H, 0.008 * H * face.brows.thickness, 0.008 * H], offset: [ex * 1.05, 0.098 * H, faceZ + 0.001 * H], color: hair, rotation: [0, 0, s * face.brows.angle] },
+      { bone: 'Head', size: [0.012 * H, 0.03 * H * face.ears.size, 0.024 * H], offset: [s * 0.0605 * H, 0.062 * H, -0.004 * H], color: skin }
     );
   }
   parts.push(
-    { bone: 'Head', size: [0.015 * H * noseWidth, 0.032 * H * noseLength, 0.016 * H], offset: [0, 0.057 * H, 0.059 * H], color: skin },
-    { bone: 'Head', size: [0.038 * H * mouthWidth, 0.008 * H, 0.006 * H], offset: [0, 0.03 * H, faceZ + 0.001 * H], color: lip }
+    { bone: 'Head', size: [0.015 * H * face.nose.width, 0.032 * H * face.nose.length, 0.016 * H], offset: [0, 0.057 * H, 0.059 * H], color: skin },
+    { bone: 'Head', size: [0.038 * H * face.mouth.width, 0.008 * H, 0.006 * H], offset: [0, 0.03 * H, faceZ + 0.001 * H], color: lip }
   );
   for (const s of [1, -1]) {
-    // Mouth corners rise or fall with the resting expression.
     parts.push({
       bone: 'Head',
       size: [0.009 * H, 0.008 * H, 0.006 * H],
-      offset: [s * 0.022 * H * mouthWidth, 0.03 * H + smile * 0.008 * H, faceZ + 0.001 * H],
+      offset: [s * 0.022 * H * face.mouth.width, 0.03 * H + face.mouth.smile * 0.008 * H, faceZ + 0.001 * H],
       color: lip,
     });
   }
-  if (facialHair === 'mustache' || facialHair === 'full') {
+  if (face.facialHair === 'mustache' || face.facialHair === 'full') {
     parts.push({ bone: 'Head', size: [0.044 * H, 0.013 * H, 0.012 * H], offset: [0, 0.044 * H, faceZ + 0.002 * H], color: hair });
   }
-  if (facialHair === 'beard' || facialHair === 'full') {
+  if (face.facialHair === 'beard' || face.facialHair === 'full') {
     parts.push(
       { bone: 'Head', size: [0.098 * H, 0.042 * H, 0.02 * H], offset: [0, 0.008 * H, 0.05 * H], color: hair },
       { bone: 'Head', size: [0.06 * H, 0.032 * H, 0.032 * H], offset: [0, -0.004 * H, 0.042 * H], color: hair }
     );
   }
 
-  // --- Hair: a style catalog instead of one cap. Hats force short hair
-  // (unless a style was explicitly chosen).
-  let hairStyle: HairStyle;
-  if (options.hair?.style) {
-    hairStyle = options.hair.style;
-  } else {
-    const roll = rng.next();
-    hairStyle =
-      roll < 0.1 ? 'bald'
-      : roll < 0.35 ? 'cap'
-      : roll < 0.5 ? 'side-part'
-      : roll < 0.62 ? 'bob'
-      : roll < 0.74 ? 'ponytail'
-      : roll < 0.82 ? 'bun'
-      : roll < 0.92 ? 'long'
-      : 'spiky';
-    if ((accessories.includes('hat') || accessories.includes('cap')) && hairStyle !== 'bald') {
-      hairStyle = 'cap';
-    }
+  // --- Hair.
+  const hairStyle = spec.hair.style;
+  const hairColor = spec.hair.color;
+  if (hairStyle !== 'bald') {
+    parts.push({ bone: 'Head', size: [0.116 * H, 0.038 * H, 0.121 * H], offset: [0, 0.128 * H, -0.004 * H], color: hairColor });
   }
-  const hairColor = options.hair?.color ?? hair;
-  const capPart: PartSpec = { bone: 'Head', size: [0.116 * H, 0.038 * H, 0.121 * H], offset: [0, 0.128 * H, -0.004 * H], color: hairColor };
-  if (hairStyle !== 'bald') parts.push(capPart);
   if (hairStyle === 'side-part') {
     parts.push({ bone: 'Head', size: [0.062 * H, 0.02 * H, 0.016 * H], offset: [0.024 * H, 0.114 * H, 0.054 * H], color: hairColor });
   } else if (hairStyle === 'bob' || hairStyle === 'long') {
@@ -364,9 +571,9 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
       parts.push({
         bone: 'Head',
         size: [0.022 * H, 0.038 * H, 0.022 * H],
-        offset: [rng.range(-0.04, 0.04) * H, 0.152 * H, rng.range(-0.045, 0.035) * H],
+        offset: [detailRng.range(-0.04, 0.04) * H, 0.152 * H, detailRng.range(-0.045, 0.035) * H],
         color: hairColor,
-        rotation: [rng.range(-0.35, 0.35), 0, rng.range(-0.35, 0.35)],
+        rotation: [detailRng.range(-0.35, 0.35), 0, detailRng.range(-0.35, 0.35)],
       });
     }
   }
@@ -374,7 +581,7 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
   // --- Merge every part into one indexed, vertex-colored geometry.
   const positions: number[] = [];
   const normals: number[] = [];
-  const colors: number[] = [];
+  const vertexColors: number[] = [];
   const skinIndices: number[] = [];
   const skinWeights: number[] = [];
   const indices: number[] = [];
@@ -396,12 +603,12 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     const base = positions.length / 3;
     const pos = box.getAttribute('position');
     const nor = box.getAttribute('normal');
-    color.setHex(part.color).offsetHSL(0, 0, rng.range(-0.015, 0.015));
+    color.setHex(part.color).offsetHSL(0, 0, jitterRng.range(-0.015, 0.015));
     const index = boneIndex.get(part.bone)!;
     for (let i = 0; i < pos.count; i++) {
       positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
       normals.push(nor.getX(i), nor.getY(i), nor.getZ(i));
-      colors.push(color.r, color.g, color.b);
+      vertexColors.push(color.r, color.g, color.b);
       skinIndices.push(index, 0, 0, 0);
       skinWeights.push(1, 0, 0, 0);
     }
@@ -413,7 +620,7 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
-  geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+  geometry.setAttribute('color', new BufferAttribute(new Float32Array(vertexColors), 3));
   geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndices, 4));
   geometry.setAttribute('skinWeight', new BufferAttribute(new Float32Array(skinWeights), 4));
   geometry.setIndex(indices);
@@ -441,5 +648,6 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     height: H,
     legLength,
     obstacleRadius: 0.34 * (H / 1.7) * w,
+    description: spec,
   };
 }

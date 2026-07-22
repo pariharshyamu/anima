@@ -38,6 +38,9 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **Sockets** — `attach(rig, 'handRight', torch)`: named, height-scaled attachment points (hands, back, hips, head) that ride their bones through every animation. A SCENA prop's `.object` attaches directly.
 - **Accessories** — seeded modular gear (`cap`, `hat`, `backpack`, `pouch`, `shoulderPads`) merged into the same single-draw-call body mesh; `'auto'` (default) rolls per seed, so crowds come pre-equipped.
 - **`bakeVAT(rig, clip)`** — Vertex Animation Textures: a clip's skinned deformation baked into float textures (positions *and* normals, loop-seamless), replayed entirely on the GPU.
+- **Body types** — `bodyType: 'feminine' | 'masculine' | 'neutral'` presets (or explicit `{ shoulders, waist, hips, chest }` multipliers): figure differences in the skeleton and silhouette, seeded across crowds.
+- **Wardrobe** — garment layers, not painted-on colors: tops (`shirt · tunic · dress · jacket · apron`), bottoms (`pants · shorts · skirt`), sleeve lengths, collars, belts — seeded per character, composable with accessories, and clothing-aware (dresses bare the legs, long sleeves clothe the forearms).
+- **`describeHumanoid(options)`** — the creator API: every seeded decision (figure, outfit, colors, face, hair, gear) resolved into one JSON-serializable spec. Tweak any field and feed it back — `createHumanoid(describeHumanoid(o))` is byte-identical to `createHumanoid(o)`, and every rig carries its own `description`. NPC generator and character-creator UI, one API.
 - **Faces** — every character has one: eyes (seeded size/spacing/iris color), brows whose angle sets the resting expression (kind, stern, worried), nose, mouth with a smile/frown parameter, ears, and facial hair — all overridable via `face: {...}` for character-creator UIs. Faces bake into VAT crowds for free.
 - **Hair** — a style catalog (`bald · cap · side-part · bob · ponytail · bun · long · spiky`) with seeded style + color; hats force sensible short hair unless a style is explicit.
 - **`Crowd`** — background characters at scale: N seeded villagers as a handful of VAT `InstancedMesh`es — no skeletons, no mixers, no per-character CPU cost. Per-instance phase offsets and tints keep shared bodies looking individual; `crowd.followRoute(road.route, { surface: terrain.heightAt })` sends the whole crowd walking a SCENA road at the bake's stride-matched speed. Heroes stay heroes: full rigs near the camera, the crowd fills the distance.
@@ -72,17 +75,17 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 - [x] v0.3 "The Others": exact Mixamo/glTF clip retargeting, attachment sockets, seeded modular accessories
 - [x] v0.4 "The Crowd": VAT baking (positions + normals), instanced crowds with per-instance phase/tint, route-following walkers
 - [x] v0.5 "The Face": eyes/brows/nose/mouth/ears, resting expressions, hair style catalog, facial hair — seeded and overridable
-- [ ] v0.6 "The Wardrobe": body types (feminine/masculine/neutral), garment layers (dresses, tunics, skirts, sleeves), outfit presets, `describeHumanoid` creator API
+- [x] v0.6 "The Wardrobe": body types, garment layers (dresses, tunics, jackets, skirts, belts, collars), and the `describeHumanoid` creator API with byte-identical round-trips
 
 ## Development
 
 ```bash
 npm install
-npm test          # 49 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
+npm test          # 62 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo
-npm run dev:portrait  # the face gallery (?seed=N reseeds the row)
+npm run dev:portrait  # the character gallery (?seed=N · ?wardrobe=1 · ?view=face)
 ```
 
 ## License
