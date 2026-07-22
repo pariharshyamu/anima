@@ -38,6 +38,8 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **Sockets** — `attach(rig, 'handRight', torch)`: named, height-scaled attachment points (hands, back, hips, head) that ride their bones through every animation. A SCENA prop's `.object` attaches directly.
 - **Accessories** — seeded modular gear (`cap`, `hat`, `backpack`, `pouch`, `shoulderPads`) merged into the same single-draw-call body mesh; `'auto'` (default) rolls per seed, so crowds come pre-equipped.
 - **`bakeVAT(rig, clip)`** — Vertex Animation Textures: a clip's skinned deformation baked into float textures (positions *and* normals, loop-seamless), replayed entirely on the GPU.
+- **Faces** — every character has one: eyes (seeded size/spacing/iris color), brows whose angle sets the resting expression (kind, stern, worried), nose, mouth with a smile/frown parameter, ears, and facial hair — all overridable via `face: {...}` for character-creator UIs. Faces bake into VAT crowds for free.
+- **Hair** — a style catalog (`bald · cap · side-part · bob · ponytail · bun · long · spiky`) with seeded style + color; hats force sensible short hair unless a style is explicit.
 - **`Crowd`** — background characters at scale: N seeded villagers as a handful of VAT `InstancedMesh`es — no skeletons, no mixers, no per-character CPU cost. Per-instance phase offsets and tints keep shared bodies looking individual; `crowd.followRoute(road.route, { surface: terrain.heightAt })` sends the whole crowd walking a SCENA road at the bake's stride-matched speed. Heroes stay heroes: full rigs near the camera, the crowd fills the distance.
 
 ## The family handshake
@@ -69,15 +71,18 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 - [x] v0.2 "The Craft": foot IK with terrain planting + slope pelvis, look-at chains, additive overlays with bone masks, footstep events
 - [x] v0.3 "The Others": exact Mixamo/glTF clip retargeting, attachment sockets, seeded modular accessories
 - [x] v0.4 "The Crowd": VAT baking (positions + normals), instanced crowds with per-instance phase/tint, route-following walkers
+- [x] v0.5 "The Face": eyes/brows/nose/mouth/ears, resting expressions, hair style catalog, facial hair — seeded and overridable
+- [ ] v0.6 "The Wardrobe": body types (feminine/masculine/neutral), garment layers (dresses, tunics, skirts, sleeves), outfit presets, `describeHumanoid` creator API
 
 ## Development
 
 ```bash
 npm install
-npm test          # 41 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
+npm test          # 49 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo
+npm run dev:portrait  # the face gallery (?seed=N reseeds the row)
 ```
 
 ## License

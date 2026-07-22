@@ -8,6 +8,8 @@ export {
   BONE_NAMES,
   type Accessory,
   type BoneName,
+  type FaceOptions,
+  type HairStyle,
   type HumanoidOptions,
   type HumanoidRig,
 } from './humanoid';

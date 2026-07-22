@@ -47,6 +47,28 @@ export type BoneName = (typeof BONE_NAMES)[number];
 /** Modular gear merged into the body mesh (still one draw call). */
 export type Accessory = 'cap' | 'hat' | 'backpack' | 'pouch' | 'shoulderPads';
 
+export type HairStyle =
+  | 'bald'
+  | 'cap'
+  | 'side-part'
+  | 'bob'
+  | 'ponytail'
+  | 'bun'
+  | 'long'
+  | 'spiky';
+
+/** Facial features. Every field is seeded when omitted — override any. */
+export interface FaceOptions {
+  eyes?: { size?: number; spacing?: number; color?: number };
+  /** Brow angle in radians: positive reads kind, negative stern. */
+  brows?: { angle?: number; thickness?: number };
+  nose?: { width?: number; length?: number };
+  /** `smile` −1 (frown) … 1 (smile) — the resting expression. */
+  mouth?: { width?: number; smile?: number };
+  ears?: { size?: number };
+  facialHair?: 'none' | 'mustache' | 'beard' | 'full';
+}
+
 export interface HumanoidOptions {
   seed?: number;
   /** Standing height in world units. Default seeded 1.6–1.85. */
@@ -59,6 +81,10 @@ export interface HumanoidOptions {
    * `'none'`. Accessories ride their bones through every animation.
    */
   accessories?: Accessory[] | 'auto' | 'none';
+  /** Facial features — seeded when omitted, any field overridable. */
+  face?: FaceOptions;
+  /** Hair style/color — seeded when omitted. */
+  hair?: { style?: HairStyle; color?: number };
 }
 
 export interface HumanoidRig {
@@ -79,6 +105,8 @@ interface PartSpec {
   size: [number, number, number];
   offset: [number, number, number];
   color: number;
+  /** Euler XYZ rotation applied to the box before positioning. */
+  rotation?: [number, number, number];
 }
 
 /**
@@ -181,7 +209,6 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     { bone: 'Chest', size: [0.17 * H * w, 0.125 * H, 0.098 * H * w], offset: [0, 0.055 * H, 0], color: shirt },
     { bone: 'Neck', size: [0.042 * H, 0.05 * H, 0.042 * H], offset: [0, 0.014 * H, 0], color: skin },
     { bone: 'Head', size: [0.11 * H, 0.115 * H, 0.115 * H], offset: [0, 0.065 * H, 0], color: skin },
-    { bone: 'Head', size: [0.116 * H, 0.038 * H, 0.121 * H], offset: [0, 0.128 * H, -0.004 * H], color: hair },
     ...arm('Left'),
     ...arm('Right'),
     ...leg('Left'),
@@ -237,6 +264,113 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     }
   }
 
+  // --- The face: seeded features, every one overridable. Drawn AFTER
+  // accessories so earlier seeds keep their body, outfit and gear.
+  const face = options.face ?? {};
+  const eyeScale = face.eyes?.size ?? rng.range(0.85, 1.2);
+  const eyeSpacing = face.eyes?.spacing ?? rng.range(0.9, 1.15);
+  const eyeColor = face.eyes?.color ?? pick(palette.eyes);
+  const browAngle = face.brows?.angle ?? rng.range(-0.3, 0.3);
+  const browThickness = face.brows?.thickness ?? rng.range(0.8, 1.4);
+  const noseWidth = face.nose?.width ?? rng.range(0.8, 1.3);
+  const noseLength = face.nose?.length ?? rng.range(0.8, 1.35);
+  const mouthWidth = face.mouth?.width ?? rng.range(0.8, 1.2);
+  const smile = face.mouth?.smile ?? rng.range(-0.5, 1);
+  const earSize = face.ears?.size ?? rng.range(0.85, 1.25);
+  const facialHair =
+    face.facialHair ??
+    (rng.next() < 0.18
+      ? 'mustache'
+      : rng.next() < 0.14
+        ? 'beard'
+        : rng.next() < 0.1
+          ? 'full'
+          : 'none');
+  const lip = new Color(skin).offsetHSL(0.005, 0.1, -0.13).getHex();
+
+  const faceZ = 0.0565 * H; // just proud of the head box's front
+  for (const s of [1, -1]) {
+    const ex = s * 0.027 * H * eyeSpacing;
+    parts.push(
+      { bone: 'Head', size: [0.026 * H * eyeScale, 0.02 * H * eyeScale, 0.008 * H], offset: [ex, 0.078 * H, faceZ], color: 0xf4f2ec },
+      { bone: 'Head', size: [0.012 * H * eyeScale, 0.013 * H * eyeScale, 0.007 * H], offset: [ex, 0.076 * H, faceZ + 0.004 * H], color: eyeColor },
+      { bone: 'Head', size: [0.033 * H, 0.008 * H * browThickness, 0.008 * H], offset: [ex * 1.05, 0.098 * H, faceZ + 0.001 * H], color: hair, rotation: [0, 0, s * browAngle] },
+      { bone: 'Head', size: [0.012 * H, 0.03 * H * earSize, 0.024 * H], offset: [s * 0.0605 * H, 0.062 * H, -0.004 * H], color: skin }
+    );
+  }
+  parts.push(
+    { bone: 'Head', size: [0.015 * H * noseWidth, 0.032 * H * noseLength, 0.016 * H], offset: [0, 0.057 * H, 0.059 * H], color: skin },
+    { bone: 'Head', size: [0.038 * H * mouthWidth, 0.008 * H, 0.006 * H], offset: [0, 0.03 * H, faceZ + 0.001 * H], color: lip }
+  );
+  for (const s of [1, -1]) {
+    // Mouth corners rise or fall with the resting expression.
+    parts.push({
+      bone: 'Head',
+      size: [0.009 * H, 0.008 * H, 0.006 * H],
+      offset: [s * 0.022 * H * mouthWidth, 0.03 * H + smile * 0.008 * H, faceZ + 0.001 * H],
+      color: lip,
+    });
+  }
+  if (facialHair === 'mustache' || facialHair === 'full') {
+    parts.push({ bone: 'Head', size: [0.044 * H, 0.013 * H, 0.012 * H], offset: [0, 0.044 * H, faceZ + 0.002 * H], color: hair });
+  }
+  if (facialHair === 'beard' || facialHair === 'full') {
+    parts.push(
+      { bone: 'Head', size: [0.098 * H, 0.042 * H, 0.02 * H], offset: [0, 0.008 * H, 0.05 * H], color: hair },
+      { bone: 'Head', size: [0.06 * H, 0.032 * H, 0.032 * H], offset: [0, -0.004 * H, 0.042 * H], color: hair }
+    );
+  }
+
+  // --- Hair: a style catalog instead of one cap. Hats force short hair
+  // (unless a style was explicitly chosen).
+  let hairStyle: HairStyle;
+  if (options.hair?.style) {
+    hairStyle = options.hair.style;
+  } else {
+    const roll = rng.next();
+    hairStyle =
+      roll < 0.1 ? 'bald'
+      : roll < 0.35 ? 'cap'
+      : roll < 0.5 ? 'side-part'
+      : roll < 0.62 ? 'bob'
+      : roll < 0.74 ? 'ponytail'
+      : roll < 0.82 ? 'bun'
+      : roll < 0.92 ? 'long'
+      : 'spiky';
+    if ((accessories.includes('hat') || accessories.includes('cap')) && hairStyle !== 'bald') {
+      hairStyle = 'cap';
+    }
+  }
+  const hairColor = options.hair?.color ?? hair;
+  const capPart: PartSpec = { bone: 'Head', size: [0.116 * H, 0.038 * H, 0.121 * H], offset: [0, 0.128 * H, -0.004 * H], color: hairColor };
+  if (hairStyle !== 'bald') parts.push(capPart);
+  if (hairStyle === 'side-part') {
+    parts.push({ bone: 'Head', size: [0.062 * H, 0.02 * H, 0.016 * H], offset: [0.024 * H, 0.114 * H, 0.054 * H], color: hairColor });
+  } else if (hairStyle === 'bob' || hairStyle === 'long') {
+    for (const s of [1, -1]) {
+      parts.push({ bone: 'Head', size: [0.015 * H, 0.072 * H, 0.11 * H], offset: [s * 0.063 * H, 0.078 * H, -0.01 * H], color: hairColor });
+    }
+    parts.push(
+      hairStyle === 'bob'
+        ? { bone: 'Head', size: [0.11 * H, 0.085 * H, 0.018 * H], offset: [0, 0.072 * H, -0.062 * H], color: hairColor }
+        : { bone: 'Head', size: [0.112 * H, 0.155 * H, 0.022 * H], offset: [0, 0.026 * H, -0.064 * H], color: hairColor }
+    );
+  } else if (hairStyle === 'ponytail') {
+    parts.push({ bone: 'Head', size: [0.03 * H, 0.098 * H, 0.03 * H], offset: [0, 0.072 * H, -0.077 * H], color: hairColor, rotation: [0.22, 0, 0] });
+  } else if (hairStyle === 'bun') {
+    parts.push({ bone: 'Head', size: [0.042 * H, 0.042 * H, 0.042 * H], offset: [0, 0.136 * H, -0.056 * H], color: hairColor });
+  } else if (hairStyle === 'spiky') {
+    for (let i = 0; i < 5; i++) {
+      parts.push({
+        bone: 'Head',
+        size: [0.022 * H, 0.038 * H, 0.022 * H],
+        offset: [rng.range(-0.04, 0.04) * H, 0.152 * H, rng.range(-0.045, 0.035) * H],
+        color: hairColor,
+        rotation: [rng.range(-0.35, 0.35), 0, rng.range(-0.35, 0.35)],
+      });
+    }
+  }
+
   // --- Merge every part into one indexed, vertex-colored geometry.
   const positions: number[] = [];
   const normals: number[] = [];
@@ -249,6 +383,11 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
 
   for (const part of parts) {
     const box = new BoxGeometry(...part.size);
+    if (part.rotation) {
+      box.rotateX(part.rotation[0]);
+      box.rotateY(part.rotation[1]);
+      box.rotateZ(part.rotation[2]);
+    }
     box.translate(
       part.offset[0] + restWorld[part.bone].x,
       part.offset[1] + restWorld[part.bone].y,

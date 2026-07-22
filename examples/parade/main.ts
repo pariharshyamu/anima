@@ -180,7 +180,12 @@ game.onUpdate((t) => {
 // --- Camera: low, close orbit so legs and gait are the show.
 const params = new URLSearchParams(location.search);
 const follow = params.get('follow');
-if (follow !== null) {
+if (params.get('view') === 'portrait') {
+  // Straight-on close view of the cast lineup — the faces are the show.
+  const y = terrain.heightAt(0, -7.5);
+  game.camera.position.set(-0.5, y + 1.45, -9.2);
+  game.onUpdate(() => game.camera.lookAt(-0.5, y + 1.25, -5.5));
+} else if (follow !== null) {
   // Track a traveler up close — the gait is the show (?follow=0..3).
   const target = agents[Math.min(agents.length - 1, Math.max(0, parseInt(follow, 10) || 0))];
   game.onUpdate(() => {
