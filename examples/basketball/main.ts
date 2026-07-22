@@ -605,6 +605,10 @@ game.onUpdate((t) => {
 // Debug hook for automated playtesting.
 (window as unknown as { hoopsDebug: () => unknown }).hoopsDebug = () => ({
   holder: holder === player ? 'player' : holder === cpu ? 'cpu' : 'none',
+  // Head yaw (local, radians) — used to verify the gaze doesn't whip around
+  // while the ball is carried right beside the character's head.
+  playerHeadYaw: +player.rig.bones.Head.quaternion.y.toFixed(4),
+  cpuHeadYaw: +cpu.rig.bones.Head.quaternion.y.toFixed(4),
   ball: ball.getWorldPosition(new Vector3()).toArray().map((n) => +n.toFixed(2)),
   ballVel: ballVel.toArray().map((n) => +n.toFixed(2)),
   player: player.object.position.toArray().map((n) => +n.toFixed(2)),

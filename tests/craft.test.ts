@@ -80,6 +80,34 @@ describe('LookAt', () => {
     expect(Math.abs(q.y)).toBeLessThan(0.02); // no owl turn
   });
 
+  it('holds steady for a target held right at the head (no owl-spin)', () => {
+    // Reproduces the basketball bug: the gaze target is the ball, which
+    // sits in the character's own hand while carried — centimetres from
+    // the head. Its jittering horizontal direction must not whip the neck.
+    const rig = createHumanoid({ seed: 5, height: 1.7 });
+    rig.object.updateMatrixWorld(true);
+    const head = rig.bones.Head.getWorldPosition(new Vector3());
+    const gaze = new LookAt(rig, { smoothing: 7, maxYaw: 0.9 });
+    let maxYawSeen = 0;
+    for (let i = 0; i < 90; i++) {
+      rig.bones.Head.quaternion.identity();
+      rig.bones.Neck.quaternion.identity();
+      rig.bones.Chest.quaternion.identity();
+      // A ball ~15 cm from the head, bobbing/orbiting each frame — the sign
+      // of its X/Z offset flips constantly, which used to swing the yaw.
+      const a = i * 1.7;
+      gaze.target = new Vector3(
+        head.x + 0.15 * Math.sin(a),
+        head.y - 0.1,
+        head.z + 0.15 * Math.cos(a)
+      );
+      gaze.update(1 / 60);
+      maxYawSeen = Math.max(maxYawSeen, Math.abs(rig.bones.Head.quaternion.y));
+    }
+    // Without the min-distance guard this exceeds 0.3 and flips sign wildly.
+    expect(maxYawSeen).toBeLessThan(0.05);
+  });
+
   it('eases back to neutral when the target clears', () => {
     const rig = createHumanoid({ seed: 5 });
     const gaze = new LookAt(rig, { smoothing: 20 });
