@@ -34,6 +34,9 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **`LookAt`** — a clamped, smoothed gaze chain distributing yaw/pitch across chest → neck → head on top of the animation; targets behind the back are ignored.
 - **Overlays & masks** — `loco.overlay(clip, { bones })` layers additive clips over the gait (`createWaveClip` waves while walking; `maskClip` + `UPPER_BODY` restrict any clip to a bone set).
 - **Animation events** — `loco.onFootstep((foot) => ...)` fires at each heel strike, derived from gait phase: footstep audio, dust, gameplay.
+- **`retargetClip(rig, gltf.scene, clip)`** — play real animation assets (Mixamo and friends) on ANIMA bodies. The solve is exact: each frame, every mapped bone receives the source's world-rotation delta composed down the actual hierarchy — differing rest poses, extra bones (Mixamo's Spine1), centimeter units and name prefixes are all absorbed. `inPlace` strips ground-plane root motion.
+- **Sockets** — `attach(rig, 'handRight', torch)`: named, height-scaled attachment points (hands, back, hips, head) that ride their bones through every animation. A SCENA prop's `.object` attaches directly.
+- **Accessories** — seeded modular gear (`cap`, `hat`, `backpack`, `pouch`, `shoulderPads`) merged into the same single-draw-call body mesh; `'auto'` (default) rolls per seed, so crowds come pre-equipped.
 
 ## The family handshake
 
@@ -62,14 +65,14 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 
 - [x] v0.1 "The Body": seeded rigged humanoid, procedural idle/walk/run, blending locomotion controller, GAMA/SCENA handshake
 - [x] v0.2 "The Craft": foot IK with terrain planting + slope pelvis, look-at chains, additive overlays with bone masks, footstep events
-- [ ] v0.3 "The Others": Mixamo/glTF retargeting adapter, attachment sockets, modular outfit variation
+- [x] v0.3 "The Others": exact Mixamo/glTF clip retargeting, attachment sockets, seeded modular accessories
 - [ ] v0.4 "The Crowd": vertex-animation-texture baking, crowd LOD tiers, village population presets
 
 ## Development
 
 ```bash
 npm install
-npm test          # 26 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events)
+npm test          # 34 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo

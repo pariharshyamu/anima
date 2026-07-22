@@ -44,6 +44,9 @@ export const BONE_NAMES = [
 
 export type BoneName = (typeof BONE_NAMES)[number];
 
+/** Modular gear merged into the body mesh (still one draw call). */
+export type Accessory = 'cap' | 'hat' | 'backpack' | 'pouch' | 'shoulderPads';
+
 export interface HumanoidOptions {
   seed?: number;
   /** Standing height in world units. Default seeded 1.6–1.85. */
@@ -51,6 +54,11 @@ export interface HumanoidOptions {
   /** Body width multiplier: ~0.85 slim … 1.2 broad. Default seeded. */
   build?: number;
   palette?: OutfitPalette;
+  /**
+   * Gear: an explicit list, `'auto'` for a seeded pick (default), or
+   * `'none'`. Accessories ride their bones through every animation.
+   */
+  accessories?: Accessory[] | 'auto' | 'none';
 }
 
 export interface HumanoidRig {
@@ -179,6 +187,55 @@ export function createHumanoid(options: HumanoidOptions = {}): HumanoidRig {
     ...leg('Left'),
     ...leg('Right'),
   ];
+
+  // --- Accessories: extra rigid parts on the right bones. Seeded 'auto'
+  // draws AFTER the base body, so base looks stay stable per seed.
+  let accessories: Accessory[];
+  if (options.accessories === 'none') accessories = [];
+  else if (Array.isArray(options.accessories)) accessories = options.accessories;
+  else {
+    accessories = [];
+    if (rng.next() < 0.35) accessories.push(rng.pick(['cap', 'hat'] as const));
+    if (rng.next() < 0.3) accessories.push('backpack');
+    if (rng.next() < 0.35) accessories.push('pouch');
+    if (rng.next() < 0.15) accessories.push('shoulderPads');
+  }
+  const leather = pick(palette.boots);
+  const cloth = pick(palette.shirt);
+  for (const accessory of accessories) {
+    if (accessory === 'cap') {
+      parts.push(
+        { bone: 'Head', size: [0.122 * H, 0.032 * H, 0.126 * H], offset: [0, 0.132 * H, -0.002 * H], color: cloth },
+        { bone: 'Head', size: [0.08 * H, 0.012 * H, 0.05 * H], offset: [0, 0.122 * H, 0.075 * H], color: cloth }
+      );
+    } else if (accessory === 'hat') {
+      parts.push(
+        { bone: 'Head', size: [0.19 * H, 0.014 * H, 0.19 * H], offset: [0, 0.126 * H, 0], color: leather },
+        { bone: 'Head', size: [0.1 * H, 0.06 * H, 0.1 * H], offset: [0, 0.16 * H, 0], color: leather }
+      );
+    } else if (accessory === 'backpack') {
+      parts.push(
+        { bone: 'Chest', size: [0.14 * H, 0.155 * H, 0.07 * H], offset: [0, 0.045 * H, -0.085 * H], color: leather },
+        { bone: 'Chest', size: [0.1 * H, 0.04 * H, 0.05 * H], offset: [0, 0.135 * H, -0.08 * H], color: cloth }
+      );
+    } else if (accessory === 'pouch') {
+      parts.push({
+        bone: 'Hips',
+        size: [0.055 * H, 0.06 * H, 0.045 * H],
+        offset: [rng.pick([-1, 1]) * 0.095 * H, -0.005 * H, 0.02 * H],
+        color: leather,
+      });
+    } else {
+      for (const side of [-1, 1]) {
+        parts.push({
+          bone: side === 1 ? 'LeftShoulder' : 'RightShoulder',
+          size: [0.07 * H, 0.03 * H, 0.075 * H],
+          offset: [side * 0.015 * H, 0.035 * H, 0],
+          color: leather,
+        });
+      }
+    }
+  }
 
   // --- Merge every part into one indexed, vertex-colored geometry.
   const positions: number[] = [];

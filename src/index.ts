@@ -6,10 +6,13 @@ export { OUTFITS, DEFAULT_OUTFIT, type OutfitPalette } from './palette';
 export {
   createHumanoid,
   BONE_NAMES,
+  type Accessory,
   type BoneName,
   type HumanoidOptions,
   type HumanoidRig,
 } from './humanoid';
+export { retargetClip, MIXAMO_MAP, type RetargetOptions } from './retarget';
+export { getSocket, attach, type SocketName } from './sockets';
 export {
   createLocomotionClips,
   type GaitOptions,

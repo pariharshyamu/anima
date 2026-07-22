@@ -1,5 +1,14 @@
-import { Vector3 } from 'three';
 import {
+  CylinderGeometry,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  PointLight,
+  SphereGeometry,
+  Vector3,
+} from 'three';
+import {
+  attach,
   createHumanoid,
   createWaveClip,
   FootIK,
@@ -92,6 +101,23 @@ traveler(101, 1.3, 0);
 traveler(102, 1.5, 12, OUTFITS.guard);
 traveler(103, 1.2, 24);
 traveler(104, 3.6, 30, OUTFITS.guard);
+
+// The lead traveler carries a torch — attached to the hand socket, it
+// swings with the arm through every stride.
+const torch = new Group();
+const handle = new Mesh(
+  new CylinderGeometry(0.02, 0.028, 0.5, 6),
+  new MeshStandardMaterial({ color: 0x5d4030, flatShading: true })
+);
+handle.position.y = 0.18;
+const flame = new Mesh(
+  new SphereGeometry(0.055, 8, 6),
+  new MeshStandardMaterial({ color: 0xffd889, emissive: 0xffb347, emissiveIntensity: 2.2 })
+);
+flame.position.y = 0.48;
+flame.scale.y = 1.5;
+torch.add(handle, flame, new PointLight(0xffb347, 4, 8, 1.8));
+attach(characters[0].rig, 'handRight', torch);
 
 // The cast lineup: idle villagers near the clearing — every one a seed.
 // Their feet plant on the slope (FootIK) and their heads follow whoever
