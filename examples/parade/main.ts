@@ -1,0 +1,124 @@
+import { Vector3 } from 'three';
+import { createHumanoid, Locomotion, OUTFITS, type HumanoidRig } from 'anima3d';
+import {
+  createTerrain,
+  createSky,
+  createLightingRig,
+  applyFog,
+  createPath,
+  createTree,
+  createRock,
+  scatter,
+  PALETTES,
+} from 'scena3d';
+import { Game, MotionAgent, FollowPath, Path, ObstacleAvoidance, Separation } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+
+// --- The world (SCENA).
+const terrain = createTerrain({ seed: 18, size: 90, amplitude: 5, palette });
+scene.add(terrain.mesh, createSky({ palette }).mesh, createLightingRig('golden-hour').group);
+applyFog(scene, 'haze', palette);
+
+const road = createPath(
+  [
+    { x: -18, z: -10 }, { x: 0, z: -16 }, { x: 16, z: -6 },
+    { x: 14, z: 12 }, { x: -2, z: 14 }, { x: -20, z: 6 },
+  ],
+  { surface: terrain.heightAt, width: 2.2, loop: true, palette }
+);
+scene.add(road.mesh);
+
+const forest = scatter({
+  seed: 21,
+  area: { min: { x: -40, z: -40 }, max: { x: 40, z: 40 } },
+  surface: terrain.heightAt,
+  density: 0.045,
+  minSpacing: 1.7,
+  items: [
+    { create: (rng) => createTree({ seed: rng.int(1, 1e9), palette }), weight: 4, variants: 6 },
+    { create: (rng) => createRock({ seed: rng.int(1, 1e9), palette }) },
+  ],
+  mask: (x, z, y) => y < 3.6,
+  keepOut: [{ center: { x: 0, z: 0 }, radius: 10 }, ...road.keepOut],
+});
+scene.add(forest.group);
+
+// --- The people (ANIMA driven by GAMA).
+const characters: Array<{ rig: HumanoidRig; loco: Locomotion; agent?: MotionAgent }> = [];
+const agents: MotionAgent[] = [];
+
+function traveler(seed: number, maxSpeed: number, routeOffset: number, outfit = OUTFITS.villager): void {
+  const rig = createHumanoid({ seed, palette: outfit });
+  const walker = game.world.spawn(`traveler-${seed}`);
+  walker.add(rig.object);
+  const patrol = new Path(road.route.map((p) => p.clone()), true);
+  for (let s = 0; s < routeOffset; s++) patrol.advance();
+  walker.position.copy(patrol.current());
+  const agent = walker.addComponent(
+    new MotionAgent({ maxSpeed, maxForce: 22, planar: true })
+  );
+  agent.addBehavior(new FollowPath(patrol, 1.5));
+  agent.addBehavior(new ObstacleAvoidance(() => forest.obstacles, 3, 0.5), 2.2);
+  agent.addBehavior(new Separation(() => agents, 1.4), 1.1);
+  agents.push(agent);
+  characters.push({ rig, loco: new Locomotion(rig), agent });
+}
+
+// Three walkers at strolling speeds, one runner overtaking everyone.
+traveler(101, 1.3, 0);
+traveler(102, 1.5, 12, OUTFITS.guard);
+traveler(103, 1.2, 24);
+traveler(104, 3.6, 30, OUTFITS.guard);
+
+// The cast lineup: idle villagers near the clearing — every one a seed.
+for (let i = 0; i < 6; i++) {
+  const rig = createHumanoid({ seed: 200 + i });
+  const x = -5 + i * 2.1;
+  const z = -5.5;
+  rig.object.position.set(x, terrain.heightAt(x, z), z);
+  rig.object.rotation.y = Math.PI + (i - 2.5) * 0.12; // loosely facing camera side
+  scene.add(rig.object);
+  characters.push({ rig, loco: new Locomotion(rig) });
+}
+
+game.onUpdate((t) => {
+  for (const { rig, loco, agent } of characters) {
+    if (agent) {
+      const p = agent.owner.position;
+      p.y = terrain.heightAt(p.x, p.z);
+      loco.update(t.delta, agent.velocity);
+    } else {
+      loco.update(t.delta, 0);
+    }
+    void rig;
+  }
+});
+
+// --- Camera: low, close orbit so legs and gait are the show.
+const params = new URLSearchParams(location.search);
+const follow = params.get('follow');
+if (follow !== null) {
+  // Track a traveler up close — the gait is the show (?follow=0..3).
+  const target = agents[Math.min(agents.length - 1, Math.max(0, parseInt(follow, 10) || 0))];
+  game.onUpdate(() => {
+    const p = target.owner.position;
+    const side = target.owner.getWorldDirection(new Vector3());
+    game.camera.position.set(p.x - side.z * 3.4 + side.x * 1.2, p.y + 1.5, p.z + side.x * 3.4 + side.z * 1.2);
+    game.camera.lookAt(p.x, p.y + 1.0, p.z);
+  });
+} else {
+  const cameraStart = parseFloat(params.get('cam') ?? '0');
+  const radius = parseFloat(params.get('r') ?? '17');
+  const height = parseFloat(params.get('h') ?? '5.5');
+  game.onUpdate((time) => {
+    const a = cameraStart + time.elapsed * 0.035;
+    const y = terrain.heightAt(0, 0);
+    game.camera.position.set(Math.cos(a) * radius, y + height, Math.sin(a) * radius);
+    game.camera.lookAt(0, y + 1.2, -3);
+  });
+}
+
+game.start();

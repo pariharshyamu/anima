@@ -1,0 +1,67 @@
+{
+  "name": "anima3d",
+  "version": "0.1.0",
+  "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --clean",
+    "dev": "vite examples/parade",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pariharshyamu/anima.git"
+  },
+  "homepage": "https://github.com/pariharshyamu/anima#readme",
+  "bugs": {
+    "url": "https://github.com/pariharshyamu/anima/issues"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "threejs",
+    "character",
+    "humanoid",
+    "animation",
+    "skeletal-animation",
+    "procedural",
+    "locomotion",
+    "game-development",
+    "3d"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "three": ">=0.150.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/three": "^0.165.0",
+    "gama3d": "^0.9.0",
+    "scena3d": "^0.4.0",
+    "three": "^0.165.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vitest": "^1.6.0"
+  }
+}
