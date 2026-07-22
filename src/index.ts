@@ -15,4 +15,12 @@ export {
   type GaitOptions,
   type LocomotionClips,
 } from './clips';
-export { Locomotion, type LocomotionOptions } from './locomotion';
+export {
+  Locomotion,
+  type LocomotionOptions,
+  type OverlayOptions,
+  type FootstepListener,
+} from './locomotion';
+export { FootIK, type FootIKOptions } from './ik';
+export { LookAt, type LookAtOptions } from './lookAt';
+export { maskClip, createWaveClip, UPPER_BODY } from './overlay';

@@ -30,6 +30,10 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **`createLocomotionClips(rig, gait?)`** — idle, walk and run `AnimationClip`s synthesized from gait parameters: hip swing, knee flexion timed to the swing phase, ankle leveling, arm counter-swing with elbow bend, pelvis/chest counter-twist, hip bob, run lean. Loop-seamless, in-place, deterministic; reference ground speeds are derived from the rig's leg length for stride matching.
 - **`Locomotion`** — the 1D blend controller: smoothed speed in, weighted actions out, with phase sync across the walk↔run blend and stride-matched `timeScale`. Exposes `weights` and `speed` for debugging.
 - **`OUTFITS`** — palette pools (villager, guard, winter) the generator picks from per seed, so a crowd looks like inhabitants of the same place while every individual differs.
+- **`FootIK`** — closed-form two-bone leg IK that plants each foot on the actual ground under it (SCENA's `terrain.heightAt` drops straight in), eases the pelvis toward the lower foot on slopes, preserves the clip's swing lift, and ignores sub-perceptual ripples (deadzone) so straight legs don't over-bend.
+- **`LookAt`** — a clamped, smoothed gaze chain distributing yaw/pitch across chest → neck → head on top of the animation; targets behind the back are ignored.
+- **Overlays & masks** — `loco.overlay(clip, { bones })` layers additive clips over the gait (`createWaveClip` waves while walking; `maskClip` + `UPPER_BODY` restrict any clip to a bone set).
+- **Animation events** — `loco.onFootstep((foot) => ...)` fires at each heel strike, derived from gait phase: footstep audio, dust, gameplay.
 
 ## The family handshake
 
@@ -57,7 +61,7 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 ## Roadmap
 
 - [x] v0.1 "The Body": seeded rigged humanoid, procedural idle/walk/run, blending locomotion controller, GAMA/SCENA handshake
-- [ ] v0.2 "The Craft": foot IK + terrain planting, look-at chains, animation layers + bone masks, animation events, richer gait styling
+- [x] v0.2 "The Craft": foot IK with terrain planting + slope pelvis, look-at chains, additive overlays with bone masks, footstep events
 - [ ] v0.3 "The Others": Mixamo/glTF retargeting adapter, attachment sockets, modular outfit variation
 - [ ] v0.4 "The Crowd": vertex-animation-texture baking, crowd LOD tiers, village population presets
 
@@ -65,7 +69,7 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 
 ```bash
 npm install
-npm test          # 16 vitest unit tests (skeleton, skinning, clips, blending)
+npm test          # 26 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo

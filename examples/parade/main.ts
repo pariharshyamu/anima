@@ -1,5 +1,13 @@
 import { Vector3 } from 'three';
-import { createHumanoid, Locomotion, OUTFITS, type HumanoidRig } from 'anima3d';
+import {
+  createHumanoid,
+  createWaveClip,
+  FootIK,
+  LookAt,
+  Locomotion,
+  OUTFITS,
+  type HumanoidRig,
+} from 'anima3d';
 import {
   createTerrain,
   createSky,
@@ -47,7 +55,14 @@ const forest = scatter({
 scene.add(forest.group);
 
 // --- The people (ANIMA driven by GAMA).
-const characters: Array<{ rig: HumanoidRig; loco: Locomotion; agent?: MotionAgent }> = [];
+interface Character {
+  rig: HumanoidRig;
+  loco: Locomotion;
+  ik: FootIK;
+  agent?: MotionAgent;
+  gaze?: LookAt;
+}
+const characters: Character[] = [];
 const agents: MotionAgent[] = [];
 
 function traveler(seed: number, maxSpeed: number, routeOffset: number, outfit = OUTFITS.villager): void {
@@ -64,7 +79,12 @@ function traveler(seed: number, maxSpeed: number, routeOffset: number, outfit = 
   agent.addBehavior(new ObstacleAvoidance(() => forest.obstacles, 3, 0.5), 2.2);
   agent.addBehavior(new Separation(() => agents, 1.4), 1.1);
   agents.push(agent);
-  characters.push({ rig, loco: new Locomotion(rig), agent });
+  characters.push({
+    rig,
+    loco: new Locomotion(rig),
+    ik: new FootIK(rig, { ground: terrain.heightAt }),
+    agent,
+  });
 }
 
 // Three walkers at strolling speeds, one runner overtaking everyone.
@@ -74,6 +94,8 @@ traveler(103, 1.2, 24);
 traveler(104, 3.6, 30, OUTFITS.guard);
 
 // The cast lineup: idle villagers near the clearing — every one a seed.
+// Their feet plant on the slope (FootIK) and their heads follow whoever
+// walks past (LookAt). The last one waves at the road, forever.
 for (let i = 0; i < 6; i++) {
   const rig = createHumanoid({ seed: 200 + i });
   const x = -5 + i * 2.1;
@@ -81,19 +103,43 @@ for (let i = 0; i < 6; i++) {
   rig.object.position.set(x, terrain.heightAt(x, z), z);
   rig.object.rotation.y = Math.PI + (i - 2.5) * 0.12; // loosely facing camera side
   scene.add(rig.object);
-  characters.push({ rig, loco: new Locomotion(rig) });
+  const loco = new Locomotion(rig);
+  characters.push({
+    rig,
+    loco,
+    ik: new FootIK(rig, { ground: terrain.heightAt }),
+    gaze: new LookAt(rig),
+  });
+  if (i === 5) loco.overlay(createWaveClip(rig), { fadeIn: 0.1 });
 }
 
+const scratch = new Vector3();
 game.onUpdate((t) => {
-  for (const { rig, loco, agent } of characters) {
+  for (const { rig, loco, ik, agent, gaze } of characters) {
     if (agent) {
       const p = agent.owner.position;
       p.y = terrain.heightAt(p.x, p.z);
       loco.update(t.delta, agent.velocity);
     } else {
       loco.update(t.delta, 0);
+      if (gaze) {
+        // Watch the nearest traveler strolling past.
+        let best: MotionAgent | null = null;
+        let bestDistance = 14;
+        for (const candidate of agents) {
+          const d = candidate.owner.position.distanceTo(
+            rig.object.getWorldPosition(scratch)
+          );
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = candidate;
+          }
+        }
+        gaze.target = best ? best.owner.position : null;
+        gaze.update(t.delta);
+      }
     }
-    void rig;
+    ik.update();
   }
 });
 

@@ -1,6 +1,26 @@
-import { AnimationAction, AnimationMixer, LoopRepeat, Vector3 } from 'three';
+import {
+  AnimationAction,
+  AnimationClip,
+  AnimationMixer,
+  LoopOnce,
+  LoopRepeat,
+  Vector3,
+} from 'three';
 import { createLocomotionClips, type LocomotionClips } from './clips';
-import type { HumanoidRig } from './humanoid';
+import type { BoneName, HumanoidRig } from './humanoid';
+import { maskClip } from './overlay';
+
+export interface OverlayOptions {
+  weight?: number;
+  /** Crossfade in, seconds. Default 0.25. */
+  fadeIn?: number;
+  /** Loop forever (true, default) or play once and fade out. */
+  loop?: boolean;
+  /** Restrict the overlay to these bones. */
+  bones?: readonly BoneName[];
+}
+
+export type FootstepListener = (foot: 'Left' | 'Right') => void;
 
 export interface LocomotionOptions {
   clips?: LocomotionClips;
@@ -38,6 +58,9 @@ export class Locomotion {
   /** Current blend weights, exposed for debugging and tests. */
   readonly weights = { idle: 1, walk: 0, run: 0 };
 
+  private readonly footstepListeners = new Set<FootstepListener>();
+  private previousPhase = 0;
+
   constructor(rig: HumanoidRig, options: LocomotionOptions = {}) {
     this.clips = options.clips ?? createLocomotionClips(rig);
     this.idleThreshold = options.idleThreshold ?? 0.12;
@@ -71,6 +94,51 @@ export class Locomotion {
     this.smoothedSpeed += (target - this.smoothedSpeed) * k;
     this.apply(this.smoothedSpeed);
     this.mixer.update(dt);
+    this.emitFootsteps();
+  }
+
+  /**
+   * Layer a clip on top of the gait — wave, aim, carry. Additive clips
+   * (see `createWaveClip`) blend cleanly over moving limbs; use `bones`
+   * to mask. Returns the action; a non-looping overlay fades itself out.
+   */
+  overlay(clip: AnimationClip, options: OverlayOptions = {}): AnimationAction {
+    const masked = options.bones ? maskClip(clip, options.bones) : clip;
+    const action = this.mixer.clipAction(masked);
+    action.setLoop(options.loop === false ? LoopOnce : LoopRepeat, Infinity);
+    action.clampWhenFinished = false;
+    action.reset();
+    action.fadeIn(options.fadeIn ?? 0.25);
+    action.setEffectiveWeight(options.weight ?? 1);
+    action.play();
+    return action;
+  }
+
+  /** Fade out and stop an overlay started with `overlay()`. */
+  stopOverlay(action: AnimationAction, fadeOut = 0.25): void {
+    action.fadeOut(fadeOut);
+  }
+
+  /**
+   * Animation events: fires at each heel strike while walking/running —
+   * hook footstep sounds, particles, or gameplay. Returns unsubscribe.
+   */
+  onFootstep(listener: FootstepListener): () => void {
+    this.footstepListeners.add(listener);
+    return () => this.footstepListeners.delete(listener);
+  }
+
+  private emitFootsteps(): void {
+    if (this.footstepListeners.size === 0) return;
+    if (this.weights.walk + this.weights.run < 0.35) return;
+    const phase = (this.walkAction.time % this.clips.walk.duration) / this.clips.walk.duration;
+    const crossed = (mark: number): boolean =>
+      (this.previousPhase < mark && phase >= mark) ||
+      (this.previousPhase > phase && (phase >= mark || this.previousPhase < mark));
+    // Heel strikes: the leg reaches maximum forward swing at sin peaks.
+    if (crossed(0.25)) for (const cb of this.footstepListeners) cb('Left');
+    if (crossed(0.75)) for (const cb of this.footstepListeners) cb('Right');
+    this.previousPhase = phase;
   }
 
   private apply(speed: number): void {
