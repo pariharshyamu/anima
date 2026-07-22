@@ -383,6 +383,194 @@ game.onUpdate((t) => {
 });
 game.start();`,
   },
+
+  {
+    id: 'village',
+    title: 'Havenbrook: a medieval village',
+    group: 'Scale',
+    code: `// The whole trilogy in one scene. SCENA builds the world and every prop —
+// an inline town hall with a bell tower, cottages, a market, a fountain,
+// banners, bunting, braziers and carts. ANIMA fills it with seeded farmers,
+// villagers and knights (full rigs) plus a VAT crowd. GAMA walks them down
+// the lanes, steering around the buildings. Nothing imports anything else.
+import { createHumanoid, Locomotion, FootIK, LookAt, Crowd, OUTFITS, attach } from 'anima3d';
+import { createTerrain, createSky, createLightingRig, applyFog, createDayCycle, createPath,
+         createHouse, createWell, createStall, createStatue, createBanner, createBunting,
+         createBrazier, createCampfire, createFountain, createCart, createLamp, createFence,
+         createTree, createRock, createBush, createGrassTuft, createSurface, scatter,
+         collectObstacles, PALETTES } from 'scena3d';
+import { Game, MotionAgent, FollowPath, Path, ObstacleAvoidance, Separation } from 'gama3d';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
+         SphereGeometry, Vector3 } from 'three';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+const terrain = createTerrain({ seed: 77, size: 110, amplitude: 2, palette });
+scene.add(terrain.mesh);
+const sky = createSky({ palette }); scene.add(sky.mesh);
+const light = createLightingRig('golden-hour'); scene.add(light.group);
+applyFog(scene, 'haze', palette);
+const groundAt = (x, z) => terrain.heightAt(x, z);
+const at = (x, z) => new Vector3(x, groundAt(x, z), z);
+
+const lane = createPath([{ x: -20, z: -9 }, { x: -9, z: -18 }, { x: 11, z: -18 }, { x: 20, z: -7 },
+  { x: 18, z: 11 }, { x: 5, z: 20 }, { x: -11, z: 18 }, { x: -20, z: 7 }],
+  { surface: groundAt, width: 2.4, loop: true, palette });
+scene.add(lane.mesh);
+const ring = createPath([{ x: -8, z: -8 }, { x: 8, z: -8 }, { x: 9, z: 8 }, { x: -9, z: 9 }],
+  { surface: groundAt, width: 1.5, loop: true, palette });
+scene.add(ring.mesh);
+
+const buildings = [];
+const place = (prop, x, z, ry = 0, blocks = true) => {
+  prop.object.position.copy(at(x, z)); prop.object.rotation.y = ry;
+  scene.add(prop.object); if (blocks) buildings.push(prop); return prop;
+};
+const meshAt = (geo, mat, x, y, z) => { const m = new Mesh(geo, mat); m.position.set(x, y, z); return m; };
+
+// --- Inline grand town hall with a bell tower.
+function makeTownHall(seed) {
+  const g = new Group();
+  const wall = createSurface('plaster', { color: 0xcabf9c, seed });
+  const stone = createSurface('stone', { color: palette.rock[0], seed: seed + 1 });
+  const roofMat = createSurface('tile', { color: 0x7a3a2c, seed: seed + 2 });
+  const beam = createSurface('wood', { color: palette.woodDark, seed: seed + 3 });
+  const glass = new MeshStandardMaterial({ color: palette.lampGlow, emissive: palette.lampGlow, emissiveIntensity: 1 });
+  const W = 9, D = 6.5, H = 5.2;
+  g.add(meshAt(new BoxGeometry(W + 0.6, 1.4, D + 0.6), stone, 0, -0.5, 0));
+  g.add(meshAt(new BoxGeometry(W, H, D), wall, 0, H / 2, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    g.add(meshAt(new BoxGeometry(0.5, H, 0.5), stone, sx * W / 2, H / 2, sz * D / 2));
+  const roof = meshAt(new ConeGeometry((W / 2 + 0.5) * Math.SQRT2, 2.6, 4), roofMat, 0, H + 1.3, 0);
+  roof.rotation.y = Math.PI / 4; roof.scale.z = (D + 1) / (W + 1); g.add(roof);
+  g.add(meshAt(new BoxGeometry(W + 0.1, 0.22, D + 0.1), beam, 0, H * 0.52, 0));
+  for (const storey of [H * 0.3, H * 0.74]) for (let i = -1; i <= 1; i++)
+    g.add(meshAt(new BoxGeometry(0.7, 1.1, 0.1), glass, i * 2.4, storey, D / 2 + 0.02));
+  g.add(meshAt(new BoxGeometry(1.7, 2.4, 0.15), beam, 0, 1.2, D / 2 + 0.04));
+  g.add(meshAt(new BoxGeometry(3, 0.2, 1), stone, 0, -0.02, D / 2 + 0.75));
+  const tW = 2.4, tH = H + 4.4;
+  g.add(meshAt(new BoxGeometry(tW, tH, tW), wall, 0, tH / 2, -0.4));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    g.add(meshAt(new BoxGeometry(0.3, tH, 0.3), stone, sx * tW / 2, tH / 2, -0.4 + sz * tW / 2));
+  const dark = new MeshStandardMaterial({ color: 0x1a1712 });
+  for (const dz of [tW / 2, -tW / 2]) g.add(meshAt(new BoxGeometry(1, 1.3, 0.12), dark, 0, tH - 1.2, -0.4 + dz));
+  g.add(meshAt(new CylinderGeometry(0.34, 0.44, 0.6, 10), createSurface('metal', { color: 0x8a6a2f, seed: seed + 5 }), 0, tH - 1.25, -0.4));
+  const clock = meshAt(new CylinderGeometry(0.6, 0.6, 0.12, 16), new MeshStandardMaterial({ color: 0xe8e2d0, emissive: 0x2a2a22, flatShading: true }), 0, tH - 2.8, tW / 2 - 0.35);
+  clock.rotation.x = Math.PI / 2; g.add(clock);
+  const cap = meshAt(new ConeGeometry(tW * 0.95, 2.2, 4), roofMat, 0, tH + 1.1, -0.4);
+  cap.rotation.y = Math.PI / 4; g.add(cap);
+  const flag = createBanner({ seed: seed + 9, style: 'flag', pattern: 'cross', poleHeight: 1.6, palette });
+  flag.object.position.set(0, tH + 2.1, -0.4); flag.object.scale.setScalar(0.9); g.add(flag.object);
+  return { object: g, obstacleRadius: Math.hypot(W, D) / 2 + 0.4 };
+}
+
+const hall = place(makeTownHall(1), 0, -14, 0);
+const houses = [];
+[[-16, -6], [-15, 6], [-12, 15], [2, 17], [14, 13], [17, 2], [16, -9], [-7, -13], [-20, 0]]
+  .forEach(([x, z], i) => { const h = createHouse({ seed: 40 + i, palette }); place(h, x, z, Math.atan2(-x, -z)); houses.push(h); });
+
+place(createFountain({ seed: 4, palette }), 0, 2, 0);
+place(createStatue({ seed: 71, figure: 'figure', palette }), -5, -10.5, Math.PI);
+place(createStatue({ seed: 72, figure: 'obelisk', palette }), 5, -10.5, Math.PI);
+place(createWell({ seed: 3, palette }), -8.5, 4, 0);
+['produce', 'pottery', 'bakery', 'textiles'].forEach((goods, i) =>
+  place(createStall({ seed: 30 + i, goods, palette }), 12.5, -5 + i * 3, -Math.PI / 2));
+place(createCart({ seed: 2, style: 'wagon', cargo: 'barrels', palette }), 8.5, 6, 0.6);
+place(createCart({ seed: 9, style: 'wagon', cargo: 'hay', palette }), -16, 10, 2.2);
+[[-6, 6], [6, 6], [-6, -6], [6, -5]].forEach(([x, z], i) => place(createBrazier({ seed: 50 + i, palette }), x, z, 0, false));
+place(createCampfire({ seed: 3, palette }), 13, 8, 0, false);
+for (let i = 0; i < 3; i++) place(createBunting({ seed: 60 + i, span: 5.5, palette }), -6 + i * 6, 0, 10.5, false);
+place(createBanner({ seed: 80, style: 'banner', pattern: 'saltire', palette }), -3.4, -8.8, 0, false);
+place(createBanner({ seed: 81, style: 'banner', pattern: 'bands', palette }), 3.4, -8.8, 0, false);
+const lamps = [];
+[[-11, -3], [-3, -11], [11, -3], [3, 11], [-11, 9]].forEach(([x, z], i) =>
+  lamps.push(place(createLamp({ seed: 20 + i, light: true, palette }), x, z, 0, false)));
+place(createFence({ seed: 13, length: 8, palette }), -18, -11, 0.3, false);
+
+const inTown = (x, z) => Math.hypot(x, z) < 24;
+const forest = scatter({ seed: 21, area: { min: { x: -52, z: -52 }, max: { x: 52, z: 52 } },
+  surface: groundAt, density: 0.045, minSpacing: 1.8,
+  items: [{ create: (r) => createTree({ seed: r.int(1, 1e9), palette }), weight: 4, variants: 6 },
+          { create: (r) => createRock({ seed: r.int(1, 1e9), palette }), weight: 1 },
+          { create: (r) => createBush({ seed: r.int(1, 1e9), palette }), weight: 1 }],
+  mask: (x, z) => !inTown(x, z) && !lane.contains(x, z) });
+scene.add(forest.group);
+const grass = scatter({ seed: 22, area: { min: { x: -34, z: -34 }, max: { x: 34, z: 34 } },
+  surface: groundAt, density: 0.1, minSpacing: 0.9,
+  items: [{ create: (r) => createGrassTuft({ seed: r.int(1, 1e9), palette }), variants: 8 }],
+  mask: (x, z) => !lane.contains(x, z) && Math.hypot(x, z) > 11 });
+scene.add(grass.group);
+const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
+
+// --- Farmers, villagers, knights.
+function hoe() {
+  const g = new Group();
+  const h = new Mesh(new CylinderGeometry(0.018, 0.022, 0.95, 6), new MeshStandardMaterial({ color: palette.woodDark, flatShading: true }));
+  h.position.y = 0.3; g.add(h);
+  const head = new Mesh(new BoxGeometry(0.16, 0.05, 0.1), new MeshStandardMaterial({ color: palette.metal, flatShading: true }));
+  head.position.set(0, 0.76, 0.06); g.add(head); g.rotation.x = 0.5; return g;
+}
+function spear() {
+  const g = new Group();
+  const s = new Mesh(new CylinderGeometry(0.02, 0.025, 2, 6), new MeshStandardMaterial({ color: palette.woodDark, flatShading: true }));
+  s.position.y = 0.6; g.add(s);
+  const t = new Mesh(new ConeGeometry(0.05, 0.28, 6), new MeshStandardMaterial({ color: 0xb8bcc4, metalness: 0.6, roughness: 0.4, flatShading: true }));
+  t.position.y = 1.72; g.add(t); return g;
+}
+function shield() {
+  const g = new Group();
+  const d = new Mesh(new CylinderGeometry(0.3, 0.3, 0.06, 12), createSurface('metal', { color: 0x5a6270 }));
+  d.rotation.x = Math.PI / 2; g.add(d); return g;
+}
+function makeNpc(seed, kind) {
+  if (kind === 'knight') { const r = createHumanoid({ seed, palette: OUTFITS.guard, accessories: ['shoulderPads', 'cap'] }); attach(r, 'handRight', spear()); attach(r, 'handLeft', shield()); return r; }
+  if (kind === 'farmer') { const r = createHumanoid({ seed, palette: OUTFITS.villager, accessories: ['hat'] }); attach(r, 'handRight', hoe()); return r; }
+  return createHumanoid({ seed, palette: seed % 4 === 0 ? OUTFITS.winter : OUTFITS.villager });
+}
+const cast = []; const agents = [];
+function walker(seed, kind, route, offset, speed) {
+  const r = makeNpc(seed, kind);
+  const obj = game.world.spawn('npc'); obj.add(r.object);
+  const patrol = new Path(route.map((p) => p.clone()), true);
+  for (let s = 0; s < offset; s++) patrol.advance();
+  obj.position.copy(patrol.current());
+  const agent = obj.addComponent(new MotionAgent({ maxSpeed: speed, maxForce: 20, planar: true }));
+  agent.addBehavior(new FollowPath(patrol, 1.6));
+  agent.addBehavior(new ObstacleAvoidance(() => obstacles, 3, 0.5), 2.4);
+  agent.addBehavior(new Separation(() => agents, 1.3), 1.1);
+  agents.push(agent);
+  cast.push({ rig: r, loco: new Locomotion(r), ik: new FootIK(r, { ground: groundAt }), agent });
+}
+for (let i = 0; i < 6; i++) walker(100 + i, i % 3 === 0 ? 'farmer' : 'villager', lane.route, (i * lane.route.length) / 6, 1.1 + (i % 3) * 0.2);
+for (let i = 0; i < 3; i++) walker(200 + i, 'knight', ring.route, (i * ring.route.length) / 3, 1.3);
+[[11, -5, 'villager'], [11, 0, 'farmer'], [11, 5, 'villager'], [-7, 6.5, 'farmer'], [-2, -8, 'knight'], [2.5, -8, 'knight']]
+  .forEach(([x, z, kind], i) => {
+    const r = makeNpc(300 + i, kind);
+    r.object.position.copy(at(x, z)); r.object.rotation.y = Math.atan2(-x, -z) + (i % 2 ? 0.5 : -0.5);
+    scene.add(r.object);
+    cast.push({ rig: r, loco: new Locomotion(r), ik: new FootIK(r, { ground: groundAt }), gaze: new LookAt(r) });
+  });
+
+const crowd = new Crowd({ count: 36, seed: 9, variants: 4 });
+scene.add(crowd.group); crowd.followRoute(lane.route, { surface: groundAt });
+game.onUpdate((t) => crowd.update(t.delta));
+
+const cycle = createDayCycle({ sky, rig: light, scene, lamps: [...lamps, ...houses, hall], palette, dayLength: 90, timeOfDay: 0.4 });
+game.onUpdate((t) => cycle.update(t.delta));
+
+game.onUpdate((t) => {
+  for (const c of cast) {
+    if (c.agent) { const p = c.agent.owner.position; p.y = groundAt(p.x, p.z); c.loco.update(t.delta, c.agent.velocity); }
+    else { c.loco.update(t.delta, 0); if (c.gaze) { let best = null, bd = 9; for (const a of agents) { const d = a.owner.position.distanceTo(c.rig.object.position); if (d < bd) { bd = d; best = a.owner.position; } } c.gaze.target = best; c.gaze.update(t.delta); } }
+    c.ik.update();
+  }
+  const a = t.elapsed * 0.05, y = groundAt(0, 0);
+  game.camera.position.set(Math.cos(a) * 28, y + 14, Math.sin(a) * 28);
+  game.camera.lookAt(0, y + 2, 0);
+});
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {
