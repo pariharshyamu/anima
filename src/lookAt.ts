@@ -1,6 +1,11 @@
 import { MathUtils, Object3D, Quaternion, Vector3 } from 'three';
 import type { HumanoidRig } from './humanoid';
 
+/** Two unit quaternions represent the same orientation (sign-agnostic). */
+function quaternionsEqual(a: Quaternion, b: Quaternion): boolean {
+  return Math.abs(a.dot(b)) > 1 - 1e-7;
+}
+
 export interface LookAtOptions {
   /** Yaw limit per full chain, radians. Default 1.15 (~66°). */
   maxYaw?: number;
@@ -54,6 +59,13 @@ export class LookAt {
   private readonly qYaw = new Quaternion();
   private readonly up = new Vector3(0, 1, 0);
   private readonly right = new Vector3(1, 0, 0);
+  // Per-chain-bone bookkeeping so the gaze is idempotent: the animated
+  // base pose we composed onto, and the exact quaternion we last wrote.
+  // Without this, a bone the animation mixer does NOT reset every frame
+  // (e.g. Neck, which no locomotion clip animates) would accumulate our
+  // offset turn after turn and spin like a rotor.
+  private readonly base: Quaternion[] = [new Quaternion(), new Quaternion(), new Quaternion()];
+  private readonly written: (Quaternion | null)[] = [null, null, null];
 
   constructor(rig: HumanoidRig, options: LookAtOptions = {}) {
     this.rig = rig;
@@ -107,11 +119,23 @@ export class LookAt {
     const chain = [bones.Chest, bones.Neck, bones.Head];
     chain.forEach((bone, i) => {
       const share = this.distribution[i];
+      // Recover the animated base pose. If the bone still holds exactly
+      // what we wrote last frame, the mixer did not re-pose it, so its
+      // current value is our own leftover offset — restore the base we
+      // composed from. Otherwise the mixer (or anything else) re-posed it
+      // this frame, and its current value IS the fresh base.
+      const written = this.written[i];
+      if (written && quaternionsEqual(bone.quaternion, written)) {
+        bone.quaternion.copy(this.base[i]);
+      } else {
+        this.base[i].copy(bone.quaternion);
+      }
       // Yaw about +Y; pitch about +X (positive target height looks up →
-      // negative X rotation). Composed onto the animated pose.
+      // negative X rotation). Composed onto the animated base pose.
       this.qYaw.setFromAxisAngle(this.up, this.yaw * share);
       this.q.setFromAxisAngle(this.right, -this.pitch * share);
       bone.quaternion.multiply(this.qYaw).multiply(this.q);
+      (this.written[i] ??= new Quaternion()).copy(bone.quaternion);
     });
   }
 }

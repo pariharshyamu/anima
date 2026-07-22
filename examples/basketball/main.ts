@@ -609,6 +609,10 @@ game.onUpdate((t) => {
   // while the ball is carried right beside the character's head.
   playerHeadYaw: +player.rig.bones.Head.quaternion.y.toFixed(4),
   cpuHeadYaw: +cpu.rig.bones.Head.quaternion.y.toFixed(4),
+  // Total neck rotation (radians from rest) — no clip animates the Neck, so
+  // a compounding gaze would wind this up like a rotor. Must stay bounded.
+  playerNeckAngle: +player.rig.bones.Neck.quaternion.angleTo(new Quaternion()).toFixed(4),
+  cpuNeckAngle: +cpu.rig.bones.Neck.quaternion.angleTo(new Quaternion()).toFixed(4),
   ball: ball.getWorldPosition(new Vector3()).toArray().map((n) => +n.toFixed(2)),
   ballVel: ballVel.toArray().map((n) => +n.toFixed(2)),
   player: player.object.position.toArray().map((n) => +n.toFixed(2)),

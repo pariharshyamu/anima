@@ -108,6 +108,33 @@ describe('LookAt', () => {
     expect(maxYawSeen).toBeLessThan(0.05);
   });
 
+  it('does not wind the neck like a rotor over a long run (mixer never re-poses Neck)', () => {
+    // The real basketball bug: no locomotion clip animates the Neck bone,
+    // so the animation mixer never re-poses it. A gaze that composed its
+    // offset onto the bone's *previous output* accumulated every frame and
+    // spun the neck past full turns. Drive the true pipeline — Locomotion's
+    // mixer (which re-poses Chest/Head but not Neck) then a side gaze — and
+    // assert the neck settles to a bounded, non-accumulating angle.
+    const rig = createHumanoid({ seed: 7, height: 1.7 });
+    const loco = new Locomotion(rig, { smoothing: 1e6 });
+    const gaze = new LookAt(rig, { smoothing: 7, maxYaw: 0.9 });
+    gaze.target = new Vector3(3, 1.5, 3); // steady target ahead-and-left
+
+    const neckAngle = (): number => rig.bones.Neck.quaternion.angleTo(new Quaternion());
+    let settled = 0;
+    for (let i = 0; i < 400; i++) {
+      loco.update(1 / 60, loco.clips.runSpeed); // mixer re-poses Chest/Head, NOT Neck
+      gaze.update(1 / 60);
+      if (i === 120) settled = neckAngle(); // read a stabilised value early
+    }
+    const late = neckAngle();
+    // A rotor would carry the neck through many radians; a correct gaze keeps
+    // it within its clamped share, and the late value must match the settled
+    // one — proof it stopped growing rather than merely being sampled small.
+    expect(late).toBeLessThan(0.6);
+    expect(Math.abs(late - settled)).toBeLessThan(0.02);
+  });
+
   it('eases back to neutral when the target clears', () => {
     const rig = createHumanoid({ seed: 5 });
     const gaze = new LookAt(rig, { smoothing: 20 });
