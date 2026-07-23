@@ -34,6 +34,8 @@ import {
   createPath,
   createHouse,
   createWell,
+  createRuin,
+  createTower,
   createStall,
   createStatue,
   createBanner,
@@ -114,8 +116,9 @@ const place = (prop: Prop, x: number, z: number, ry = 0, blocks = true): Prop =>
 function makeTownHall(seed: number): Prop {
   const g = new Group();
   g.name = 'townhall';
-  const wall = createSurface('plaster', { color: 0xcabf9c, seed });
-  const stone = createSurface('stone', { color: palette.rock[0], seed: seed + 1 });
+  // A grand civic hall: ashlar block walls, a mossed stone plinth, tiled roof.
+  const wall = createSurface('ashlar', { color: 0xbdb6a4, seed });
+  const stone = createSurface('stone', { color: palette.rock[0], seed: seed + 1, cap: 0.35, capColor: 0x455a2c, capUp: 0.5 });
   const roofMat = createSurface('tile', { color: 0x7a3a2c, seed: seed + 2 });
   const beam = createSurface('wood', { color: palette.woodDark, seed: seed + 3 });
   const glassMat = new MeshStandardMaterial({
@@ -201,11 +204,24 @@ houseSpots.forEach(([x, z], i) => {
   houses.push(h);
 });
 
+// A cobblestone apron paves the plaza; it sinks into the slope so the edges
+// never float. Purely decorative — walkers still plant on the terrain.
+const plaza = new Mesh(
+  new CylinderGeometry(9.5, 9.5, 1.6, 44),
+  createSurface('cobblestone', { seed: 6 })
+);
+plaza.position.set(0, groundAt(0, 1) - 0.72, 1);
+scene.add(plaza);
+
 // The plaza: a fountain at its heart, statues flanking the hall, a well.
 place(createFountain({ seed: 4, palette }), 0, 2, 0);
 place(createStatue({ seed: 71, figure: 'figure', palette }), -5.5, -11, Math.PI);
 place(createStatue({ seed: 72, figure: 'obelisk', palette }), 5.5, -11, Math.PI);
 place(createWell({ seed: 3, palette }), -9, 4, 0);
+
+// A moss-reclaimed ruin and a timber watchtower at the town's edge.
+place(createRuin({ seed: 88, size: 4.2, palette }), -19, -17, 0.6);
+place(createTower({ seed: 44, palette }), 19, 15, 0);
 
 // A market row along the east side, with a cart and stacked crates.
 const trades = ['produce', 'pottery', 'bakery', 'textiles'] as const;

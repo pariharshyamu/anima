@@ -395,7 +395,7 @@ game.start();`,
 // the lanes, steering around the buildings. Nothing imports anything else.
 import { createHumanoid, Locomotion, FootIK, LookAt, Crowd, OUTFITS, attach } from 'anima3d';
 import { createTerrain, createSky, createLightingRig, applyFog, createDayCycle, createPath,
-         createHouse, createWell, createStall, createStatue, createBanner, createBunting,
+         createHouse, createWell, createRuin, createTower, createStall, createStatue, createBanner, createBunting,
          createBrazier, createCampfire, createFountain, createCart, createLamp, createFence,
          createTree, createRock, createBush, createGrassTuft, createSurface, scatter,
          collectObstacles, PALETTES } from 'scena3d';
@@ -432,8 +432,8 @@ const meshAt = (geo, mat, x, y, z) => { const m = new Mesh(geo, mat); m.position
 // --- Inline grand town hall with a bell tower.
 function makeTownHall(seed) {
   const g = new Group();
-  const wall = createSurface('plaster', { color: 0xcabf9c, seed });
-  const stone = createSurface('stone', { color: palette.rock[0], seed: seed + 1 });
+  const wall = createSurface('ashlar', { color: 0xbdb6a4, seed });
+  const stone = createSurface('stone', { color: palette.rock[0], seed: seed + 1, cap: 0.35, capColor: 0x455a2c, capUp: 0.5 });
   const roofMat = createSurface('tile', { color: 0x7a3a2c, seed: seed + 2 });
   const beam = createSurface('wood', { color: palette.woodDark, seed: seed + 3 });
   const glass = new MeshStandardMaterial({ color: palette.lampGlow, emissive: palette.lampGlow, emissiveIntensity: 1 });
@@ -470,10 +470,16 @@ const houses = [];
 [[-16, -6], [-15, 6], [-12, 15], [2, 17], [14, 13], [17, 2], [16, -9], [-7, -13], [-20, 0]]
   .forEach(([x, z], i) => { const h = createHouse({ seed: 40 + i, palette }); place(h, x, z, Math.atan2(-x, -z)); houses.push(h); });
 
+// A cobblestone apron paves the plaza; it sinks into the slope so edges never float.
+const plaza = new Mesh(new CylinderGeometry(9.5, 9.5, 1.6, 44), createSurface('cobblestone', { seed: 6 }));
+plaza.position.set(0, groundAt(0, 1) - 0.72, 1); scene.add(plaza);
+
 place(createFountain({ seed: 4, palette }), 0, 2, 0);
 place(createStatue({ seed: 71, figure: 'figure', palette }), -5, -10.5, Math.PI);
 place(createStatue({ seed: 72, figure: 'obelisk', palette }), 5, -10.5, Math.PI);
 place(createWell({ seed: 3, palette }), -8.5, 4, 0);
+place(createRuin({ seed: 88, size: 4.2, palette }), -19, -17, 0.6);
+place(createTower({ seed: 44, palette }), 19, 15, 0);
 ['produce', 'pottery', 'bakery', 'textiles'].forEach((goods, i) =>
   place(createStall({ seed: 30 + i, goods, palette }), 12.5, -5 + i * 3, -Math.PI / 2));
 place(createCart({ seed: 2, style: 'wagon', cargo: 'barrels', palette }), 8.5, 6, 0.6);
