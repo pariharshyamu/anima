@@ -53,6 +53,7 @@ import {
   createSurface,
   createWindField,
   applyWind,
+  createPrecipitation,
   scatter,
   collectObstacles,
   PALETTES,
@@ -403,6 +404,18 @@ const cycle = createDayCycle({
   timeOfDay: fixedT ? parseFloat(fixedT) : 0.38, // bright warm morning by default
 });
 if (!fixedT) game.onUpdate((t) => cycle.update(t.delta));
+
+// ------------------------------------------------------------- weather
+// ?weather=snow settles on the roofs; ?weather=rain slants along the breeze.
+const weatherType = params.get('weather');
+if (weatherType === 'snow' || weatherType === 'rain') {
+  const w =
+    weatherType === 'snow'
+      ? createPrecipitation({ type: 'snow', wind, count: 2600, size: 6, opacity: 0.62 })
+      : createPrecipitation({ type: 'rain', wind });
+  scene.add(w.object);
+  if (weatherType === 'snow') w.accumulate(scene, { max: 0.72, rate: 0.25, capUp: 0.32 });
+}
 
 // ------------------------------------------------------- the animation
 const focus = new Vector3();
