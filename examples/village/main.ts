@@ -54,12 +54,15 @@ import {
   createWindField,
   applyWind,
   createWeather,
+  createSeasons,
   createFlock,
   createHerd,
   treeBiome,
+  treeLOD,
   scatter,
   type TreeSpecies,
   type TreeSeason,
+  type Season,
   collectObstacles,
   PALETTES,
   type Prop,
@@ -289,11 +292,32 @@ const grass = scatter({
 });
 scene.add(grass.group);
 
+// A distant redwood ridge closing the valley: towering sequoias among pines,
+// each paired with its billboard impostor via treeLOD. Out on the ring they
+// stand as single camera-facing quads; as the camera swings near they resolve
+// to full geometry — the LOD swap driven each frame (SCENA's createImpostor).
+const ridge = scatter({
+  seed: 33,
+  area: { min: { x: -58, z: -58 }, max: { x: 58, z: 58 } },
+  surface: groundAt,
+  density: 0.02,
+  minSpacing: 5,
+  items: [
+    treeLOD('sequoia', { palette, weight: 2 }),
+    treeLOD('pine', { palette, weight: 3 }),
+  ],
+  lod: { distance: 34, tileSize: 20 },
+  mask: (x, z) => Math.hypot(x, z) > 40, // a far ring only, well beyond the town
+});
+scene.add(ridge.group);
+
 // One breeze over the whole valley: the surrounding wood and the meadow grass
 // lean with the same travelling gust (SCENA's WindField).
 const wind = createWindField({ direction: 40, strength: 0.32, gust: 0.6, waveLength: 7, waveSpeed: 2.2 });
 applyWind(forest.group, { field: wind, height: 4, stiffness: 2.4, anchor: 1 });
 applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 });
+applyWind(ridge.group, { field: wind, height: 10, stiffness: 3, anchor: 1.5 });
+game.onUpdate(() => ridge.update?.(game.camera));
 
 // Ornamental planting — species chosen for place, all leaning in the one breeze:
 // blossoming cherries by the plaza, willows weeping over the well, a cypress
@@ -311,6 +335,23 @@ plantOrn('willow', -12, 7, 204);
   plantOrn('cypress', x, -19, 212 + i);
 });
 plantOrn('sequoia', 40, 34, 220);
+
+// ------------------------------------------------------------- seasons
+// ?season=<spring|summer|autumn|winter|cycle> turns the whole valley's foliage
+// with one createSeasons controller — the wood, the ridge and the ornamentals
+// re-graded together in the shader (only tagged canopies; trunks stay planted).
+// It composes with the wind, so the trees sway *and* turn. Default: summer
+// (the as-authored look), so nothing changes unless you ask.
+const seasonParam = params.get('season');
+const seasons = createSeasons({ initial: 'summer' });
+seasons.apply(scene);
+if (seasonParam && seasonParam !== 'cycle') {
+  seasons.set(seasonParam as Season, { fade: 5 });
+} else if (seasonParam === 'cycle') {
+  const ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+  let si = 1;
+  setInterval(() => { si = (si + 1) % ORDER.length; seasons.set(ORDER[si], { fade: 4 }); }, 8000);
+}
 
 // Obstacles the NPCs steer around: buildings + trees.
 const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
@@ -502,12 +543,22 @@ game.onUpdate((time) => {
 game.start();
 
 // Diagnostics for headless verification.
-(window as unknown as { villageDebug: () => unknown }).villageDebug = () => {
+(window as unknown as { villageDebug: (settle?: boolean) => unknown }).villageDebug = (settle) => {
   const gl = game.renderer.getContext();
+  // Force the season fade to complete (headless SwiftShader renders too slowly
+  // for the self-driven, dt-clamped fade to finish in wall-clock time).
+  if (settle) {
+    for (let i = 0; i < 120; i++) seasons.update(0.1);
+    game.renderer.render(scene, game.camera);
+  }
+  const su = seasons.uniforms;
   return {
     drawCalls: game.renderer.info.render.calls,
     triangles: game.renderer.info.render.triangles,
     glError: gl.getError(),
+    seasonsGraded: seasons.materials.length,
+    seasonTintAmt: +(su.uSeasonTintAmt.value as number).toFixed(3),
+    seasonSat: +(su.uSeasonSat.value as number).toFixed(3),
     fullRigs: cast.length,
     crowd: 55,
     walkers: agents.length,

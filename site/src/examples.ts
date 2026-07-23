@@ -397,7 +397,7 @@ import { createHumanoid, Locomotion, FootIK, LookAt, Crowd, OUTFITS, attach } fr
 import { createTerrain, createSky, createLightingRig, applyFog, createDayCycle, createPath,
          createHouse, createWell, createRuin, createTower, createStall, createStatue, createBanner, createBunting,
          createBrazier, createCampfire, createFountain, createCart, createLamp, createFence,
-         createTree, createRock, createBush, createGrassTuft, createSurface, createWindField, applyWind, createFlock, createHerd, scatter,
+         createTree, createRock, createBush, createGrassTuft, createSurface, createWindField, applyWind, createSeasons, createFlock, createHerd, scatter,
          collectObstacles, PALETTES } from 'scena3d';
 import { Game, MotionAgent, FollowPath, Path, ObstacleAvoidance, Separation } from 'gama3d';
 import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
@@ -511,6 +511,14 @@ scene.add(grass.group);
 const wind = createWindField({ direction: 40, strength: 0.32, gust: 0.6, waveLength: 7, waveSpeed: 2.2 });
 applyWind(forest.group, { field: wind, height: 4, stiffness: 2.4, anchor: 1 });
 applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 });
+// One createSeasons turns the whole wood — spring, summer, autumn, winter —
+// re-grading the canopies in the shader (only foliage; trunks stay). It rides
+// the same wind, so the trees sway and turn together. Auto-cycling.
+const seasons = createSeasons({ initial: 'summer' });
+seasons.apply(forest.group);
+const SEASON = ['spring', 'summer', 'autumn', 'winter'];
+let sIdx = 1;
+setInterval(() => { sIdx = (sIdx + 1) % 4; seasons.set(SEASON[sIdx], { fade: 4 }); }, 9000);
 // Birds wheeling around the bell tower.
 const birds = createFlock({ type: 'birds', count: 44, center: [0, 16, -14], bounds: [16, 5, 16], circle: 11, seed: 12 });
 scene.add(birds.object);
