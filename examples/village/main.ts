@@ -56,7 +56,10 @@ import {
   createWeather,
   createFlock,
   createHerd,
+  treeBiome,
   scatter,
+  type TreeSpecies,
+  type TreeSeason,
   collectObstacles,
   PALETTES,
   type Prop,
@@ -267,9 +270,10 @@ const forest = scatter({
   density: 0.05,
   minSpacing: 1.8,
   items: [
-    { create: (r) => createTree({ seed: r.int(1, 1e9), palette }), weight: 4, variants: 6 },
-    { create: (r) => createRock({ seed: r.int(1, 1e9), palette }), weight: 1 },
-    { create: (r) => createBush({ seed: r.int(1, 1e9), palette }), weight: 1 },
+    // A temperate wood — oak, pine, birch and maple mixed by biome.
+    ...treeBiome('temperate', { palette, variants: 5 }),
+    { create: (r) => createRock({ seed: r.int(1, 1e9), palette }), weight: 2 },
+    { create: (r) => createBush({ seed: r.int(1, 1e9), palette }), weight: 2 },
   ],
   mask: (x, z) => !inTown(x, z) && !lane.contains(x, z),
 });
@@ -290,6 +294,23 @@ scene.add(grass.group);
 const wind = createWindField({ direction: 40, strength: 0.32, gust: 0.6, waveLength: 7, waveSpeed: 2.2 });
 applyWind(forest.group, { field: wind, height: 4, stiffness: 2.4, anchor: 1 });
 applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 });
+
+// Ornamental planting — species chosen for place, all leaning in the one breeze:
+// blossoming cherries by the plaza, willows weeping over the well, a cypress
+// avenue framing the town hall, and a lone sequoia landmark out on the meadow.
+// Decorative (non-blocking), so they never fence in the walkers.
+const plantOrn = (species: TreeSpecies, x: number, z: number, seed: number, season?: TreeSeason): void => {
+  place(createTree({ species, seed, palette, wind, season }), x, z, 0, false);
+};
+plantOrn('sakura', 6, 9, 201, 'spring');
+plantOrn('sakura', -4, 9, 202, 'spring');
+plantOrn('willow', -13, 3, 203);
+plantOrn('willow', -12, 7, 204);
+[-8, 8].forEach((x, i) => {
+  plantOrn('cypress', x, -11, 210 + i);
+  plantOrn('cypress', x, -19, 212 + i);
+});
+plantOrn('sequoia', 40, 34, 220);
 
 // Obstacles the NPCs steer around: buildings + trees.
 const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
