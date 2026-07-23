@@ -397,7 +397,7 @@ import { createHumanoid, Locomotion, FootIK, LookAt, Crowd, OUTFITS, attach } fr
 import { createTerrain, createSky, createLightingRig, applyFog, createDayCycle, createPath,
          createHouse, createWell, createRuin, createTower, createStall, createStatue, createBanner, createBunting,
          createBrazier, createCampfire, createFountain, createCart, createLamp, createFence,
-         createTree, createRock, createBush, createGrassTuft, createSurface, createWindField, applyWind, createFlock, scatter,
+         createTree, createRock, createBush, createGrassTuft, createSurface, createWindField, applyWind, createFlock, createHerd, scatter,
          collectObstacles, PALETTES } from 'scena3d';
 import { Game, MotionAgent, FollowPath, Path, ObstacleAvoidance, Separation } from 'gama3d';
 import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
@@ -514,6 +514,9 @@ applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 
 // Birds wheeling around the bell tower.
 const birds = createFlock({ type: 'birds', count: 44, center: [0, 16, -14], bounds: [16, 5, 16], circle: 11, seed: 12 });
 scene.add(birds.object);
+// Deer grazing the meadow beyond the village, feet on the terrain.
+const deer = createHerd({ type: 'deer', count: 9, center: [32, 28], radius: 12, ground: groundAt, seed: 21 });
+scene.add(deer.object);
 const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
 
 // --- Farmers, villagers, knights.

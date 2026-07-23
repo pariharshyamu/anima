@@ -55,6 +55,7 @@ import {
   applyWind,
   createPrecipitation,
   createFlock,
+  createHerd,
   scatter,
   collectObstacles,
   PALETTES,
@@ -421,6 +422,10 @@ if (weatherType === 'snow' || weatherType === 'rain') {
 // A flock of birds wheeling around the bell tower.
 const birds = createFlock({ type: 'birds', count: 44, center: [0, 16, -15], bounds: [16, 5, 16], circle: 11, seed: 12 });
 scene.add(birds.object);
+
+// A herd of deer grazing the meadow beyond the village, feet on the terrain.
+const deer = createHerd({ type: 'deer', count: 9, center: [34, 30], radius: [12, 12], ground: groundAt, seed: 21 });
+scene.add(deer.object);
 
 // ------------------------------------------------------- the animation
 const focus = new Vector3();
