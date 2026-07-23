@@ -397,7 +397,7 @@ import { createHumanoid, Locomotion, FootIK, LookAt, Crowd, OUTFITS, attach } fr
 import { createTerrain, createSky, createLightingRig, applyFog, createDayCycle, createPath,
          createHouse, createWell, createRuin, createTower, createStall, createStatue, createBanner, createBunting,
          createBrazier, createCampfire, createFountain, createCart, createLamp, createFence,
-         createTree, createRock, createBush, createGrassTuft, createSurface, scatter,
+         createTree, createRock, createBush, createGrassTuft, createSurface, createWindField, applyWind, scatter,
          collectObstacles, PALETTES } from 'scena3d';
 import { Game, MotionAgent, FollowPath, Path, ObstacleAvoidance, Separation } from 'gama3d';
 import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
@@ -507,6 +507,10 @@ const grass = scatter({ seed: 22, area: { min: { x: -34, z: -34 }, max: { x: 34,
   items: [{ create: (r) => createGrassTuft({ seed: r.int(1, 1e9), palette }), variants: 8 }],
   mask: (x, z) => !lane.contains(x, z) && Math.hypot(x, z) > 11 });
 scene.add(grass.group);
+// One breeze over the valley — wood and meadow lean with the same gust.
+const wind = createWindField({ direction: 40, strength: 0.32, gust: 0.6, waveLength: 7, waveSpeed: 2.2 });
+applyWind(forest.group, { field: wind, height: 4, stiffness: 2.4, anchor: 1 });
+applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 });
 const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
 
 // --- Farmers, villagers, knights.

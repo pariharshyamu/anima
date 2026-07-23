@@ -51,6 +51,8 @@ import {
   createBush,
   createGrassTuft,
   createSurface,
+  createWindField,
+  applyWind,
   scatter,
   collectObstacles,
   PALETTES,
@@ -279,6 +281,12 @@ const grass = scatter({
   mask: (x, z) => !lane.contains(x, z) && (Math.hypot(x, z) > 11 || Math.hypot(x, z) > 24),
 });
 scene.add(grass.group);
+
+// One breeze over the whole valley: the surrounding wood and the meadow grass
+// lean with the same travelling gust (SCENA's WindField).
+const wind = createWindField({ direction: 40, strength: 0.32, gust: 0.6, waveLength: 7, waveSpeed: 2.2 });
+applyWind(forest.group, { field: wind, height: 4, stiffness: 2.4, anchor: 1 });
+applyWind(grass.group, { field: wind, height: 0.5, stiffness: 1.2, anchor: 0.03 });
 
 // Obstacles the NPCs steer around: buildings + trees.
 const obstacles = [...collectObstacles(buildings), ...forest.obstacles];
