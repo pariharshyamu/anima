@@ -54,6 +54,7 @@ import {
   createWindField,
   applyWind,
   createPrecipitation,
+  createFlock,
   scatter,
   collectObstacles,
   PALETTES,
@@ -416,6 +417,10 @@ if (weatherType === 'snow' || weatherType === 'rain') {
   scene.add(w.object);
   if (weatherType === 'snow') w.accumulate(scene, { max: 0.72, rate: 0.25, capUp: 0.32 });
 }
+
+// A flock of birds wheeling around the bell tower.
+const birds = createFlock({ type: 'birds', count: 44, center: [0, 16, -15], bounds: [16, 5, 16], circle: 11, seed: 12 });
+scene.add(birds.object);
 
 // ------------------------------------------------------- the animation
 const focus = new Vector3();
