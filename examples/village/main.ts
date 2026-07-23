@@ -11,8 +11,8 @@
  *
  * Nothing here changes the libraries — it is pure consumer code.
  *
- *   ?view=aerial | plaza | street   pick a framing
- *   ?t=0.82                         freeze the time of day (0..1)
+ *   ?view=aerial | plaza | street | tavern   pick a framing (tavern = indoors)
+ *   ?t=0.82                                  freeze the time of day (0..1)
  */
 import {
   BoxGeometry,
@@ -55,6 +55,9 @@ import {
   applyWind,
   createWeather,
   createSeasons,
+  createRoom,
+  furnishRoom,
+  createInteriorLight,
   createFlock,
   createHerd,
   treeBiome,
@@ -520,6 +523,66 @@ game.onUpdate((t) => {
   }
 });
 
+// ------------------------------------------------------ tavern interior
+// ?view=tavern steps indoors: a createRoom taproom furnished by furnishRoom,
+// lit by createInteriorLight bound to the SAME day cycle as the village —
+// dusk in the lanes is dusk through these windows, and the hearth's flicker
+// takes over as the shafts die. Villagers inhabit the furnisher's markers:
+// one at the bar, one warming at the hearth, one pacing the floor.
+const TAVERN = new Vector3(0, 0, -300); // its own interior cell, off the map
+const taproom = createRoom(
+  [
+    '##H######',
+    '#.......#',
+    'W...~...W',
+    '#.......#',
+    '#.......#',
+    '##WDW####',
+  ],
+  { seed: 41, palette }
+);
+taproom.group.position.copy(TAVERN);
+scene.add(taproom.group);
+const taps = furnishRoom(taproom, { role: 'tavern', seed: 4, palette });
+const taplight = createInteriorLight(taproom, { cycle, shaftStrength: 0.2 });
+game.onUpdate(() => taplight.update());
+taproom.setActive(view === 'tavern');
+
+const tavernCast: Array<{ rig: HumanoidRig; loco: Locomotion; ik: FootIK }> = [];
+function tavernNpc(seed: number, kind: Kind, local: Vector3, faceLocal: Vector3) {
+  const r = makeNpc(seed, kind);
+  r.object.position.set(local.x, 0, local.z);
+  taproom.group.add(r.object); // parented: setActive hides the whole cell
+  r.object.lookAt(TAVERN.x + faceLocal.x, 0, TAVERN.z + faceLocal.z);
+  const entry = { rig: r, loco: new Locomotion(r), ik: new FootIK(r, { ground: () => 0 }) };
+  tavernCast.push(entry);
+  return entry;
+}
+const barSpot = taps.markers.work[0];
+const counterPos = taps.props.find((p) => p.object.name === 'counter')?.object.position;
+if (barSpot) tavernNpc(401, 'villager', barSpot, counterPos ?? barSpot);
+const hearthSpot = taps.markers.hearth[0];
+if (hearthSpot) tavernNpc(402, 'farmer', hearthSpot, taproom.hearths[0].position);
+const paceA = new Vector3(-2, 0, 3.6);
+const paceB = new Vector3(-2.7, 0, -0.6);
+const pacer = tavernNpc(403, 'villager', paceA, paceB);
+const paceVel = new Vector3();
+game.onUpdate((t) => {
+  const k = (t.elapsed % 14) / 14;
+  const forth = k < 0.5;
+  const s = forth ? k * 2 : (1 - k) * 2;
+  pacer.rig.object.position.copy(paceA).lerp(paceB, s).setY(0);
+  paceVel.copy(paceB).sub(paceA).normalize().multiplyScalar(forth ? 1.1 : -1.1);
+  pacer.rig.object.rotation.y = Math.atan2(paceVel.x, paceVel.z);
+  pacer.loco.update(t.delta, paceVel);
+  pacer.ik.update();
+  for (const c of tavernCast) {
+    if (c === pacer) continue;
+    c.loco.update(t.delta, 0);
+    c.ik.update();
+  }
+});
+
 // ------------------------------------------------------------- camera
 const centre = at(0, 0);
 game.onUpdate((time) => {
@@ -534,6 +597,9 @@ game.onUpdate((time) => {
     focus.set(11, centre.y + 1.5, -6 + Math.sin(e * 0.2) * 4);
     game.camera.position.set(4 + Math.sin(e * 0.1) * 2, centre.y + 1.7, -2);
     game.camera.lookAt(focus);
+  } else if (view === 'tavern') {
+    game.camera.position.set(TAVERN.x + 0.8 + Math.sin(e * 0.12) * 0.5, 2.0, TAVERN.z + 3.7);
+    game.camera.lookAt(TAVERN.x, 1.15, TAVERN.z - 3.4);
   } else {
     game.camera.position.set(Math.cos(e * 0.06) * 30, centre.y + 15, Math.sin(e * 0.06) * 30);
     game.camera.lookAt(centre.x, centre.y + 2, centre.z);
@@ -562,6 +628,14 @@ game.start();
     fullRigs: cast.length,
     crowd: 55,
     walkers: agents.length,
+    tavern: {
+      active: taproom.group.visible,
+      furniture: taps.props.length,
+      sit: taps.markers.sit.length,
+      work: taps.markers.work.length,
+      cast: tavernCast.length,
+      pacerX: +pacer.rig.object.position.x.toFixed(2),
+    },
     npcPositions: agents.slice(0, 3).map((a) => a.owner.position.toArray().map((n) => +n.toFixed(2))),
   };
 };
