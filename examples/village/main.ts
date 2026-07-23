@@ -53,7 +53,7 @@ import {
   createSurface,
   createWindField,
   applyWind,
-  createPrecipitation,
+  createWeather,
   createFlock,
   createHerd,
   scatter,
@@ -408,15 +408,20 @@ const cycle = createDayCycle({
 if (!fixedT) game.onUpdate((t) => cycle.update(t.delta));
 
 // ------------------------------------------------------------- weather
-// ?weather=snow settles on the roofs; ?weather=rain slants along the breeze.
+// ?weather=<state> rolls a named sky in through the createWeather controller —
+// clear, overcast, fog, rain, storm, snow, blizzard. It reuses the village's
+// wind (so the trees already bound to it lean harder as a storm rises) and
+// settles snow on the roofs; the day cycle keeps ownership of sky, fog & light.
 const weatherType = params.get('weather');
-if (weatherType === 'snow' || weatherType === 'rain') {
-  const w =
-    weatherType === 'snow'
-      ? createPrecipitation({ type: 'snow', wind, count: 2600, size: 6, opacity: 0.62 })
-      : createPrecipitation({ type: 'rain', wind });
-  scene.add(w.object);
-  if (weatherType === 'snow') w.accumulate(scene, { max: 0.72, rate: 0.25, capUp: 0.32 });
+if (weatherType) {
+  const weather = createWeather(scene, {
+    wind,
+    fog: false,
+    background: false,
+    accumulateOn: scene,
+    initial: 'clear',
+  });
+  weather.set(weatherType, { fade: 5 });
 }
 
 // A flock of birds wheeling around the bell tower.
