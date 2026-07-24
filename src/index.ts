@@ -38,3 +38,13 @@ export {
 export { FootIK, type FootIKOptions } from './ik';
 export { LookAt, type LookAtOptions } from './lookAt';
 export { maskClip, createWaveClip, UPPER_BODY } from './overlay';
+export {
+  Interaction,
+  createPoseClip,
+  createLoopClip,
+  GRIPS,
+  type InteractionSlot,
+  type PoseName,
+  type LoopName,
+  type UseOptions,
+} from './interact';

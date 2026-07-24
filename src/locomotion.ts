@@ -58,6 +58,12 @@ export class Locomotion {
   /** Current blend weights, exposed for debugging and tests. */
   readonly weights = { idle: 1, walk: 0, run: 0 };
 
+  /**
+   * Master gait influence 0–1. An `Interaction` ramps this toward 0 while a
+   * pose (sit, sleep, drive…) takes the body over, and back to 1 on release.
+   */
+  influence = 1;
+
   private readonly footstepListeners = new Set<FootstepListener>();
   private previousPhase = 0;
 
@@ -160,9 +166,9 @@ export class Locomotion {
     this.weights.idle = idle;
     this.weights.walk = walk;
     this.weights.run = run;
-    this.idleAction.weight = idle;
-    this.walkAction.weight = walk;
-    this.runAction.weight = run;
+    this.idleAction.weight = idle * this.influence;
+    this.walkAction.weight = walk * this.influence;
+    this.runAction.weight = run * this.influence;
 
     // Stride matching: play the gait at the rate that makes the blended
     // reference speed equal the actual speed (clamped to stay natural).

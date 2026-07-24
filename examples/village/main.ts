@@ -22,6 +22,7 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  Object3D,
   SphereGeometry,
   Vector3,
 } from 'three';
@@ -76,6 +77,7 @@ import {
   FootIK,
   LookAt,
   Crowd,
+  Interaction,
   OUTFITS,
   attach,
   createWaveClip,
@@ -563,6 +565,36 @@ const counterPos = taps.props.find((p) => p.object.name === 'counter')?.object.p
 if (barSpot) tavernNpc(401, 'villager', barSpot, counterPos ?? barSpot);
 const hearthSpot = taps.markers.hearth[0];
 if (hearthSpot) tavernNpc(402, 'farmer', hearthSpot, taproom.hearths[0].position);
+// Guests actually SIT: the furnisher's sit markers become interaction
+// slots — anima's sit pose takes the body over from locomotion.
+const sitters: Array<{ loco: Locomotion; act: Interaction }> = [];
+taps.markers.sit.slice(0, 2).forEach((marker, i) => {
+  const r = makeNpc(410 + i, 'villager');
+  taproom.group.add(r.object);
+  const anchor = new Object3D();
+  anchor.position.set(marker.x, 0, marker.z);
+  // Face the nearest table.
+  let towards: Vector3 | null = null;
+  let bd = 1e9;
+  for (const p of taps.props) {
+    if (!p.object.name.startsWith('table')) continue;
+    const d = p.object.position.distanceTo(marker);
+    if (d < bd) { bd = d; towards = p.object.position; }
+  }
+  if (towards) anchor.rotation.y = Math.atan2(towards.x - marker.x, towards.z - marker.z);
+  taproom.group.add(anchor);
+  const loco = new Locomotion(r);
+  const act = new Interaction(r, loco);
+  act.use({ kind: 'bench', anchor, pose: 'sit' }, { fade: 0.01 + i * 0.2 });
+  sitters.push({ loco, act });
+});
+game.onUpdate((t) => {
+  for (const s of sitters) {
+    s.loco.update(t.delta, 0);
+    s.act.update(t.delta);
+  }
+});
+
 const paceA = new Vector3(-2, 0, 3.6);
 const paceB = new Vector3(-2.7, 0, -0.6);
 const pacer = tavernNpc(403, 'villager', paceA, paceB);
@@ -635,6 +667,8 @@ game.start();
       work: taps.markers.work.length,
       cast: tavernCast.length,
       pacerX: +pacer.rig.object.position.x.toFixed(2),
+      seated: sitters.length,
+      sitWeight: +(sitters[0]?.act.poseWeight ?? 0).toFixed(3),
     },
     npcPositions: agents.slice(0, 3).map((a) => a.owner.position.toArray().map((n) => +n.toFixed(2))),
   };

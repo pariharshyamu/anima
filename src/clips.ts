@@ -34,8 +34,11 @@ export interface LocomotionClips {
   runSpeed: number;
 }
 
-/** One frame of a sampled pose. */
-class Pose {
+/**
+ * One frame of a sampled pose.
+ * Exported for the interaction module's pose clips; not public API.
+ */
+export class Pose {
   rotations = new Map<BoneName, Quaternion>();
   hipsY = 0;
 
@@ -50,7 +53,8 @@ class Pose {
   }
 }
 
-function buildClip(
+/** Sample a pose function into a loop-seamless clip. Internal export. */
+export function buildClip(
   rig: HumanoidRig,
   name: string,
   duration: number,
