@@ -202,9 +202,10 @@ export interface InteractionSlot {
   kind?: string;
   /** World-space transform target for the character's root. */
   anchor: Object3D;
-  pose: PoseName;
+  /** A PoseName — typed loosely so SCENA's string-typed slots drop in. */
+  pose: PoseName | (string & {});
   /** Optional arms loop layered over the pose ('strum', 'hammer', 'knead'). */
-  loop?: LoopName;
+  loop?: LoopName | (string & {});
 }
 
 export interface UseOptions {
@@ -271,14 +272,14 @@ export class Interaction {
     const key = slot.pose;
     let clip = this.clipCache.get(key);
     if (!clip) {
-      clip = createPoseClip(this.rig, slot.pose);
+      clip = createPoseClip(this.rig, slot.pose as PoseName);
       this.clipCache.set(key, clip);
     }
     this.action = this.loco.overlay(clip, { fadeIn: this.fade });
     if (slot.loop) {
       let loop = this.clipCache.get(`loop:${slot.loop}`);
       if (!loop) {
-        loop = createLoopClip(this.rig, slot.loop);
+        loop = createLoopClip(this.rig, slot.loop as LoopName);
         this.clipCache.set(`loop:${slot.loop}`, loop);
       }
       this.loopAction = this.loco.overlay(loop, { fadeIn: this.fade + 0.2 });
