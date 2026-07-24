@@ -999,6 +999,138 @@ const camTarget = new Vector3(5, 5, 12);
 game.camera.position.set(5, 5, 12);
 game.start();`
   },
+
+  {
+    id: 'gathering',
+    title: 'Gatherings (choosing a seat · sitting down · talking)',
+    group: 'Games',
+    code: `// Several people to one prop — and the behaviour that makes them read as
+// people rather than mannequins. They arrive on their own clocks, CHOOSE a
+// seat (spreading along the bench before filling the gaps), walk to the spot
+// beside it, turn, and lower into it. Seated, they never quite hold still,
+// and the table's gaze passes round with whoever is talking.
+import { createSky, createLightingRig, applyFog, createSurface, createTree,
+         createDiningTable, createGameTable, createLongBench, PALETTES } from 'scena3d';
+import { Conversation, createHumanoid, FootIK, Interaction, Locomotion, LookAt,
+         Mannerisms, OUTFITS } from 'anima3d';
+import { Game, MotionAgent, FollowPath, Path, Occupancy, stagger } from 'gama3d';
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(140, 140), createSurface('dirt', { seed: 3 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+[[-9, -7, 31], [9, -6, 32], [-10, 6, 33]].forEach(([x, z, seed]) => {
+  const t = createTree({ species: 'oak', seed, height: 5.5, palette });
+  t.object.position.set(x, 0, z); scene.add(t.object);
+});
+
+const place = (g, x, z, rotY = 0) => {
+  g.object.position.set(x, 0, z); g.object.rotation.y = rotY;
+  scene.add(g.object); g.object.updateWorldMatrix(true, true); return g;
+};
+const table = place(createDiningTable({ seed: 5, seats: 4, style: 'round', palette }), -3.2, -0.4);
+const board = place(createGameTable({ seed: 9, game: 'chess', palette }), 3.8, -2.4, 0.5);
+const bench = place(createLongBench({ seed: 7, seats: 4, palette }), 2.2, 3.4);
+
+// personalSpace is what makes strangers spread along the bench instead of
+// all piling onto the nearest end.
+const seating = new Map([
+  [table, new Occupancy(table.seats, { seed: 2, personalSpace: 0.6, spacing: 1.1 })],
+  [board, new Occupancy(board.seats, { seed: 3, personalSpace: 0 })],
+  [bench, new Occupancy(bench.seats, { seed: 4, personalSpace: 1.6, spacing: 2.4, whim: 0 })],
+]);
+
+const world = (o) => { o.updateWorldMatrix(true, false); return o.getWorldPosition(new Vector3()); };
+const villagers = [];
+function makeVillager(name, seed, home, from, delay) {
+  const rig = createHumanoid({ seed, palette: OUTFITS.villager });
+  const loco = new Locomotion(rig);
+  const body = game.world.spawn(name);
+  body.add(rig.object); body.position.copy(from);
+  const agent = body.addComponent(new MotionAgent({ maxSpeed: 1.6, maxForce: 14, planar: true }));
+  const v = { name, rig, loco, ik: new FootIK(rig, { ground: () => 0 }), gaze: new LookAt(rig),
+    // Same seed for body and habits: each villager looks AND behaves like themselves.
+    habits: new Mannerisms(rig, loco, { seed }), interaction: new Interaction(rig, loco),
+    agent, body, home, seat: null, state: 'waiting', wait: delay };
+  villagers.push(v); return v;
+}
+
+const PARTIES = [
+  { role: 'diner', home: table, from: new Vector3(-6.5, 0, 5.5), delays: stagger(4, { spread: 1.0, lead: 0.2, seed: 6 }) },
+  { role: 'player', home: board, from: new Vector3(7.5, 0, 2.5), delays: stagger(2, { spread: 0.9, lead: 0.6, seed: 8 }) },
+  // Slow-drip, so you can watch each newcomer pick a seat away from the rest.
+  { role: 'sitter', home: bench, from: new Vector3(-5.5, 0, 8.5), delays: stagger(4, { spread: 2.8, lead: 1.6, seed: 9 }) },
+];
+let index = 0;
+for (const party of PARTIES) {
+  party.delays.forEach((delay, i) => {
+    const from = party.from.clone().add(new Vector3((i % 2 ? 1 : -1) * (0.6 + i * 0.5), 0, i * 0.7));
+    makeVillager(party.role + i, 20 + index * 7, party.home, from, delay);
+    index++;
+  });
+}
+
+const talkers = (g) => villagers.filter((v) => v.home === g)
+  .map((v) => ({ gaze: v.gaze, head: v.rig.bones.Head }));
+const chats = new Map([
+  [table, new Conversation(talkers(table), { seed: 12, focus: table.focus, turn: 4.5, wander: 0.3 })],
+  [board, new Conversation(talkers(board), { seed: 13, focus: board.focus, turn: 6, wander: 0.45 })],
+  [bench, new Conversation(talkers(bench), { seed: 14, focus: bench.focus, turn: 7, wander: 0.6 })],
+]);
+for (const chat of chats.values()) chat.enabled = false;
+
+const walkTo = (v, target) => {
+  v.agent.clearBehaviors(); v.agent.maxSpeed = 1.6;
+  v.agent.addBehavior(new FollowPath(new Path([v.body.position.clone(), target], false), 0.35));
+};
+function goSit(v) {
+  const seat = seating.get(v.home).claim(v, { from: v.body.position });
+  if (!seat) return;
+  v.seat = seat; v.state = 'walking';
+  walkTo(v, world(seat.approach ?? seat.anchor));   // to the spot BESIDE it
+}
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  for (const v of villagers) {
+    if (v.state === 'waiting') {
+      v.wait -= dt; if (v.wait <= 0) goSit(v);
+    } else if (v.state === 'walking') {
+      if (v.body.position.distanceTo(world(v.seat.approach ?? v.seat.anchor)) < 0.45) {
+        v.state = 'sitting';
+        v.agent.clearBehaviors(); v.agent.maxSpeed = 0; v.agent.velocity.set(0, 0, 0);
+        // The slot carries its approach anchor, so use() STAGES the sit:
+        // stand beside it -> turn -> lower, pose fading in on the way down.
+        v.interaction.use(v.seat, { fade: 0.4, settle: 0.75 });
+        v.habits.context = 'seated';
+      }
+    } else if (v.state === 'sitting' && v.interaction.phase === 'held') {
+      v.state = 'seated';
+      const company = villagers.filter((o) => o.home === v.home && o.state === 'seated').length;
+      const chat = chats.get(v.home);
+      if (chat && company >= 2) { chat.enabled = true; chat.retarget(); }
+    }
+    v.loco.update(dt, v.state === 'walking' ? v.agent.velocity : 0);
+    v.interaction.update(dt);
+    v.ik.update();
+    v.habits.update(dt);
+  }
+  // Conversations write gaze targets; LookAt does the turning, and runs last.
+  for (const chat of chats.values()) chat.update(dt);
+  for (const v of villagers) v.gaze.update(dt);
+
+  const a = t.elapsed * 0.06;
+  game.camera.position.set(Math.sin(a) * 11.5, 5.4, Math.cos(a) * 11.5 + 2);
+  game.camera.lookAt(0, 1.0, 0.6);
+});
+game.camera.position.set(0, 5.4, 13);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {

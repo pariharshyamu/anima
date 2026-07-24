@@ -294,12 +294,31 @@ export interface InteractionSlot {
   pose: PoseName | (string & {});
   /** Optional arms loop layered over the pose ('strum', 'hammer', 'knead'). */
   loop?: LoopName | (string & {});
+  /**
+   * Where to stand before taking the slot — SCENA's gatherings publish one
+   * per seat. Its presence turns `use()` into a staged sit: arrive here,
+   * turn, *then* lower. See `UseOptions.approach`.
+   */
+  approach?: Object3D;
 }
 
 export interface UseOptions {
   /** Blend/tween duration in seconds. Default 0.45. */
   fade?: number;
+  /**
+   * Stage the move through `slot.approach` instead of gliding straight
+   * onto the anchor. Defaults to true whenever the slot has an approach —
+   * because a body that translates into a chair without ever standing
+   * beside it is the single most obvious tell in a scene full of NPCs.
+   * Pass false for slots you drop into directly (a driver's seat).
+   */
+  approach?: boolean;
+  /** Seconds spent lowering into (or rising out of) the slot. Default 0.6. */
+  settle?: number;
 }
+
+/** What a staged interaction is doing right now. */
+export type InteractionPhase = 'none' | 'arriving' | 'settling' | 'held' | 'leaving';
 
 /**
  * The interaction controller: walks nothing — GAMA gets the character to
@@ -325,6 +344,10 @@ export class Interaction {
   private fromPosition = new Vector3();
   private fromQuaternion = new Quaternion();
   private tween = 1; // 0..1 progress of the root tween
+  private tweenRate = 1 / 0.45; // per-stage speed: arriving ≠ settling
+  private stage: InteractionPhase = 'none';
+  private moveTo: Object3D | null = null; // what the root is tweening toward
+  private settle = 0.6;
   private readonly clipCache = new Map<string, AnimationClip>();
 
   constructor(rig: HumanoidRig, loco: Locomotion) {
@@ -347,30 +370,39 @@ export class Interaction {
     return this.weight;
   }
 
-  /** Adopt a slot: tween the root to its anchor, fade the pose in. */
+  /** Which stage of taking (or leaving) the slot the body is in. */
+  get phase(): InteractionPhase {
+    return this.stage;
+  }
+
+  /**
+   * Adopt a slot. If it publishes an `approach`, this is staged the way a
+   * person actually sits: walk to the spot beside the chair, turn to face
+   * out, and only then lower — the pose fades in on that last beat, so the
+   * body is standing right up until it starts going down.
+   */
   use(slot: InteractionSlot, options: UseOptions = {}): void {
     this.releaseAction();
     this.slot = slot;
     this.fade = options.fade ?? 0.45;
-    this.target = 1;
-    this.tween = 0;
+    this.settle = options.settle ?? 0.6;
     this.fromPosition.copy(this.rig.object.position);
     this.fromQuaternion.copy(this.rig.object.quaternion);
+    this.tween = 0;
 
-    const key = slot.pose;
-    let clip = this.clipCache.get(key);
-    if (!clip) {
-      clip = createPoseClip(this.rig, slot.pose as PoseName);
-      this.clipCache.set(key, clip);
-    }
-    this.action = this.loco.overlay(clip, { fadeIn: this.fade });
-    if (slot.loop) {
-      let loop = this.clipCache.get(`loop:${slot.loop}`);
-      if (!loop) {
-        loop = createLoopClip(this.rig, slot.loop as LoopName);
-        this.clipCache.set(`loop:${slot.loop}`, loop);
-      }
-      this.loopAction = this.loco.overlay(loop, { fadeIn: this.fade + 0.2 });
+    const staged = slot.approach && options.approach !== false;
+    if (staged) {
+      // Stand beside it first; the pose waits.
+      this.stage = 'arriving';
+      this.moveTo = slot.approach!;
+      this.target = 0;
+      this.tweenRate = 1 / Math.max(0.01, this.fade);
+    } else {
+      this.stage = 'settling';
+      this.moveTo = slot.anchor;
+      this.target = 1;
+      this.tweenRate = 1 / Math.max(0.01, this.fade);
+      this.startPose(slot);
     }
   }
 
@@ -379,11 +411,29 @@ export class Interaction {
     if (this.action) this.action.timeScale = rate;
   }
 
-  /** Let go: fade the pose out and hand the body back to locomotion. */
+  /**
+   * Let go. With an `approach` the body rises and steps clear of the seat
+   * before locomotion takes over — standing up is a movement too, and
+   * characters who dissolve out of chairs give the game away as surely as
+   * ones who slide into them.
+   */
   release(options: UseOptions = {}): void {
     this.fade = options.fade ?? 0.45;
+    this.settle = options.settle ?? 0.6;
     this.target = 0;
+    if (this.slot?.approach && options.approach !== false && this.stage !== 'none') {
+      this.stage = 'leaving';
+      this.moveTo = this.slot.approach;
+      this.fromPosition.copy(this.rig.object.position);
+      this.fromQuaternion.copy(this.rig.object.quaternion);
+      this.tween = 0;
+      this.tweenRate = 1 / Math.max(0.01, this.settle);
+      this.releaseAction();
+      return;
+    }
+    this.stage = 'none';
     this.slot = null;
+    this.moveTo = null;
     this.releaseAction();
   }
 
@@ -398,10 +448,10 @@ export class Interaction {
     // (a car's driver seat, a boat's helm), and the body must move with
     // them. The tween only shapes the approach; after it completes the
     // root stays glued to the anchor at t = 1.
-    if (this.slot) {
-      this.tween = Math.min(1, this.tween + step);
+    if (this.slot && this.moveTo) {
+      this.tween = Math.min(1, this.tween + dt * this.tweenRate);
       const t = this.tween * this.tween * (3 - 2 * this.tween); // smoothstep
-      const anchor = this.slot.anchor;
+      const anchor = this.moveTo;
       anchor.updateWorldMatrix(true, false);
       const targetPosition = anchor.getWorldPosition(new Vector3());
       const targetQuaternion = anchor.getWorldQuaternion(new Quaternion());
@@ -415,6 +465,49 @@ export class Interaction {
       }
       this.rig.object.position.lerpVectors(this.fromPosition, targetPosition, t);
       this.rig.object.quaternion.slerpQuaternions(this.fromQuaternion, targetQuaternion, t);
+      if (this.tween >= 1) this.advance();
+    }
+  }
+
+  /** Stage transitions: standing beside it → lowering → sat → stepping away. */
+  private advance(): void {
+    if (!this.slot) return;
+    if (this.stage === 'arriving') {
+      // On the spot and facing the right way. Now go down.
+      this.stage = 'settling';
+      this.moveTo = this.slot.anchor;
+      this.target = 1;
+      this.tween = 0;
+      this.tweenRate = 1 / Math.max(0.01, this.settle);
+      this.fromPosition.copy(this.rig.object.position);
+      this.fromQuaternion.copy(this.rig.object.quaternion);
+      this.startPose(this.slot);
+    } else if (this.stage === 'settling') {
+      this.stage = 'held';
+    } else if (this.stage === 'leaving') {
+      // Clear of the seat — locomotion has the body back.
+      this.stage = 'none';
+      this.slot = null;
+      this.moveTo = null;
+    }
+  }
+
+  /** Fade in the slot's pose (and its arms loop, if it has one). */
+  private startPose(slot: InteractionSlot): void {
+    const key = slot.pose;
+    let clip = this.clipCache.get(key);
+    if (!clip) {
+      clip = createPoseClip(this.rig, slot.pose as PoseName);
+      this.clipCache.set(key, clip);
+    }
+    this.action = this.loco.overlay(clip, { fadeIn: this.fade });
+    if (slot.loop) {
+      let loop = this.clipCache.get(`loop:${slot.loop}`);
+      if (!loop) {
+        loop = createLoopClip(this.rig, slot.loop as LoopName);
+        this.clipCache.set(`loop:${slot.loop}`, loop);
+      }
+      this.loopAction = this.loco.overlay(loop, { fadeIn: this.fade + 0.2 });
     }
   }
 

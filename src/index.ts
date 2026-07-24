@@ -57,4 +57,16 @@ export {
   type LoopName,
   type UseOptions,
   type GestureOptions,
+  type InteractionPhase,
 } from './interact';
+export {
+  Mannerisms,
+  type MannerismName,
+  type MannerismContext,
+  type MannerismsOptions,
+} from './mannerisms';
+export {
+  Conversation,
+  type Talker,
+  type ConversationOptions,
+} from './conversation';
