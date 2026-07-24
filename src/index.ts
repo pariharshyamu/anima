@@ -70,3 +70,45 @@ export {
   type Talker,
   type ConversationOptions,
 } from './conversation';
+export {
+  createQuadruped,
+  LEGS,
+  COATS,
+  QUADRUPED_BONES,
+  isFront,
+  legSide,
+  type LegName,
+  type QuadrupedBone,
+  type QuadrupedRig,
+  type QuadrupedOptions,
+  type QuadrupedSpecies,
+  type CoatName,
+  type FaceMarking,
+} from './quadruped';
+export {
+  createGaitClips,
+  gaitSpeed,
+  QuadrupedLocomotion,
+  GAITS,
+  type GaitName,
+  type GaitSpec,
+  type QuadrupedClips,
+  type GaitOptions as QuadrupedGaitOptions,
+  type QuadrupedLocomotionOptions,
+} from './gaits';
+export {
+  Mount,
+  createRideClip,
+  type RideSeat,
+  type MountPhase,
+  type MountOptions,
+  type RideClipOptions,
+} from './riding';
+export {
+  Climb,
+  createClimbClip,
+  createTopOutClip,
+  type Climbable,
+  type ClimbState,
+  type ClimbOptions,
+} from './climb';

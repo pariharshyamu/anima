@@ -118,3 +118,58 @@ game.onUpdate((t) => { chat.update(t.delta); for (const d of diners) d.gaze.upda
 What it encodes is the real asymmetry of talking: **listeners watch the speaker far more than the speaker watches any one listener.** Whoever holds the floor sweeps the group and looks away to think; the listeners hold a steady gaze on them — but not all of them, not perfectly, and never all snapping across on the same frame. Turns are wildly uneven (a one-word answer, then a long story), and each listener takes their own beat to notice the floor has changed hands. Every one of those hedges is doing work: a table that turns in unison reads as radio-controlled. `handOver(i)` forces the floor, `onTurn` fires when it changes, and `enabled = false` freezes everyone's gaze where it is. See the **gatherings** example.
 
 **No hand IK — and that's a feature.** The exported `GRIPS` constants standardize where wheels, handlebars and seats sit relative to a slot's anchor; SCENA props are *built to those offsets*, so hands land on steering wheels by construction. `furnishRoom`'s sit/sleep/work markers are slots waiting to happen: stand an anchor on one and villagers sit at the benches they've been standing beside since 0.31.
+
+## Quadrupeds: the horse
+
+ANIMA's first non-humanoid body. `createQuadruped` builds a rigged, skinned horse (or `pony`, `draft`, `donkey`) from the same low-poly primitives as a humanoid, laid out to real horse proportions — measured, as horse people measure, in fractions of **withers height**.
+
+```js
+const horse = createQuadruped({ seed: 3, coat: 'bay', marking: 'blaze' });
+const gaits = new QuadrupedLocomotion(horse);
+game.onUpdate((t) => gaits.update(t.delta, ride.speed));  // it picks its own gait
+```
+
+Two details decide whether a quadruped reads as an animal:
+
+- **The hind-leg zigzag.** A horse's femur points down and *forward* to the stifle, the tibia runs down and *back* to the hock, and the cannon drops forward again. The foreleg does the opposite. Straighten those and you have a table with legs, however good the animation on top is.
+- **A bay is not "brown".** It is a brown body with **black points** — mane, tail and lower legs. Eight coats ship (`bay`, `darkBay`, `chestnut`, `black`, `grey`, `palomino`, `dun`, `buckskin`), with dorsal stripes on the duns, seeded socks and four face markings.
+
+### Gaits: the footfalls are the gait
+
+`createGaitClips` synthesizes the four natural gaits, and what makes them right is the **order the feet land in** — not the secondary motion:
+
+| gait | beats | footfall | duty |
+| --- | --- | --- | --- |
+| walk | 4 | **lateral**: LH, LF, RH, RF | 0.62 — never fewer than two feet down |
+| trot | 2 | **diagonal pairs**: LF+RH, then RF+LH | 0.42 |
+| canter | 3 | LH, then RH+LF together, then the leading RF | 0.35 |
+| gallop | 4 | LH, RH, LF, RF, then suspension | 0.27 — a moment with no feet down at all |
+
+A horse whose diagonals are out of sync reads as *broken* to anyone who has watched one move, and obscurely wrong to everyone else. Two further things fall out of that table rather than being tuned by eye:
+
+- **Body height comes from the legs.** A limb swung as a rigid pendulum sweeps its foot along an arc; hold the body still and the hoof rises at both ends of the stance. But the foot is the fixed thing — the *body* vaults up and over the supporting limb. So the ride height is derived from whichever planted limb props the body highest, then smoothed, because a body has mass and cannot turn corners at every footfall.
+- **Horses nod at walk and canter and stay level at the trot.** That is precisely why a rider can post to a trot and not to a canter, and it is the most visible thing to get backwards.
+
+`QuadrupedLocomotion` takes a speed and picks the gait, because horses **change** gait rather than blending — there is no such thing as half a trot — then stride-matches *within* the gait so hooves don't skate.
+
+## Riding
+
+```js
+const mount = new Mount(rig, loco);
+mount.mount(horse);                       // the whole get-on sequence
+mount.followGait(gaits.gait, strideRate); // sit / post / two-point
+mount.dismount();
+```
+
+**Mounting** is a sequence with a shape, not a teleport: stand at the near shoulder facing the tail and take the saddle (`reaching`) → left foot in the stirrup and push up (`stirrup`) → right leg over the croup (`swinging`) → sink into the seat (`seated`). Riders mount from the horse's **left** by convention old enough to come from wearing a sword on the left hip. Once seated the rider is parented to the horse's `saddle` fixture, so they ride whatever it does.
+
+**The seat changes with the gait**, and using the wrong one is instantly readable: `seat` (deep, for walk and canter), `posting` (the rising trot — up and down once per stride, locked to the trot's own rhythm), and `twoPoint` (out of the saddle and folded forward, for the gallop). Heels down throughout, hands forward where the reins actually are.
+
+## Climbing a ladder
+
+```js
+const climb = new Climb(rig, loco);
+climb.start(ladder);          // SCENA's createLadder fits structurally
+```
+
+Real climbing is **contralateral** — left hand moves with the *right* foot, then right hand with left foot — the same cross-body pattern as walking, and the reason is that it keeps the centre of mass over the supporting diagonal. Three points of contact are held at all times. `Climb` locks the clip to the translation (two rungs per cycle) so hands arrive where rungs actually are, and finishes with a proper **top-out**: fold over the edge, one knee up, press and stand. Cut that and the character rides the last metre like a lift.

@@ -1131,6 +1131,124 @@ game.onUpdate((t) => {
 game.camera.position.set(0, 5.4, 13);
 game.start();`
   },
+  {
+    id: 'riding',
+    title: 'Riding a horse (mount \u00b7 gaits \u00b7 ladder)',
+    group: 'Games',
+    code: `// A horse, built as a real quadruped: the skeleton is laid out to horse
+// proportions and the four gaits use the actual footfall orders — walk is
+// 4-beat LATERAL (LH-LF-RH-RF), trot is 2-beat DIAGONAL pairs, canter is
+// 3-beat with a lead leg, gallop splits the diagonal into four. Mounting
+// is the real sequence too, and the rider changes SEAT to match the gait.
+// W/S urge on and steady, A/D rein, Space halt, E mount, C climb.
+import { createSky, createLightingRig, applyFog, createSurface, createTree,
+         createFence, createLadder, createSaddle, createBridle, PALETTES } from 'scena3d';
+import { createHumanoid, createQuadruped, QuadrupedLocomotion, Locomotion,
+         FootIK, Mount, Climb, OUTFITS } from 'anima3d';
+import { Game, RideController, TouchControls } from 'gama3d';
+import { Mesh, PlaneGeometry, Vector2, Vector3 } from 'three';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(400, 400), createSurface('dirt', { seed: 4 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+[[-14,-10,41],[16,-14,42],[-18,12,43],[20,10,44]].forEach(([x, z, seed]) => {
+  const t = createTree({ species: 'oak', seed, height: 6, palette });
+  t.object.position.set(x, 0, z); scene.add(t.object);
+});
+for (let i = 0; i < 16; i++) {
+  const a = (i / 16) * Math.PI * 2;
+  const f = createFence({ seed: 50 + i, palette });
+  f.object.position.set(Math.sin(a) * 26, 0, Math.cos(a) * 26);
+  f.object.rotation.y = a + Math.PI / 2; scene.add(f.object);
+}
+
+const horse = createQuadruped({ seed: 11, coat: 'bay', marking: 'blaze' });
+horse.object.position.set(2.4, 0, 0);
+scene.add(horse.object);
+const gaits = new QuadrupedLocomotion(horse);
+// Tack is built to the rig's own fixtures, so it lands where the seat is.
+horse.saddle.add(createSaddle({ horseHeight: horse.height }).object);
+horse.bones.Head.add(createBridle({ horseHeight: horse.height }).object);
+
+const rig = createHumanoid({ seed: 21, palette: OUTFITS.villager });
+scene.add(rig.object);
+const loco = new Locomotion(rig);
+const ik = new FootIK(rig, { ground: () => 0 });
+const mount = new Mount(rig, loco);
+const climb = new Climb(rig, loco);
+
+const ladder = createLadder({ seed: 7, height: 4.2, palette });
+ladder.object.position.set(-6, 0, -5);
+ladder.object.rotation.y = Math.PI;
+scene.add(ladder.object);
+const deck = new Mesh(new PlaneGeometry(2.6, 2.6), createSurface('plank', { color: palette.wood, seed: 8 }));
+deck.rotation.x = -Math.PI / 2;
+deck.position.set(-6, ladder.rungs * ladder.rungSpacing, -5.9);
+scene.add(deck);
+
+const ride = new RideController({ topSpeed: 11.5 });
+new TouchControls(game.input, { buttons: [
+  { label: 'Mount', code: 'KeyE', css: 'right:26px;bottom:118px' },
+  { label: 'Halt', code: 'Space', css: 'right:26px;bottom:40px' },
+  { label: 'Climb', code: 'KeyC', css: 'right:132px;bottom:40px' },
+]});
+
+const axis = new Vector2();
+const onFoot = new Vector3();
+game.onUpdate((t) => {
+  const dt = t.delta;
+  game.input.moveAxis(axis);
+  if (game.input.wasPressed('KeyE')) {
+    if (mount.phase === 'off' && !climb.climbing) {
+      const gap = rig.object.getWorldPosition(new Vector3())
+        .distanceTo(horse.object.getWorldPosition(new Vector3()));
+      if (gap < 3.5) mount.mount(horse);
+    } else if (mount.mounted) mount.dismount();
+  }
+  if (game.input.wasPressed('KeyC') && mount.phase === 'off' && !climb.climbing) {
+    climb.start({ bottom: ladder.bottom, top: ladder.top, rungSpacing: ladder.rungSpacing });
+  }
+
+  // The horse runs its own physics whether or not anyone is aboard.
+  const seated = mount.phase === 'seated';
+  ride.update(dt, { urge: seated ? axis.y : 0, rein: seated ? axis.x : 0,
+                    halt: seated && game.input.isDown('Space') });
+  ride.applyTo(horse.object, dt);
+  gaits.update(dt, ride.speed);       // the horse picks its own gait
+
+  if (seated) {
+    // Sit the walk, POST the trot, two-point the gallop — in time with
+    // the trot's own stride, not some unrelated clock.
+    mount.followGait(gaits.gait, gaits.mixer.clipAction(gaits.clips.trot).timeScale || 1);
+    loco.update(dt, 0);
+  } else if (!climb.climbing && mount.phase === 'off') {
+    onFoot.set(axis.x, 0, axis.y).multiplyScalar(2.4);
+    if (onFoot.lengthSq() > 0.01) {
+      rig.object.position.addScaledVector(onFoot, dt);
+      rig.object.rotation.y = Math.atan2(onFoot.x, onFoot.z);
+    }
+    loco.update(dt, onFoot); ik.update();
+  } else loco.update(dt, 0);
+  mount.update(dt);
+  climb.update(dt);
+
+  const subject = seated ? horse.object : rig.object;
+  const at = subject.getWorldPosition(new Vector3());
+  const behind = seated ? 7.5 + ride.effort * 4 : 5;
+  const heading = seated ? ride.heading : rig.object.rotation.y;
+  game.camera.position.lerp(new Vector3(
+    at.x - Math.sin(heading) * behind, at.y + 2.6 + ride.effort * 0.8,
+    at.z - Math.cos(heading) * behind), Math.min(1, dt * 3));
+  game.camera.lookAt(at.x, at.y + 1.2, at.z);
+});
+game.camera.position.set(0, 3, -8);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {
