@@ -1,0 +1,1 @@
+import"./modulepreload-polyfill-B5Qt9EMX.js";/* empty css             */import{f as r}from"./examples-CtB2DCIq.js";const n=document.getElementById("hero-demo"),d=r("gallery").code;window.addEventListener("message",o=>{var e,t;((e=o.data)==null?void 0:e.type)==="runner-ready"&&((t=n.contentWindow)==null||t.postMessage({type:"run",code:d},"*"))});n.src="runner.html";

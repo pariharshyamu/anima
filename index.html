@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ANIMA — humanoid characters & animation for three.js</title>
+    <meta
+      name="description"
+      content="ANIMA gives three.js games people: seeded rigged humanoids with faces, figures and wardrobes, procedural locomotion, foot IK, gaze, retargeting, and VAT crowds. No model files, no animation files."
+    />
+    <script type="module" crossorigin src="./assets/index-DQkjQrGe.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-B5Qt9EMX.js">
+    <link rel="modulepreload" crossorigin href="./assets/examples-CtB2DCIq.js">
+    <link rel="stylesheet" crossorigin href="./assets/site-DrHfSNY7.css">
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="logo" href="./index.html">ANI<span>MA</span></a>
+      <a class="navlink" href="./guide.html">Guide</a>
+      <a class="navlink" href="./playground.html">Playground</a>
+      <span class="spacer"></span>
+      <a class="navlink" href="https://github.com/pariharshyamu/anima">GitHub</a>
+    </nav>
+
+    <header class="hero">
+      <iframe id="hero-demo" title="live seeded cast" tabindex="-1"></iframe>
+      <div class="inner">
+        <h1>ANI<span>MA</span></h1>
+        <p class="tag">three.js renders. GAMA makes it a game. SCENA gives it a world.<br /><strong>ANIMA gives it people.</strong></p>
+        <p class="tag" style="font-size: 15px">
+          Seeded rigged humanoids · faces, figures &amp; wardrobes · procedural gaits ·<br />
+          foot IK &amp; gaze · Mixamo retargeting · sockets · VAT crowds — zero asset files
+        </p>
+        <div class="buttons">
+          <a class="btn primary" href="./playground.html">Open the playground</a>
+          <a class="btn" href="./guide.html">Read the guide</a>
+        </div>
+        <p style="margin-top: 22px"><code>npm install anima3d three</code></p>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2>People, not capsules</h2>
+      <div class="cards">
+        <div class="card">
+          <span class="chip">createHumanoid · describeHumanoid</span>
+          <h3><a href="./playground.html?example=gallery">Every character is a seed</a></h3>
+          <p>
+            A rigged, skinned, outfitted person from one integer — body type, face, hair,
+            wardrobe, gear. Inspect and override every decision with the creator API.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">createLocomotionClips · Locomotion</span>
+          <h3><a href="./playground.html?example=locomotion">Gaits without files</a></h3>
+          <p>
+            Idle/walk/run synthesized from gait parameters, blended by speed with phase
+            sync and stride matching — feet grip the ground instead of sliding.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">FootIK · LookAt · overlay()</span>
+          <h3><a href="./playground.html?example=craft">The professional craft</a></h3>
+          <p>
+            Feet planted on real terrain, heads that follow what matters, additive layers
+            that wave while walking, footstep events at every heel strike.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">faces · bodyType · outfit</span>
+          <h3><a href="./playground.html?example=faces">Identity &amp; wardrobe</a></h3>
+          <p>
+            Eyes, brows-as-expression, noses, mouths, hair styles, facial hair — plus
+            dresses, tunics, jackets, skirts and belts over feminine/masculine/neutral figures.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">retargetClip · attach()</span>
+          <h3><a href="./playground.html?example=sockets">Real assets welcome</a></h3>
+          <p>
+            Exact world-space retargeting for Mixamo/glTF clips, and named sockets so props
+            ride hands, backs and hips through every animation.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">bakeVAT · Crowd</span>
+          <h3><a href="./playground.html?example=crowd">Crowds in three draw calls</a></h3>
+          <p>
+            Skinned animation baked to textures; sixty seeded villagers walk a road with no
+            skeletons, no mixers, no per-character CPU cost.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">gama3d · scena3d · structural typing</span>
+          <h3><a href="./playground.html?example=trio">Born for the trio</a></h3>
+          <p>
+            GAMA's <code>agent.velocity</code> drives the legs; SCENA's
+            <code>terrain.heightAt</code> plants the feet; nothing imports anything.
+          </p>
+        </div>
+        <div class="card">
+          <span class="chip">62 tests · seeded · ESM + CJS + d.ts</span>
+          <h3><a href="https://github.com/pariharshyamu/anima">Deterministic &amp; honest</a></h3>
+          <p>
+            Same seed, same person, same clips — across machines. Zero dependencies beyond
+            three.js; <code>Math.random</code> appears nowhere in the library.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>A walking character in six lines</h2>
+      <pre><code>import { createHumanoid, Locomotion } from 'anima3d';
+
+const villager = createHumanoid({ seed: 7 });   // rigged, skinned, outfitted, with a face
+scene.add(villager.object);
+
+const loco = new Locomotion(villager);          // idle/walk/run synthesized from the rig
+onFrame((dt, velocity) => loco.update(dt, velocity));   // GAMA's agent.velocity drops in</code></pre>
+      <p>
+        <a href="./playground.html?example=trio">See the whole trio run it →</a>
+      </p>
+    </section>
+
+    <footer class="footer">
+      MIT · built on <a href="https://threejs.org">three.js</a> · pairs with
+      <a href="https://github.com/pariharshyamu/gama">GAMA</a> and
+      <a href="https://github.com/pariharshyamu/scena">SCENA</a> · the cast behind the title is
+      <a href="./playground.html?example=gallery">live, editable code</a>
+    </footer>
+
+  </body>
+</html>
