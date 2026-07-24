@@ -198,20 +198,38 @@ export function createLoopClip(rig: HumanoidRig, name: LoopName): AnimationClip 
     });
     return maskClip(clip, [...ARMS, 'Chest']);
   }
-  if (name === 'chop' || name === 'mine') {
-    // Two-handed overhead swing (an axe, a pickaxe): both hands grip the haft
-    // together (small abduction), raise it high, snap down, the whole upper
-    // body bending into it. `mine` swings a touch flatter.
-    const pick = name === 'mine';
-    const clip = buildClip(rig, name, pick ? 1.05 : 1.2, 30, (p, pose) => {
+  if (name === 'chop') {
+    // A right-handed overhead axe strike: the right hand rises ABOVE the head,
+    // then drives the axe down onto the wood in front; the left hand grips the
+    // haft just below it, the torso folding into the blow. Scaled up from the
+    // hammer swing (which reads cleanly one-armed).
+    const clip = buildClip(rig, 'chop', 1.15, 30, (p, pose) => {
+      const skew = p < 0.6 ? p / 0.6 : 0;
+      const lift = p < 0.6 ? Math.sin((Math.PI / 2) * skew) : 1 - (p - 0.6) / 0.2;
+      const swing = Math.max(0, Math.min(1, lift)); // 1 = raised overhead, 0 = struck down
+      // Raise the right arm in the FRONTAL plane (Z, like the wave): Z swings
+      // from +down (at the wood) to strongly negative (straight overhead).
+      pose.rotate('RightArm', [X, -0.25 - 0.15 * swing], [Z, 0.95 - 2.35 * swing]);
+      pose.rotate('RightForeArm', [Y, 0.2], [X, -0.5 * swing]);
+      // Left hand follows lower on the haft.
+      pose.rotate('LeftArm', [X, -0.45], [Z, -(0.55 - 0.85 * swing)]);
+      pose.rotate('LeftForeArm', [Y, -0.5], [X, -0.15]);
+      // Fold the torso down into the strike; stand tall on the backswing.
+      pose.rotate('Spine', [X, 0.42 * (1 - swing) - 0.12 * swing]);
+      pose.rotate('Chest', [X, 0.24 * (1 - swing) - 0.06 * swing]);
+      pose.rotate('Head', [X, 0.22 * (1 - swing) - 0.12 * swing]);
+    });
+    return maskClip(clip, [...ARMS, 'Spine', 'Chest', 'Head']);
+  }
+  if (name === 'mine') {
+    // A two-handed pickaxe swing: raise in the frontal plane (Z, like the wave),
+    // then drive down into the rock, the body bending with it.
+    const clip = buildClip(rig, 'mine', 1.05, 30, (p, pose) => {
       const raise = p < 0.58 ? Math.sin((Math.PI / 2) * (p / 0.58)) : 1 - (p - 0.58) / 0.18;
-      const swing = Math.max(0, Math.min(1, raise)); // 1 = raised overhead, 0 = struck
-      const up = pick ? 1.5 : 1.7; // frontal-plane raise (Z lifts the arms overhead)
+      const swing = Math.max(0, Math.min(1, raise));
       for (const side of ['Left', 'Right'] as const) {
         const s = side === 'Left' ? 1 : -1;
-        // Raise in the FRONTAL plane (Z), like the wave: +down at the strike,
-        // swinging up overhead as `swing` → 1. A little forward lean via X.
-        pose.rotate(`${side}Arm`, [X, -0.35 - 0.2 * swing], [Z, -s * (0.85 - up * swing)]);
+        pose.rotate(`${side}Arm`, [X, -0.35 - 0.2 * swing], [Z, -s * (0.85 - 1.5 * swing)]);
         pose.rotate(`${side}ForeArm`, [Y, -s * 0.55], [X, -0.25]);
       }
       pose.rotate('Spine', [X, 0.36 * (1 - swing) - 0.12 * swing]);
@@ -235,17 +253,18 @@ export function createLoopClip(rig: HumanoidRig, name: LoopName): AnimationClip 
     return maskClip(clip, [...ARMS, 'Spine', 'Chest']);
   }
   if (name === 'stir') {
-    // One hand circles a pot; the body leans in over it.
+    // The body leans well forward over the pot and the right hand reaches DOWN
+    // INTO it, circling — so the ladle dips into the pot, not hovers above it.
     const clip = buildClip(rig, 'stir', 1.3, 30, (p, pose) => {
       const c = Math.cos(TAU * p);
       const sN = Math.sin(TAU * p);
-      pose.rotate('RightArm', [X, -0.95 + 0.12 * sN], [Z, HANG - 0.62 + 0.12 * c]);
-      pose.rotate('RightForeArm', [Y, 0.6 + 0.25 * c], [X, -0.35 + 0.12 * sN]);
-      pose.rotate('LeftArm', [X, -0.35], [Z, -(HANG - 0.2)]);
+      pose.rotate('RightArm', [X, -1.35 + 0.14 * sN], [Z, HANG - 0.5 + 0.12 * c]);
+      pose.rotate('RightForeArm', [Y, 1.05 + 0.3 * c], [X, -0.6 + 0.15 * sN]);
+      pose.rotate('LeftArm', [X, -0.3], [Z, -(HANG - 0.25)]);
       pose.rotate('LeftForeArm', [Y, -0.5]);
-      pose.rotate('Spine', [X, 0.26]);
-      pose.rotate('Chest', [X, 0.16]);
-      pose.rotate('Head', [X, -0.28]);
+      pose.rotate('Spine', [X, 0.42]); // lean over the pot
+      pose.rotate('Chest', [X, 0.26]);
+      pose.rotate('Head', [X, -0.55]); // look down into it
     });
     return maskClip(clip, [...ARMS, 'Spine', 'Chest', 'Head']);
   }
