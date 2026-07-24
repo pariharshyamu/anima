@@ -600,18 +600,17 @@ game.start();`,
     id: 'race',
     title: 'Pocket racer (playable!)',
     group: 'Games',
-    code: `// A playable racer — phone AND desktop — in ~55 lines, because GAMA
-// now owns the driving: VehicleController (keyboard + touch), driveVehicle
-// for the AI rivals, a ChaseCamera, a Circuit/LapTracker template, and
-// TouchControls (an on-screen joystick, one line). SCENA paves the ring and
-// builds the cars; your ANIMA driver holds the wheel.
+    code: `// A playable racer — phone AND desktop — where the whole game (player car,
+// AI rivals, chase camera, on-screen joystick, car-vs-car collision, and lap
+// standings with a finish) is one call: GAMA's createRace. SCENA paves the
+// ring and builds the cars; your ANIMA driver rides the moving seat. All
+// that's left below is world-building and a HUD.
 import { createCar, createPath, createPlanter, createTree, createSky,
          createLightingRig, applyFog, createSurface, PALETTES } from 'scena3d';
 import { createHumanoid, Interaction, Locomotion, OUTFITS } from 'anima3d';
-import { Game, MotionAgent, FollowPath, Path, VehicleController, driveVehicle,
-         ChaseCamera, TouchControls } from 'gama3d';
-import { Circuit, LapTracker } from 'gama3d/templates';
-import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { Game } from 'gama3d';
+import { createRace, Circuit } from 'gama3d/templates';
+import { Mesh, PlaneGeometry } from 'three';
 
 const palette = PALETTES.urban;
 const game = new Game();
@@ -643,39 +642,27 @@ const circuit = new Circuit(WAYPOINTS);
   scene.add(tree.object);
 });
 
-// The player's car — GAMA drives it (keyboard + on-screen joystick).
-const car = createCar({ seed: 3, color: 0xb8433a, palette });
-const body = game.world.spawn('player');
-body.add(car.object);
-const start = WAYPOINTS[0];
-body.position.set(start.x, 0, start.z);
-body.rotation.y = Math.atan2(WAYPOINTS[1].x - start.x, WAYPOINTS[1].z - start.z);
-const drive = body.addComponent(new VehicleController(game.input, {
-  vehicle: car, offTrack: (x, z) => circuit.distanceTo(x, z) > 4.5,
-}));
-const rig = createHumanoid({ seed: 9, palette: OUTFITS.villager });
-car.object.add(rig.object);
-const loco = new Locomotion(rig);
-const act = new Interaction(rig, loco);
-act.use(car.slots[0], { fade: 0.01 });
-const cam = new ChaseCamera(game.camera, body, { distance: 8.5, height: 4.4 });
-new TouchControls(game.input);   // an on-screen joystick on phones — one line
-
-// Two GAMA rivals lapping the ring; driveVehicle spins their wheels.
-const lapPoints = WAYPOINTS.map((p) => new Vector3(p.x, 0, p.z));
-const rivals = [0x3a6ea5, 0x3f7f5c].map((color, i) => {
-  const rival = createCar({ seed: 11 + i, color, palette });
-  const rb = game.world.spawn('rival-' + i);
-  rb.add(rival.object);
-  rb.position.copy(lapPoints[(3 + i * 6) % lapPoints.length]);
-  const agent = rb.addComponent(
-    new MotionAgent({ maxSpeed: 9 + i * 2, maxForce: 16, planar: true }));
-  agent.addBehavior(new FollowPath(new Path(lapPoints, true), 2.4));
-  return driveVehicle(agent, rival);
+// The whole race — player + two rivals + camera + touch + collisions + laps.
+const player = createCar({ seed: 3, color: 0xb8433a, palette });
+const rivalCars = [0x3a6ea5, 0x3f7f5c].map((color, i) =>
+  createCar({ seed: 11 + i, color, palette }));
+const race = createRace(game, {
+  circuit,
+  player: { object: player.object, vehicle: player, name: 'you' },
+  rivals: rivalCars.map((car, i) => ({
+    object: car.object, vehicle: car, speed: 10 + i, name: 'rival ' + (i + 1),
+  })),
+  laps: 3,
 });
 
-// Lap HUD.
-const laps = new LapTracker(circuit, { laps: 3 });
+// An ANIMA driver rides the player's (moving) seat.
+const rig = createHumanoid({ seed: 9, palette: OUTFITS.villager });
+race.player.object.add(rig.object);
+const loco = new Locomotion(rig);
+const act = new Interaction(rig, loco);
+act.use(player.slots[0], { fade: 0.01 });
+
+// HUD + finish screen.
 const hud = document.createElement('div');
 hud.style.cssText = 'position:fixed;top:10px;right:12px;z-index:10;color:#fff;' +
   'text-align:right;font:600 15px/1.5 system-ui;text-shadow:0 1px 3px #000';
@@ -685,14 +672,24 @@ document.body.appendChild(hud);
 game.onUpdate((t) => {
   loco.update(t.delta, 0);
   act.update(t.delta);
-  for (const spin of rivals) spin(t.delta);
-  cam.update(t.delta);
-  const s = laps.update(t.delta, body.position.x, body.position.z);
-  hud.textContent = 'LAP ' + Math.min(s.lap + 1, 3) + '/3 · ' +
-    s.lapTime.toFixed(1) + 's' +
-    (s.bestLap < Infinity ? ' · best ' + s.bestLap.toFixed(1) + 's' : '') +
-    ' · ' + Math.round(drive.speed * 3.6) + ' km/h';
+  const s = race.state;
+  const best = s.bestLap < Infinity ? ' · best ' + s.bestLap.toFixed(1) + 's' : '';
+  hud.textContent = 'P' + s.position + '/' + s.total + ' · LAP ' +
+    Math.min(s.lap + 1, 3) + '/3 · ' + s.lapTime.toFixed(1) + 's' + best +
+    ' · ' + Math.round(race.player.controller.speed * 3.6) + ' km/h';
 });
+
+race.onFinish((r) => {
+  const place = ['🏆 1st', '🥈 2nd', '🥉 3rd'][r.position - 1] || ('P' + r.position);
+  const card = document.createElement('div');
+  card.style.cssText = 'position:fixed;inset:0;z-index:30;display:grid;' +
+    'place-items:center;background:rgba(6,9,16,.72);color:#eef2f7;' +
+    'font:600 20px/1.6 system-ui;text-align:center';
+  card.innerHTML = '<div><div style="font-size:44px">' + place + '</div>Total ' +
+    r.totalTime.toFixed(1) + 's</div>';
+  document.body.appendChild(card);
+});
+
 game.start();`
   },
 ];
