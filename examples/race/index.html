@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>ANIMA — pocket racer</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14;
+        touch-action: none; overscroll-behavior: none; }
+      #hud-note { position: fixed; top: 10px; left: 12px; color: #eef2f7;
+        font: 13px/1.45 system-ui, sans-serif; user-select: none;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 26em; }
+      code { background: rgba(255,255,255,0.14); padding: 0 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud-note">
+      <strong>ANIMA — pocket racer</strong> ·
+      <code>WASD</code>/<code>arrows</code> or the touch pads. Two GAMA
+      rivals lap the circuit; your driver holds the wheel.
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
