@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ANIMA — the commute (GAMA drives)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14; }
+      #hud { position: fixed; top: 12px; left: 12px; color: #eef2f7;
+        font: 14px/1.5 system-ui, sans-serif; user-select: none;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 34em; }
+      code { background: rgba(255,255,255,0.14); padding: 0 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <strong>ANIMA — the commute</strong><br />
+      The whole trilogy in one loop: a GAMA agent walks the character to the
+      car (steering + locomotion), <code>Interaction</code> seats them on the
+      driver's slot (<code>drive</code> pose, hands at the wheel), and then the
+      <em>car</em> becomes the GAMA agent — lapping the block on a
+      <code>FollowPath</code>, wheels spinning, the driveway gate swinging
+      open as it approaches. The driver stays glued to the moving seat.
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

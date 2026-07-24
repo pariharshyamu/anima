@@ -133,6 +133,22 @@ describe('Interaction', () => {
     expect(Math.abs(r.object.rotation.y - 1)).toBeLessThan(0.02);
   });
 
+  it('stays glued to a MOVING anchor (driving a car)', () => {
+    const { r, loco, interaction, anchor, slot } = setup();
+    interaction.use(slot, { fade: 0.1 });
+    for (let i = 0; i < 20; i++) {
+      loco.update(1 / 60, 0);
+      interaction.update(1 / 60);
+    }
+    // The "car" drives off: the anchor moves after the tween completed.
+    anchor.position.set(20, 0, 11);
+    anchor.updateMatrixWorld(true);
+    loco.update(1 / 60, 0);
+    interaction.update(1 / 60);
+    expect(r.object.position.x).toBeCloseTo(20, 1);
+    expect(r.object.position.z).toBeCloseTo(11, 1);
+  });
+
   it('slots can carry an arms loop (guitar on a bench)', () => {
     const { loco, interaction, slot } = setup();
     interaction.use({ ...slot, loop: 'strum' }, { fade: 0.2 });

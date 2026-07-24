@@ -306,7 +306,11 @@ export class Interaction {
     else this.weight = Math.max(this.target, this.weight - step);
     this.loco.influence = 1 - this.weight;
 
-    if (this.slot && this.tween < 1) {
+    // Track the anchor for as long as the slot is held — anchors MOVE
+    // (a car's driver seat, a boat's helm), and the body must move with
+    // them. The tween only shapes the approach; after it completes the
+    // root stays glued to the anchor at t = 1.
+    if (this.slot) {
       this.tween = Math.min(1, this.tween + step);
       const t = this.tween * this.tween * (3 - 2 * this.tween); // smoothstep
       const anchor = this.slot.anchor;
