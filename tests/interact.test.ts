@@ -47,14 +47,15 @@ describe('pose clips', () => {
     expect(hipsTrack('cycle')).toBeLessThan(restY);
   });
 
-  it('loop clips are arm-masked overlays', () => {
+  it('loop clips are upper-body overlays — arms move, legs keep the gait', () => {
     const r = rig();
-    for (const name of ['strum', 'hammer', 'knead'] as const) {
+    for (const name of ['strum', 'hammer', 'knead', 'chop', 'mine', 'saw', 'stir'] as const) {
       const clip = createLoopClip(r, name);
       const bones = new Set(clip.tracks.map((t) => t.name.split('.')[0]));
-      expect(bones.has('LeftUpLeg')).toBe(false);
+      expect(bones.has('LeftUpLeg')).toBe(false); // legs/hips untouched
       expect(bones.has('Hips')).toBe(false);
       expect(bones.has('RightArm')).toBe(true);
+      expect(clip.duration).toBeGreaterThan(0.5);
     }
   });
 

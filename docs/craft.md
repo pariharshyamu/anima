@@ -42,7 +42,15 @@ game.onUpdate((t) => { loco.update(t.delta, agent.velocity); interaction.update(
 interaction.release();                        // hand the body back to locomotion
 ```
 
-Seven procedural **poses** ship (`createPoseClip`): `sit` / `sitLow` / `straddle`, `sleep` (a slow breathing loop — the *anchor* supplies the lying orientation), `drive` (hands at the standard wheel), `cycle` (one crank revolution per loop — `setRate` is the cadence), and `operate` (standing at a control, forearms raised — for consoles, levers and machines). Three **arm loops** layer on top via `loop:` — `strum`, `hammer`, `knead` — so a bench slot with `loop: 'strum'` is a guitarist, and a smithy's anvil `work` marker finally swings a hammer.
+Seven procedural **poses** ship (`createPoseClip`): `sit` / `sitLow` / `straddle`, `sleep` (a slow breathing loop — the *anchor* supplies the lying orientation), `drive` (hands at the standard wheel), `cycle` (one crank revolution per loop — `setRate` is the cadence), and `operate` (standing at a control, forearms raised — for consoles, levers and machines). Seven **arm/upper-body loops** (`createLoopClip`) layer over a pose or the gait — `strum`, `hammer`, `knead`, and the work-station actions `chop`, `mine`, `saw`, `stir`. Layer them over a *held pose* via `loop:` (a bench slot with `loop: 'strum'` is a guitarist), or — for the whole-body work actions — over the **idle** stance directly:
+
+```js
+// A worker at a SCENA station: the loop owns the arms, so overlay it on idle
+// (don't also hold `operate`, or the two fight for the same bones).
+worker.rotation.y = faceToward(station);
+const swing = loco.overlay(createLoopClip(rig, station.action)); // 'chop' | 'mine' | 'saw' | 'stir'
+loco.stopOverlay(swing);                                          // when they down tools
+```
 
 ### One-shot gestures: `Gesture`
 
