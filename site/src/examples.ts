@@ -600,14 +600,17 @@ game.start();`,
     id: 'race',
     title: 'Pocket racer (playable!)',
     group: 'Games',
-    code: `// A playable racing game, phone AND desktop: drive with WASD/arrows or
-// the on-screen touch pads. SCENA paves the circuit and builds the cars,
-// your ANIMA driver holds the wheel (glued to the moving seat), and two
-// GAMA rivals lap the ring on FollowPath agents. Lap timer top right.
+    code: `// A playable racer — phone AND desktop — in ~55 lines, because GAMA
+// now owns the driving: VehicleController (keyboard + touch), driveVehicle
+// for the AI rivals, a ChaseCamera, a Circuit/LapTracker template, and
+// TouchControls (an on-screen joystick, one line). SCENA paves the ring and
+// builds the cars; your ANIMA driver holds the wheel.
 import { createCar, createPath, createPlanter, createTree, createSky,
          createLightingRig, applyFog, createSurface, PALETTES } from 'scena3d';
 import { createHumanoid, Interaction, Locomotion, OUTFITS } from 'anima3d';
-import { Game, MotionAgent, FollowPath, Path } from 'gama3d';
+import { Game, MotionAgent, FollowPath, Path, VehicleController, driveVehicle,
+         ChaseCamera, TouchControls } from 'gama3d';
+import { Circuit, LapTracker } from 'gama3d/templates';
 import { Mesh, PlaneGeometry, Vector3 } from 'three';
 
 const palette = PALETTES.urban;
@@ -620,7 +623,7 @@ ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
 scene.add(ground);
 
-// The circuit: a kinked ring, paved by createPath.
+// The circuit: SCENA paves the kinked ring, GAMA's Circuit tracks it.
 const WAYPOINTS = [];
 for (let i = 0; i < 18; i++) {
   const a = (i / 18) * Math.PI * 2;
@@ -628,6 +631,7 @@ for (let i = 0; i < 18; i++) {
   WAYPOINTS.push({ x: Math.cos(a) * r * 1.35, z: Math.sin(a) * r });
 }
 scene.add(createPath(WAYPOINTS, { width: 7, loop: true, palette }).mesh);
+const circuit = new Circuit(WAYPOINTS);
 [4, 9, 13, 16].forEach((i) => {
   const planter = createPlanter({ seed: 20 + i, length: 1.2, palette });
   planter.object.position.set(WAYPOINTS[i].x * 1.22, 0, WAYPOINTS[i].z * 1.28);
@@ -639,122 +643,57 @@ scene.add(createPath(WAYPOINTS, { width: 7, loop: true, palette }).mesh);
   scene.add(tree.object);
 });
 
-// Your car — with your driver glued to the seat.
+// The player's car — GAMA drives it (keyboard + on-screen joystick).
 const car = createCar({ seed: 3, color: 0xb8433a, palette });
-scene.add(car.object);
+const body = game.world.spawn('player');
+body.add(car.object);
 const start = WAYPOINTS[0];
-let heading = Math.atan2(WAYPOINTS[1].x - start.x, WAYPOINTS[1].z - start.z);
-car.object.position.set(start.x, 0, start.z);
-car.object.rotation.y = heading;
+body.position.set(start.x, 0, start.z);
+body.rotation.y = Math.atan2(WAYPOINTS[1].x - start.x, WAYPOINTS[1].z - start.z);
+const drive = body.addComponent(new VehicleController(game.input, {
+  vehicle: car, offTrack: (x, z) => circuit.distanceTo(x, z) > 4.5,
+}));
 const rig = createHumanoid({ seed: 9, palette: OUTFITS.villager });
-scene.add(rig.object);
+car.object.add(rig.object);
 const loco = new Locomotion(rig);
 const act = new Interaction(rig, loco);
 act.use(car.slots[0], { fade: 0.01 });
+const cam = new ChaseCamera(game.camera, body, { distance: 8.5, height: 4.4 });
+new TouchControls(game.input);   // an on-screen joystick on phones — one line
 
-// Two GAMA rivals on the loop.
+// Two GAMA rivals lapping the ring; driveVehicle spins their wheels.
 const lapPoints = WAYPOINTS.map((p) => new Vector3(p.x, 0, p.z));
 const rivals = [0x3a6ea5, 0x3f7f5c].map((color, i) => {
   const rival = createCar({ seed: 11 + i, color, palette });
-  const carrier = game.world.spawn('rival-' + i);
-  carrier.add(rival.object);
-  carrier.position.copy(lapPoints[(3 + i * 6) % lapPoints.length]);
-  const agent = carrier.addComponent(
+  const rb = game.world.spawn('rival-' + i);
+  rb.add(rival.object);
+  rb.position.copy(lapPoints[(3 + i * 6) % lapPoints.length]);
+  const agent = rb.addComponent(
     new MotionAgent({ maxSpeed: 9 + i * 2, maxForce: 16, planar: true }));
   agent.addBehavior(new FollowPath(new Path(lapPoints, true), 2.4));
-  return { rival, agent, carrier };
+  return driveVehicle(agent, rival);
 });
 
-// Input: keyboard + touch pads (drawn into the page — works on phones).
-const keys = { left: false, right: false, up: false, down: false };
-const KEYMAP = { ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right',
-                 ArrowUp: 'up', w: 'up', ArrowDown: 'down', s: 'down' };
-addEventListener('keydown', (e) => {
-  const k = KEYMAP[e.key]; if (k) { keys[k] = true; e.preventDefault(); }
-});
-addEventListener('keyup', (e) => { const k = KEYMAP[e.key]; if (k) keys[k] = false; });
-const pad = (label, css, key) => {
-  const b = document.createElement('div');
-  b.textContent = label;
-  b.style.cssText = 'position:fixed;z-index:10;width:64px;height:64px;' +
-    'border-radius:16px;background:rgba(255,255,255,.13);border:1px solid ' +
-    'rgba(255,255,255,.35);color:#fff;font:700 24px system-ui;display:flex;' +
-    'align-items:center;justify-content:center;user-select:none;touch-action:none;' + css;
-  b.addEventListener('pointerdown', (e) => { e.preventDefault(); keys[key] = true; });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) =>
-    b.addEventListener(ev, () => { keys[key] = false; }));
-  document.body.appendChild(b);
-};
-pad('\\u25C0', 'left:16px;bottom:24px', 'left');
-pad('\\u25B6', 'left:96px;bottom:24px', 'right');
-pad('\\u25BC', 'right:96px;bottom:24px', 'down');
-pad('\\u25B2', 'right:16px;bottom:24px', 'up');
+// Lap HUD.
+const laps = new LapTracker(circuit, { laps: 3 });
 const hud = document.createElement('div');
 hud.style.cssText = 'position:fixed;top:10px;right:12px;z-index:10;color:#fff;' +
   'text-align:right;font:600 15px/1.5 system-ui;text-shadow:0 1px 3px #000';
 if (innerWidth < 560) hud.style.top = '84px';
 document.body.appendChild(hud);
 
-// The race.
-let speed = 0, lap = 0, lapTime = 0, best = Infinity;
-let progress = 0, lastTheta = Math.atan2(start.z, start.x);
-const camTarget = new Vector3(start.x, 5, start.z + 10);
-game.camera.position.copy(camTarget);
-
 game.onUpdate((t) => {
-  const dt = Math.min(t.delta, 0.05);
-  const throttle = keys.up ? 1 : keys.down ? -0.45 : 0;
-  const steerIn = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-
-  const top = throttle >= 0 ? 19 * throttle : 6 * throttle;
-  const rate = Math.abs(top) > Math.abs(speed) ? 10 : 16;
-  speed += Math.sign(top - speed) * Math.min(Math.abs(top - speed), rate * dt);
-  if (throttle === 0) speed *= Math.max(0, 1 - 1.1 * dt);
-  const p = car.object.position;
-  let near = Infinity;                       // grass drag off the ribbon
-  for (const w of WAYPOINTS) near = Math.min(near, Math.hypot(p.x - w.x, p.z - w.z));
-  if (near > 5.5) speed *= Math.max(0, 1 - 2.2 * dt);
-
-  heading -= steerIn * 1.75 * dt * Math.min(1, Math.abs(speed) / 5) * Math.sign(speed || 1);
-  car.object.rotation.y = heading;
-  p.x += Math.sin(heading) * speed * dt;
-  p.z += Math.cos(heading) * speed * dt;
-  car.update(dt, { speed: Math.abs(speed), steer: steerIn * 0.5 });
-  loco.update(dt, 0);
-  act.update(dt);
-
-  for (const { rival, agent, carrier } of rivals) {
-    const s = Math.hypot(agent.velocity.x, agent.velocity.z);
-    if (s > 0.2) {
-      const desired = Math.atan2(agent.velocity.x, agent.velocity.z);
-      let delta = desired - carrier.rotation.y;
-      while (delta > Math.PI) delta -= 2 * Math.PI;
-      while (delta < -Math.PI) delta += 2 * Math.PI;
-      carrier.rotation.y += delta * Math.min(1, 3.4 * dt);
-      rival.update(dt, { speed: s, steer: delta * 1.3 });
-    } else rival.update(dt, {});
-  }
-
-  // Laps: swept angle around the circuit centre.
-  lapTime += dt;
-  const theta = Math.atan2(p.z, p.x);
-  let dTheta = theta - lastTheta;
-  while (dTheta > Math.PI) dTheta -= 2 * Math.PI;
-  while (dTheta < -Math.PI) dTheta += 2 * Math.PI;
-  lastTheta = theta;
-  progress += dTheta;
-  if (Math.abs(progress) >= Math.PI * 2) {
-    progress = 0; lap += 1; best = Math.min(best, lapTime); lapTime = 0;
-  }
-  hud.textContent = 'LAP ' + lap + ' \\u00B7 ' + lapTime.toFixed(1) + 's' +
-    (best < Infinity ? ' \\u00B7 best ' + best.toFixed(1) + 's' : '') +
-    ' \\u00B7 ' + Math.round(Math.abs(speed) * 3.6) + ' km/h';
-
-  camTarget.set(p.x - Math.sin(heading) * 8.5, 4.4, p.z - Math.cos(heading) * 8.5);
-  game.camera.position.lerp(camTarget, Math.min(1, 3.2 * dt));
-  game.camera.lookAt(p.x + Math.sin(heading) * 4, 1, p.z + Math.cos(heading) * 4);
+  loco.update(t.delta, 0);
+  act.update(t.delta);
+  for (const spin of rivals) spin(t.delta);
+  cam.update(t.delta);
+  const s = laps.update(t.delta, body.position.x, body.position.z);
+  hud.textContent = 'LAP ' + Math.min(s.lap + 1, 3) + '/3 · ' +
+    s.lapTime.toFixed(1) + 's' +
+    (s.bestLap < Infinity ? ' · best ' + s.bestLap.toFixed(1) + 's' : '') +
+    ' · ' + Math.round(drive.speed * 3.6) + ' km/h';
 });
-game.start();`,
+game.start();`
   },
 ];
 
