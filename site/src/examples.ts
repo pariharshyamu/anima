@@ -818,17 +818,17 @@ const ground = new Mesh(new PlaneGeometry(120, 120), createSurface('dirt', { see
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-const cart = createCart({ seed: 3, palette });
+const cart = createCart({ seed: 3, style: 'wagon', cargo: 'empty', palette });
 cart.object.position.set(4.5, 0, -2.5);
 cart.object.rotation.y = -0.5;
 scene.add(cart.object);
-const cartBed = new Vector3(4.5, 0.85, -2.5);
+const cartBed = new Vector3(4.5, 0.8, -2.5); // the wagon's bed-top height
 const place = (obj, x, z) => { obj.position.set(x, 0, z); scene.add(obj); };
 place(createBarrel({ seed: 5, palette }).object, -5.5, 4.2);
 place(createBasket({ seed: 6, palette }).object, -6.2, 2.4);
 place(createLantern({ seed: 7 }).object, -5.6, 0.6);
 
-const crate = createCrate({ seed: 2, size: 0.8, palette });
+const crate = createCrate({ seed: 2, size: 0.45, palette });
 crate.object.position.set(-3, 0, 3);
 scene.add(crate.object);
 const sack = createSack({ seed: 4 });
@@ -882,7 +882,8 @@ game.onUpdate((t) => {
   } else if (phase === 'toCart' && walker.position.distanceTo(cartStand) < 0.5) {
     phase = 'throwing'; face(cartBed);
     startReach(() => { const box = carry.putDown();
-      if (box) fly = throwObject(box, { to: cartBed, peak: 2.2, gravity: 20, ground: cartBed.y }); });
+      if (box) fly = throwObject(box, { to: cartBed, peak: 1.8, gravity: 20,
+        ground: cartBed.y, spin: new Vector3(2, 0.6, 0) }); });
   } else if (phase === 'throwing' && !reach && !fly) {
     phase = 'toSack'; walkTo(approach(sackPos));
   } else if (phase === 'toSack' && walker.position.distanceTo(approach(sackPos)) < 0.5) {

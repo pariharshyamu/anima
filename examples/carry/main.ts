@@ -31,11 +31,12 @@ scene.add(ground);
 });
 
 // The cart the crate gets thrown onto, plus carryables dressing the yard.
-const cart = createCart({ seed: 3, palette });
+const cart = createCart({ seed: 3, style: 'wagon', cargo: 'empty', palette });
 cart.object.position.set(4.5, 0, -2.5);
 cart.object.rotation.y = -0.5;
 scene.add(cart.object);
-const cartBed = new Vector3(4.5, 0.85, -2.5);
+// The wagon bed top: wheelR(0.5)*TYRE(1.11) + 0.18 + half the 0.12 deck.
+const cartBed = new Vector3(4.5, 0.8, -2.5);
 const place = (obj: import('three').Object3D, x: number, z: number): void => {
   obj.position.set(x, 0, z);
   scene.add(obj);
@@ -45,7 +46,7 @@ place(createBasket({ seed: 6, palette }).object, -6.2, 2.4);
 place(createLantern({ seed: 7 }).object, -5.6, 0.6);
 
 // The two things the porter will move.
-const crate = createCrate({ seed: 2, size: 0.8, palette });
+const crate = createCrate({ seed: 2, size: 0.45, palette });
 crate.object.position.set(-3, 0, 3);
 scene.add(crate.object);
 const sack = createSack({ seed: 4 });
@@ -115,7 +116,10 @@ game.onUpdate((t) => {
     face(cartBed);
     startReach(() => {
       const box = carry.putDown();
-      if (box) fly = throwObject(box, { to: cartBed, peak: 2.2, gravity: 20, ground: cartBed.y });
+      if (box) fly = throwObject(box, {
+        to: cartBed, peak: 1.8, gravity: 20, ground: cartBed.y,
+        spin: new Vector3(2, 0.6, 0), // a gentle tumble — lands tidily on the deck
+      });
     });
   } else if (phase === 'throwing' && !reach && !fly) {
     phase = 'toSack';
