@@ -42,7 +42,18 @@ game.onUpdate((t) => { loco.update(t.delta, agent.velocity); interaction.update(
 interaction.release();                        // hand the body back to locomotion
 ```
 
-Six procedural **poses** ship (`createPoseClip`): `sit` / `sitLow` / `straddle`, `sleep` (a slow breathing loop — the *anchor* supplies the lying orientation), `drive` (hands at the standard wheel), and `cycle` (one crank revolution per loop — `setRate` is the cadence). Three **arm loops** layer on top via `loop:` — `strum`, `hammer`, `knead` — so a bench slot with `loop: 'strum'` is a guitarist, and a smithy's anvil `work` marker finally swings a hammer.
+Seven procedural **poses** ship (`createPoseClip`): `sit` / `sitLow` / `straddle`, `sleep` (a slow breathing loop — the *anchor* supplies the lying orientation), `drive` (hands at the standard wheel), `cycle` (one crank revolution per loop — `setRate` is the cadence), and `operate` (standing at a control, forearms raised — for consoles, levers and machines). Three **arm loops** layer on top via `loop:` — `strum`, `hammer`, `knead` — so a bench slot with `loop: 'strum'` is a guitarist, and a smithy's anvil `work` marker finally swings a hammer.
+
+### One-shot gestures: `Gesture`
+
+Where `Interaction` *holds* a pose, a **`Gesture`** plays once and is gone — a reach, a knock, a press — layered over whatever the body is doing. Its point is the moment it fires `onApex`, where you actuate a SCENA **manipulable** so the hand and the mechanism move together:
+
+```js
+const reach = new Gesture(loco, createReachClip(rig), { onApex: () => lever.toggle() });
+game.onUpdate((t) => { loco.update(t.delta, vel); if (!reach.done) reach.update(t.delta); });
+```
+
+`createReachClip` is an additive arm/chest overlay (the near arm extends forward and returns, peaking mid-clip); `apexAt` tunes when the callback fires. This is the ANIMA half of the **manipulables** verb — SCENA builds the door/lever/portcullis, GAMA wires the level logic, and the reach is what actuates it on screen. See the **manipulables** example.
 
 Blending is honest: the pose crossfades against the whole gait via `Locomotion.influence`, the root tweens in the rig's **parent space** (rooms and vehicles welcome), and GAMA still owns getting there — walk to the slot with an agent, `use()` on arrival.
 

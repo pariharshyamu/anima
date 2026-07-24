@@ -79,3 +79,48 @@ export function createWaveClip(rig: HumanoidRig, duration = 1.8): AnimationClip 
   // Deltas relative to frame 0 (the hanging pose) → layers onto any gait.
   return AnimationUtils.makeClipAdditive(clip);
 }
+
+const X = new Vector3(1, 0, 0);
+
+/**
+ * A one-shot reach — the near arm extends forward to a control and returns,
+ * peaking near the middle. Authored ADDITIVE so it layers over idle, a walk,
+ * or the `operate` hold, and pairs with `Gesture` to actuate a manipulable at
+ * the reach apex (so the hand and the mechanism move together).
+ *
+ * ```ts
+ * const reach = new Gesture(loco, createReachClip(rig), { onApex: () => lever.toggle() });
+ * ```
+ */
+export function createReachClip(rig: HumanoidRig, duration = 1.1): AnimationClip {
+  void rig;
+  const fps = 30;
+  const frames = Math.round(duration * fps);
+  const times = new Float32Array(frames + 1);
+  const armValues = new Float32Array((frames + 1) * 4);
+  const foreValues = new Float32Array((frames + 1) * 4);
+  const chestValues = new Float32Array((frames + 1) * 4);
+  const q = new Quaternion();
+  const smooth = (t: number): number => t * t * (3 - 2 * t);
+
+  for (let i = 0; i <= frames; i++) {
+    times[i] = (i * duration) / frames;
+    const w = i / frames;
+    // Bell curve peaking ~45%: reach out, hold a beat, draw back.
+    const amp = smooth(Math.min(1, w / 0.35)) * smooth(Math.min(1, (1 - w) / 0.42));
+    // Right arm swings forward (about X); forearm straightens; chest leans in.
+    q.setFromAxisAngle(X, -amp * 0.95);
+    armValues.set([q.x, q.y, q.z, q.w], i * 4);
+    q.setFromAxisAngle(X, -amp * 0.7);
+    foreValues.set([q.x, q.y, q.z, q.w], i * 4);
+    q.setFromAxisAngle(X, amp * 0.14);
+    chestValues.set([q.x, q.y, q.z, q.w], i * 4);
+  }
+
+  const clip = new AnimationClip('reach', duration, [
+    new QuaternionKeyframeTrack('RightArm.quaternion', times as unknown as number[], armValues as unknown as number[]),
+    new QuaternionKeyframeTrack('RightForeArm.quaternion', times as unknown as number[], foreValues as unknown as number[]),
+    new QuaternionKeyframeTrack('Chest.quaternion', times as unknown as number[], chestValues as unknown as number[]),
+  ]);
+  return AnimationUtils.makeClipAdditive(clip);
+}

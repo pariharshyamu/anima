@@ -37,9 +37,10 @@ export {
 } from './locomotion';
 export { FootIK, type FootIKOptions } from './ik';
 export { LookAt, type LookAtOptions } from './lookAt';
-export { maskClip, createWaveClip, UPPER_BODY } from './overlay';
+export { maskClip, createWaveClip, createReachClip, UPPER_BODY } from './overlay';
 export {
   Interaction,
+  Gesture,
   createPoseClip,
   createLoopClip,
   GRIPS,
@@ -47,4 +48,5 @@ export {
   type PoseName,
   type LoopName,
   type UseOptions,
+  type GestureOptions,
 } from './interact';

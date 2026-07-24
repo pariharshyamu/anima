@@ -4,6 +4,8 @@ import {
   createHumanoid,
   createLoopClip,
   createPoseClip,
+  createReachClip,
+  Gesture,
   GRIPS,
   Interaction,
   Locomotion,
@@ -16,7 +18,7 @@ const rig = () => createHumanoid({ seed: 5 });
 describe('pose clips', () => {
   it('builds every pose, loop-seamless', () => {
     const r = rig();
-    for (const name of ['sit', 'sitLow', 'straddle', 'sleep', 'drive', 'cycle'] as PoseName[]) {
+    for (const name of ['sit', 'sitLow', 'straddle', 'sleep', 'drive', 'cycle', 'operate'] as PoseName[]) {
       const clip = createPoseClip(r, name);
       expect(clip.duration).toBeGreaterThan(0.5);
       for (const track of clip.tracks) {
@@ -158,5 +160,52 @@ describe('Interaction', () => {
     }
     expect(interaction.poseWeight).toBeCloseTo(1, 2);
     interaction.setRate(1.4); // strum tempo — must not throw
+  });
+});
+
+describe('Gesture (one-shot reach)', () => {
+  it('is an additive arm/chest overlay that layers on any gait', () => {
+    const clip = createReachClip(createHumanoid({ seed: 3 }));
+    const bones = new Set(clip.tracks.map((t) => t.name.split('.')[0]));
+    expect(bones.has('RightArm')).toBe(true);
+    expect(bones.has('Chest')).toBe(true);
+    expect(bones.has('Hips')).toBe(false); // arms/torso only — legs keep walking
+    expect(clip.duration).toBeGreaterThan(0.5);
+  });
+
+  it('fires onApex once at the reach peak, then completes', () => {
+    const r = createHumanoid({ seed: 4 });
+    const loco = new Locomotion(r);
+    let fired = 0;
+    const g = new Gesture(loco, createReachClip(r, 1.0), {
+      apexAt: 0.5,
+      onApex: () => fired++,
+    });
+    // Before the apex: not fired, not done.
+    loco.update(0.2, 0);
+    expect(g.update(0.2)).toBe(true);
+    expect(fired).toBe(0);
+    // Past the apex: fires exactly once.
+    g.update(0.4);
+    expect(fired).toBe(1);
+    g.update(0.4);
+    expect(fired).toBe(1); // no re-fire
+    // Past the duration: done.
+    expect(g.done).toBe(true);
+    expect(g.update(0.1)).toBe(false);
+  });
+
+  it('actuates a manipulable at the apex — hand and mechanism together', () => {
+    const r = createHumanoid({ seed: 6 });
+    const loco = new Locomotion(r);
+    // A stand-in manipulable (structural: SCENA's Manipulable satisfies this).
+    let open = false;
+    const lever = { toggle: () => (open = !open) };
+    const g = new Gesture(loco, createReachClip(r, 0.8), { onApex: () => lever.toggle() });
+    for (let i = 0; i < 60 && !g.done; i++) {
+      loco.update(1 / 60, 0);
+      g.update(1 / 60);
+    }
+    expect(open).toBe(true);
   });
 });

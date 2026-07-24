@@ -30,7 +30,7 @@ export const GRIPS = {
   guitar: { x: 0.05, y: 0.95, z: 0.18 },
 } as const;
 
-export type PoseName = 'sit' | 'sitLow' | 'straddle' | 'sleep' | 'drive' | 'cycle';
+export type PoseName = 'sit' | 'sitLow' | 'straddle' | 'sleep' | 'drive' | 'cycle' | 'operate';
 export type LoopName = 'strum' | 'hammer' | 'knead';
 
 /** Arm bones only — the mask used by interaction loop overlays. */
@@ -125,6 +125,24 @@ export function createPoseClip(rig: HumanoidRig, name: PoseName): AnimationClip 
       pose.rotate('Spine', [X, 0.1]);
       pose.rotate('Chest', [X, 0.06], [Y, 0.03 * sway]);
       pose.rotate('Head', [X, -0.08]);
+    });
+  }
+
+  if (name === 'operate') {
+    // Standing at a control (a lever, a valve, a drawer): weight settled, a
+    // slight forward lean of attention, forearms raised ready in front. The
+    // held "attending the machine" pose; the reach gesture layers the actual
+    // actuation on top.
+    return buildClip(rig, 'operate', 4.0, 30, (p, pose) => {
+      const breath = Math.sin(TAU * p);
+      pose.rotate('Spine', [X, 0.09 + 0.01 * breath]);
+      pose.rotate('Chest', [X, 0.05]);
+      pose.rotate('Head', [X, -0.05], [Y, 0.05 * Math.sin(TAU * p + 1)]);
+      for (const side of ['Left', 'Right'] as const) {
+        const s = side === 'Left' ? 1 : -1;
+        pose.rotate(`${side}Arm`, [X, -0.5 - 0.02 * breath], [Z, -s * (HANG - 0.5)]);
+        pose.rotate(`${side}ForeArm`, [Y, -s * 0.5], [X, -0.32]);
+      }
     });
   }
 
@@ -339,5 +357,62 @@ export class Interaction {
       this.loco.stopOverlay(this.loopAction, this.fade);
       this.loopAction = null;
     }
+  }
+}
+
+export interface GestureOptions {
+  /** Fraction of the clip at which `onApex` fires — the reach peak. Default 0.45. */
+  apexAt?: number;
+  /** Called once, at the apex — actuate the prop here (`() => lever.toggle()`). */
+  onApex?: () => void;
+  /** Overlay fade-in, seconds. Default 0.15. */
+  fade?: number;
+}
+
+/**
+ * A one-shot gesture — a reach, a knock, a press — layered over whatever the
+ * character is doing (idle, walk, or an `operate` hold) and gone when it ends.
+ * Unlike `Interaction` (which HOLDS a pose), a gesture plays once; its whole
+ * point is the moment it fires `onApex`, where you actuate a manipulable so
+ * the hand and the mechanism move together.
+ *
+ * ```ts
+ * const reach = new Gesture(loco, createReachClip(rig), { onApex: () => lever.toggle() });
+ * game.onUpdate((t) => { loco.update(t.delta, vel); if (!reach.done) reach.update(t.delta); });
+ * ```
+ */
+export class Gesture {
+  private readonly loco: Locomotion;
+  private readonly action: AnimationAction;
+  private readonly duration: number;
+  private readonly apexAt: number;
+  private readonly onApex?: () => void;
+  private elapsed = 0;
+  private fired = false;
+
+  constructor(loco: Locomotion, clip: AnimationClip, options: GestureOptions = {}) {
+    this.loco = loco;
+    this.duration = clip.duration;
+    this.apexAt = options.apexAt ?? 0.45;
+    this.onApex = options.onApex;
+    this.action = loco.overlay(clip, { loop: false, fadeIn: options.fade ?? 0.15 });
+  }
+
+  /** Advance; fires `onApex` at the peak. Returns false once finished. */
+  update(dt: number): boolean {
+    this.elapsed += dt;
+    if (!this.fired && this.elapsed >= this.duration * this.apexAt) {
+      this.fired = true;
+      this.onApex?.();
+    }
+    if (this.elapsed >= this.duration && this.action.isRunning()) {
+      this.loco.stopOverlay(this.action, 0.2);
+    }
+    return this.elapsed < this.duration;
+  }
+
+  /** True once the gesture has run its course. */
+  get done(): boolean {
+    return this.elapsed >= this.duration;
   }
 }
