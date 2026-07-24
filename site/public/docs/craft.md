@@ -55,6 +55,20 @@ game.onUpdate((t) => { loco.update(t.delta, vel); if (!reach.done) reach.update(
 
 `createReachClip` is an additive arm/chest overlay (the near arm extends forward and returns, peaking mid-clip); `apexAt` tunes when the callback fires. This is the ANIMA half of the **manipulables** verb — SCENA builds the door/lever/portcullis, GAMA wires the level logic, and the reach is what actuates it on screen. See the **manipulables** example.
 
+### Carrying things: `Carry`
+
+Pick a thing up and it rides the body — hands landing on it by construction — **carried while walking**; put it down, hand it off, or let GAMA throw it. A **`Holdable`** is anything with `{ object, carry?, grip? }` (SCENA's carryables satisfy it):
+
+```js
+const carry = new Carry(rig, loco);
+carry.pickUp(crate);                       // rides the chest; both hands on it
+game.onUpdate((t) => loco.update(t.delta, agent.velocity)); // still walking, still holding
+const box = carry.putDown({ at: table });  // set it down, or hand `box` to throwObject
+carry.handTo(otherCarry);                  // pass it straight to a mate
+```
+
+The carry pose is a masked arm (and, for weight, chest) overlay over the gait — the legs keep walking. Four styles pick the posture and where the thing rides: `crate` (hugged to the chest), `tray` (out at the belly), `shoulder` (hoisted up, one hand steadying), and `side` (hanging from one hand, the other arm free to swing). `createCarryClip(rig, style)` is the clip if you want it directly. Pair with GAMA's `throwObject` for the release arc — see the **carryables** example.
+
 Blending is honest: the pose crossfades against the whole gait via `Locomotion.influence`, the root tweens in the rig's **parent space** (rooms and vehicles welcome), and GAMA still owns getting there — walk to the slot with an agent, `use()` on arrival.
 
 **No hand IK — and that's a feature.** The exported `GRIPS` constants standardize where wheels, handlebars and seats sit relative to a slot's anchor; SCENA props are *built to those offsets*, so hands land on steering wheels by construction. `furnishRoom`'s sit/sleep/work markers are slots waiting to happen: stand an anchor on one and villagers sit at the benches they've been standing beside since 0.31.

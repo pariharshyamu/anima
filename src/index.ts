@@ -39,6 +39,14 @@ export { FootIK, type FootIKOptions } from './ik';
 export { LookAt, type LookAtOptions } from './lookAt';
 export { maskClip, createWaveClip, createReachClip, UPPER_BODY } from './overlay';
 export {
+  Carry,
+  createCarryClip,
+  type CarryStyle,
+  type Holdable,
+  type CarryOptions,
+  type PutDownOptions,
+} from './carry';
+export {
   Interaction,
   Gesture,
   createPoseClip,

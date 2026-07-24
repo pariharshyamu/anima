@@ -792,6 +792,114 @@ const camTarget = new Vector3(6, 5, 12);
 game.camera.position.set(6, 5, 12);
 game.start();`
   },
+
+  {
+    id: 'carry',
+    title: 'Carryables (pick up · carry · throw)',
+    group: 'Games',
+    code: `// The carry verb: a porter picks up a crate, carries it (still walking),
+// and THROWS it onto the cart; then shoulders a sack and hands it to a mate.
+// SCENA builds the carryables, ANIMA's Carry does the holding, GAMA's
+// throwObject does the arc.
+import { createSky, createLightingRig, applyFog, createSurface, createTree,
+         createCart, createCrate, createBarrel, createBasket, createSack,
+         createLantern, PALETTES } from 'scena3d';
+import { createHumanoid, Carry, createReachClip, FootIK, Gesture,
+         Locomotion, OUTFITS } from 'anima3d';
+import { Game, MotionAgent, FollowPath, Path, throwObject } from 'gama3d';
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(120, 120), createSurface('dirt', { seed: 1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const cart = createCart({ seed: 3, palette });
+cart.object.position.set(4.5, 0, -2.5);
+cart.object.rotation.y = -0.5;
+scene.add(cart.object);
+const cartBed = new Vector3(4.5, 0.85, -2.5);
+const place = (obj, x, z) => { obj.position.set(x, 0, z); scene.add(obj); };
+place(createBarrel({ seed: 5, palette }).object, -5.5, 4.2);
+place(createBasket({ seed: 6, palette }).object, -6.2, 2.4);
+place(createLantern({ seed: 7 }).object, -5.6, 0.6);
+
+const crate = createCrate({ seed: 2, size: 0.8, palette });
+crate.object.position.set(-3, 0, 3);
+scene.add(crate.object);
+const sack = createSack({ seed: 4 });
+sack.object.position.set(-4, 0, -3);
+scene.add(sack.object);
+
+const rig = createHumanoid({ seed: 12, palette: OUTFITS.villager });
+const loco = new Locomotion(rig);
+const ik = new FootIK(rig, { ground: () => 0 });
+const carry = new Carry(rig, loco);
+const walker = game.world.spawn('porter');
+walker.add(rig.object);
+walker.position.set(0, 0, 6);
+const agent = walker.addComponent(new MotionAgent({ maxSpeed: 2.6, maxForce: 18, planar: true }));
+
+const mate = createHumanoid({ seed: 21, palette: OUTFITS.villager });
+mate.object.position.set(2.2, 0, -5);
+mate.object.rotation.y = Math.PI;
+scene.add(mate.object);
+const mateLoco = new Locomotion(mate);
+const mateCarry = new Carry(mate, mateLoco);
+
+const approach = (p, gap = 0.9) => {
+  const dir = new Vector3().subVectors(walker.position, p).setY(0).normalize();
+  return p.clone().addScaledVector(dir, gap);
+};
+const walkTo = (p) => { agent.clearBehaviors(); agent.maxSpeed = 2.6;
+  agent.addBehavior(new FollowPath(new Path([walker.position.clone(), p], false), 0.4)); };
+const face = (p) => { walker.rotation.y = Math.atan2(p.x - walker.position.x, p.z - walker.position.z); };
+
+const cratePos = crate.object.position.clone();
+const sackPos = sack.object.position.clone();
+const cartStand = new Vector3(cartBed.x - 1.6, 0, cartBed.z + 1.2);
+const mateStand = new Vector3(mate.object.position.x + 0.1, 0, mate.object.position.z + 1.1);
+walkTo(approach(cratePos));
+
+let phase = 'toCrate';
+let reach = null, fly = null;
+const startReach = (onApex) => { agent.maxSpeed = 0; reach = new Gesture(loco, createReachClip(rig), { onApex }); };
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  loco.update(dt, reach ? 0 : agent.velocity);
+  mateLoco.update(dt, 0);
+  ik.update();
+  if (reach && !reach.update(dt)) reach = null;
+  if (fly && !fly(dt)) fly = null;
+
+  if (phase === 'toCrate' && walker.position.distanceTo(approach(cratePos)) < 0.5) {
+    phase = 'toCart'; face(cratePos); carry.pickUp(crate); walkTo(cartStand);
+  } else if (phase === 'toCart' && walker.position.distanceTo(cartStand) < 0.5) {
+    phase = 'throwing'; face(cartBed);
+    startReach(() => { const box = carry.putDown();
+      if (box) fly = throwObject(box, { to: cartBed, peak: 2.2, gravity: 20, ground: cartBed.y }); });
+  } else if (phase === 'throwing' && !reach && !fly) {
+    phase = 'toSack'; walkTo(approach(sackPos));
+  } else if (phase === 'toSack' && walker.position.distanceTo(approach(sackPos)) < 0.5) {
+    phase = 'toMate'; face(sackPos); carry.pickUp(sack); walkTo(mateStand);
+  } else if (phase === 'toMate' && walker.position.distanceTo(mateStand) < 0.5) {
+    phase = 'done'; face(mate.object.position); carry.handTo(mateCarry);
+  }
+
+  const f = walker.position;
+  camTarget.set(f.x + 4.5, 4.2, f.z + 7);
+  game.camera.position.lerp(camTarget, Math.min(1, 2 * dt));
+  game.camera.lookAt(f.x, 1, f.z - 1);
+});
+const camTarget = new Vector3(5, 5, 12);
+game.camera.position.set(5, 5, 12);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {
