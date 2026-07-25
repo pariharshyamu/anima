@@ -1435,6 +1435,113 @@ game.onUpdate((t) => {
 game.camera.position.set(2.6, 1.9, 3.2);
 game.start();`
   },
+{
+    id: 'queue',
+    title: 'Queueing at a cash machine',
+    group: 'Scale',
+    code: `// SCENA says where the line is; GAMA says who is where along it. Waiting
+// itself is free — the mannerisms and the phone-checking already existed.
+// What makes the line read is that it does NOT advance as one: each person
+// notices the gap in their own time, so the shuffle travels backwards like
+// a wave. Space = another customer, S = serve the front.
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createPhone, createSky, createSurface,
+         createTerminal, PALETTES } from 'scena3d';
+import { createHumanoid, Locomotion, LookAt, Mannerisms, OUTFITS, PhoneUse } from 'anima3d';
+import { Game, Queue } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(120, 120), createSurface('concrete', { seed: 9 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const atm = createTerminal({ style: 'atm', seed: 4, palette });
+atm.object.position.set(0, 0, -1.2);
+scene.add(atm.object);
+const vending = createTerminal({ style: 'vending', seed: 8, palette });
+vending.object.position.set(3.4, 0, -1.2);
+scene.add(vending.object);
+
+const queue = new Queue({ spacing: atm.spacing, service: 16, patience: 5,
+                          giveUpAfter: 34, reaction: 0.55, seed: 5 });
+const customers = [];
+let made = 0;
+const velocity = new Vector3();
+const want = new Vector3();
+
+function arrive() {
+  const i = made++;
+  const rig = createHumanoid({ seed: 120 + i * 13, palette: OUTFITS.villager });
+  rig.object.position.set(4.5 + (i % 3) * 0.6, 0, 5.5 + (i % 4) * 0.5);
+  scene.add(rig.object);
+  const loco = new Locomotion(rig);
+  const c = {
+    rig, loco, gaze: new LookAt(rig),
+    idle: new Mannerisms(rig, loco, { context: 'standing', seed: 200 + i }),
+    phone: new PhoneUse(rig, loco, { seed: 300 + i, glanceEvery: 5 }),
+    at: rig.object.position, bored: 4 + (i % 5) * 2.5, leaving: null,
+  };
+  const handset = createPhone({ seed: 400 + i, mode: 'feed', scrollRate: 1.1 });
+  scene.add(handset.object);
+  c.phone.hold(handset);
+  customers.push(c);
+  // They may take one look at the line and keep walking.
+  if (queue.join(c) === null) c.leaving = new Vector3(-7, 0, 7);
+}
+queue.onServed = (c) => { c.leaving = new Vector3(-8, 0, 6.5); c.phone.stow(); };
+queue.onGiveUp = (c) => { c.leaving = new Vector3(-8, 0, 8); c.phone.stow(); };
+queue.onBalk = (c) => { c.leaving = new Vector3(-7, 0, 7); };
+for (let i = 0; i < 5; i++) arrive();
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  if (game.input.wasPressed('Space')) arrive();
+  if (game.input.wasPressed('KeyS')) queue.serve();
+  queue.update(dt);
+  atm.screen.update(dt);
+  vending.screen.update(dt);
+
+  for (const c of customers) {
+    const place = queue.placeOf(c);
+    if (c.leaving) want.copy(c.leaving);
+    // A DISTANCE from the queue becomes a place to stand on the terminal's
+    // own line. Neither library knows about the other.
+    else want.copy(atm.line.localToWorld(new Vector3(0, 0, -queue.distanceOf(c))));
+
+    velocity.copy(want).sub(c.at).setY(0);
+    const gap = velocity.length();
+    if (gap > 0.08) {
+      velocity.normalize().multiplyScalar(Math.min(1.5, gap * 2.2) * c.phone.walkScale);
+      c.at.addScaledVector(velocity, dt);
+      c.rig.object.rotation.y = Math.atan2(velocity.x, velocity.z);
+    } else {
+      velocity.set(0, 0, 0);
+      if (!c.leaving) c.rig.object.rotation.y = Math.PI;
+    }
+    // Waiting is boring — and costs nothing to build, twice over.
+    if (!c.leaving && place > 0) {
+      c.bored -= dt;
+      if (c.bored <= 0 && c.phone.stowed) c.phone.use('scroll');
+    } else if (place === 0 && !c.phone.stowed) {
+      c.phone.stow();   // you put it away when you get to the front
+    }
+    c.gaze.target = place === 0 ? atm.screen.surface.getWorldPosition(new Vector3()) : null;
+    c.loco.update(dt, velocity);
+    c.phone.update(dt);
+    c.idle.update(dt);
+    c.gaze.update(dt);
+  }
+  const a = t.elapsed * 0.08;
+  game.camera.position.set(Math.sin(a) * 3.2 + 3.4, 3.4, 6.6 + Math.cos(a) * 0.9);
+  game.camera.lookAt(0.6, 1.0, 0.6);
+});
+game.camera.position.set(3.4, 3.4, 6.6);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {
