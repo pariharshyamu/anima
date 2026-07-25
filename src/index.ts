@@ -127,3 +127,9 @@ export {
   type DeskTask,
   type DeskWorkOptions,
 } from './desk';
+export {
+  Washing,
+  createWashClip,
+  type WashTask,
+  type WashingOptions,
+} from './wash';

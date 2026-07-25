@@ -252,3 +252,24 @@ Two things worth knowing, both learned the hard way:
 
 - **A keystroke has to reach the forearm.** A bone's own rotation does not move its origin, so a strike animated purely on the wrist moves the hand not at all — it is invisible however hard you animate it.
 - **Strokes alternate and are unevenly spaced,** and the clip is sampled at 60 fps rather than 30. Eight strokes in a cycle at 30 fps is two keyframes each; interpolation smooths them away and both hands come out moving together.
+
+## Washing at a basin
+
+```ts
+const wash = new Washing(rig, loco);
+wash.do('scrub');
+game.onUpdate((t) => { loco.update(t.delta, 0); wash.update(t.delta); });
+```
+
+`scrub`, `rinse`, `tap` and `dry`. Left alone, `update` walks them **in order** — washing has a sequence, unlike desk work; you do not rinse before you scrub.
+
+This looks like `DeskWork` and is not. At a desk the forearms come *forward* at elbow height and the head stays near level, because the screen is at eye height. At a basin the hands go **down and together** into a bowl below the elbows, the shoulders round over it, and the head really drops — you are looking at your hands, which is the one thing the desk pose is careful not to do. The tests assert both differences against `DeskWork` directly rather than against a constant.
+
+Both of those came out backwards first time, and the fix was to **sweep the rig and measure**:
+
+- **Arm `Z` controls how far apart the hands are**, not how far forward. 1.05 gives a 69 cm gap; 1.45 gives 42 cm.
+- **Less forearm bend drops the hand below the elbow**, not more. 0.8 puts it 11 cm under; 1.4 puts it 5 cm over.
+
+I had used the widest, highest combination of both, and it failed six tests at once. That is now three separate poses where the rig read the opposite of the intuition — it is always cheaper to probe it than to argue with it.
+
+One more that keeps recurring: **a bone's own rotation never moves its own origin.** The shake in `dry` reaches the forearm for the same reason the keystroke in `DeskWork` does, and a test that measures child origins to check a turning handle will report it as perfectly still.
