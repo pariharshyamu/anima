@@ -145,12 +145,24 @@ export class Mount {
   private fromQ = new Quaternion();
   private worldRoot: Object3D | null = null;
   private weight = 0;
+  /**
+   * How far to drop the rider's root so their SEAT lands on the saddle.
+   *
+   * A humanoid rig's origin is between its feet, so parenting it straight
+   * to a saddle stands the rider on the horse's back with their hips a
+   * metre in the air — which is exactly what it looks like. Sitting means
+   * putting the *hip joint* on the seat, so the root goes down by the
+   * rig's own hip height (less a little, since the seat is under the
+   * pelvis rather than through it).
+   */
+  private readonly seatDrop: number;
 
   constructor(rig: HumanoidRig, loco: Locomotion, options: MountOptions = {}) {
     this.rig = rig;
     this.loco = loco;
     this.stage = options.stage ?? 0.55;
     this.side = (options.side ?? 'near') === 'near' ? 1 : -1;
+    this.seatDrop = rig.bones.Hips.position.y - 0.06 * rig.height;
   }
 
   get phase(): MountPhase {
@@ -269,12 +281,17 @@ export class Mount {
       position.copy(seat).addScaledVector(left, horse.height * 0.42).setY(ground);
       quaternion.setFromUnitVectors(new Vector3(0, 0, 1), left.clone().negate());
     } else if (phase === 'stirrup') {
-      // Risen in the stirrup: tall alongside, still off to the side.
-      position.copy(seat).addScaledVector(left, horse.height * 0.3).setY(seat.y - 0.1);
+      // Risen in the stirrup: standing tall alongside, feet at stirrup
+      // height — roughly half a metre under the seat, not level with it.
+      position.copy(seat).addScaledVector(left, horse.height * 0.3).setY(seat.y - 0.52);
       quaternion.setFromUnitVectors(new Vector3(0, 0, 1), left.clone().negate());
     } else {
-      // Leg over: above the saddle, turning to face the horse's head.
-      position.copy(seat).addScaledVector(left, horse.height * 0.06).setY(seat.y + 0.12);
+      // Leg over: swinging across, already most of the way down to the
+      // seated height so the last beat is a settle, not a drop.
+      position
+        .copy(seat)
+        .addScaledVector(left, horse.height * 0.05)
+        .setY(seat.y - this.seatDrop + 0.22);
       quaternion.copy(facing);
     }
     void back;
@@ -292,7 +309,8 @@ export class Mount {
   private sit(): void {
     const horse = this.horse!;
     horse.saddle.add(this.rig.object);
-    this.rig.object.position.set(0, 0, 0);
+    // Sit the rider's HIPS on the saddle, not their feet.
+    this.rig.object.position.set(0, -this.seatDrop, 0);
     this.rig.object.quaternion.identity();
     this.state = 'seated';
     this.playSeat();

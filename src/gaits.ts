@@ -43,9 +43,14 @@ export interface GaitSpec {
   contact: Record<LegName, number>;
   /** Fraction of the stride each foot spends on the ground. */
   duty: number;
-  /** Distance covered per stride, in leg lengths. */
-  stride: number;
-  /** How far the limbs swing (radians). */
+  /**
+   * How far the limbs swing, in radians — half the total protraction /
+   * retraction arc.
+   *
+   * This, and NOT a hand-picked stride length, is what sets the gait's
+   * ground speed: see `gaitSpeed`. A declared stride that the legs cannot
+   * actually deliver is precisely how a horse ends up skating.
+   */
   reach: number;
   /** Vertical travel of the body, as a fraction of withers height. */
   bob: number;
@@ -79,8 +84,7 @@ export const GAITS: Record<Exclude<GaitName, 'idle'>, GaitSpec> = {
     duration: 1.15,
     contact: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 },
     duty: 0.62,
-    stride: 1.05,
-    reach: 0.34,
+    reach: 0.45,
     bob: 0.012,
     nod: 0.13,
     nodRate: 1,
@@ -91,7 +95,6 @@ export const GAITS: Record<Exclude<GaitName, 'idle'>, GaitSpec> = {
     duration: 0.72,
     contact: { LF: 0, RH: 0, RF: 0.5, LH: 0.5 },
     duty: 0.42,
-    stride: 1.75,
     reach: 0.46,
     bob: 0.032,
     nod: 0.015, // level: this is the gait you can post to
@@ -104,7 +107,6 @@ export const GAITS: Record<Exclude<GaitName, 'idle'>, GaitSpec> = {
     contact: { LH: 0, RH: 0.28, LF: 0.28, RF: 0.56 },
     duration: 0.62,
     duty: 0.35,
-    stride: 2.5,
     reach: 0.55,
     bob: 0.055,
     nod: 0.12,
@@ -117,7 +119,6 @@ export const GAITS: Record<Exclude<GaitName, 'idle'>, GaitSpec> = {
     contact: { LH: 0, RH: 0.13, LF: 0.37, RF: 0.5 },
     duration: 0.52,
     duty: 0.27,
-    stride: 3.4,
     reach: 0.72,
     bob: 0.062,
     nod: 0.2,
@@ -200,13 +201,22 @@ interface LimbState {
   reach: number;
 }
 
+/** Attach-point-to-hoof length, as a fraction of withers height. */
+const FRONT_REACH = 0.62;
+const HIND_REACH = 0.68;
+
 /** Where a limb is in its own cycle at stride phase `p`. */
 function limbState(leg: LegName, p: number, spec: GaitSpec): LimbState {
   const front = isFront(leg);
   const t = wrap01(p - spec.contact[leg]); // time since this foot landed
   const D = spec.duty;
-  const A = spec.reach * (front ? 0.92 : 1.0); // hinds reach further under
-  const reach = front ? 0.62 : 0.68; // shoulder→hoof / hip→hoof
+  // Fore and hind sweep the SAME distance along the ground. A horse
+  // "tracks up" — the hind foot lands in the print the forefoot just left —
+  // and geometrically it has to: one body cannot travel at two speeds. The
+  // foreleg is shorter, so it swings through a wider angle to cover the
+  // same ground.
+  const A = front ? Math.asin(Math.min(1, (HIND_REACH / FRONT_REACH) * Math.sin(spec.reach))) : spec.reach;
+  const reach = front ? FRONT_REACH : HIND_REACH; // shoulder→hoof / hip→hoof
   if (t < D) {
     // Stance: planted. Linear sweep — the hoof must not slide.
     const u = t / D;
@@ -330,9 +340,24 @@ export interface GaitOptions {
   tempo?: number;
 }
 
-/** Speed a gait carries the body at: stride length over stride duration. */
+/**
+ * The ground speed a gait actually carries the body at.
+ *
+ * This is not a style choice, it is arithmetic. While a hoof is planted it
+ * sweeps a fixed arc under the body — `2·R·sin(reach)` for a limb of
+ * length R — and the body must cover exactly that distance in exactly the
+ * time the hoof is down (`duty × duration`). Move faster and the hoof
+ * skates; slower and the horse moonwalks.
+ *
+ * Declaring a stride length by hand instead is the classic way to get this
+ * wrong: the number looks plausible, the legs cannot deliver it, and the
+ * animal slides along the ground with its legs cycling uselessly.
+ */
 export function gaitSpeed(rig: QuadrupedRig, spec: GaitSpec): number {
-  return (spec.stride * rig.legLength) / spec.duration;
+  // Fore and hind are matched to sweep the same distance (see `limbState`),
+  // so either one gives the answer.
+  const sweep = 2 * HIND_REACH * Math.sin(spec.reach) * rig.height;
+  return sweep / (spec.duty * spec.duration);
 }
 
 /**
@@ -451,8 +476,15 @@ type GaitListener = (to: GaitName, from: GaitName) => void;
 export class QuadrupedLocomotion {
   readonly mixer: AnimationMixer;
   readonly clips: QuadrupedClips;
-  /** Playback rate is clamped to this band so strides stay believable. */
-  readonly rateRange: [number, number] = [0.65, 1.45];
+  /**
+   * Playback rate is clamped to this band. It has to be wide enough to
+   * span each gait's whole operating range — from the idle threshold up to
+   * the speed the next gait takes over — because **any clamping is
+   * skating**: the moment playback stops tracking ground speed, the hooves
+   * stop agreeing with the floor. The band exists only as a backstop
+   * against absurd inputs, not as a stylistic limit.
+   */
+  readonly rateRange: [number, number] = [0.1, 1.9];
 
   private readonly actions: Record<GaitName, AnimationAction>;
   private readonly idleThreshold: number;
@@ -514,7 +546,15 @@ export class QuadrupedLocomotion {
     if (gait === this.current) return;
     const from = this.current;
     this.actions[from].fadeOut(this.blend);
-    this.actions[gait].reset().fadeIn(this.blend).play();
+    const next = this.actions[gait];
+    next.reset();
+    // `fadeIn` SCALES an action's intrinsic weight — it does not set it. An
+    // action parked at `setEffectiveWeight(0)` therefore fades from zero to
+    // zero and never animates a thing, however healthily the mixer ticks
+    // over. Restore the intrinsic weight first, then fade.
+    next.setEffectiveWeight(1);
+    next.fadeIn(this.blend);
+    next.play();
     this.current = gait;
     for (const listener of [...this.listeners]) listener(gait, from);
   }

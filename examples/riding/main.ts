@@ -101,6 +101,9 @@ new TouchControls(game.input, {
   ],
 });
 
+let holdSpeed = false; // test hook: freeze speed to measure steady-state skate
+let testUrge: number | null = null; // test hook: a sustained ask
+let sideView = false; // test hook: watch from the side, where a seat reads
 const hud = document.getElementById('hud')!;
 const axis = new Vector2();
 
@@ -130,11 +133,13 @@ game.onUpdate((t) => {
   // galloping horse and it carries on and settles to a halt by itself,
   // rather than freezing mid-stride the moment nobody is aboard.
   const seated = mount.phase === 'seated';
-  ride.update(dt, {
-    urge: seated ? axis.y : 0,
-    rein: seated ? axis.x : 0,
-    halt: seated && game.input.isDown('Space'),
-  });
+  if (!holdSpeed) {
+    ride.update(dt, {
+      urge: seated ? (testUrge ?? axis.y) : 0,
+      rein: seated ? axis.x : 0,
+      halt: seated && game.input.isDown('Space'),
+    });
+  }
   ride.applyTo(horse.object, dt);
   gaits.update(dt, ride.speed);
 
@@ -171,8 +176,15 @@ game.onUpdate((t) => {
     at.y + 2.6 + ride.effort * 0.8,
     at.z - Math.cos(heading) * behind
   );
-  game.camera.position.lerp(want, Math.min(1, dt * 3));
-  game.camera.lookAt(at.x, at.y + 1.2, at.z);
+  if (sideView) {
+    // Broadside, level with the saddle — the view a seat is judged from.
+    want.set(at.x - Math.cos(heading) * 4.2, at.y + 1.35, at.z + Math.sin(heading) * 4.2);
+    game.camera.position.copy(want);
+    game.camera.lookAt(at.x, at.y + 1.15, at.z);
+  } else {
+    game.camera.position.lerp(want, Math.min(1, dt * 3));
+    game.camera.lookAt(at.x, at.y + 1.2, at.z);
+  }
 
   hud.innerHTML =
     `<b>${gaits.gait}</b><br>${ride.speed.toFixed(1)} m/s<br>` +
@@ -188,16 +200,68 @@ declare global {
   interface Window {
     ridingDebug: () => Record<string, unknown>;
     ridingDo: (what: string) => void;
+    ridingSkate: () => Record<string, number>;
+    ridingLimbs: () => Record<string, number>;
   }
 }
+// Foot-skate probe: a PLANTED hoof should be motionless in world space
+// while the horse moves under it. Any residual world speed IS the slide.
+const hoofLast = new Map<string, Vector3>();
+let slipWorst = 0;
+let slipMin = Infinity;
+game.onUpdate((t) => {
+  if (t.delta <= 0) return;
+  for (const leg of ['LF', 'RF', 'LH', 'RH']) {
+    const at = horse.bones[`${leg}Hoof` as never] as unknown as {
+      getWorldPosition: (v: Vector3) => Vector3;
+    };
+    const now = at.getWorldPosition(new Vector3());
+    const was = hoofLast.get(leg);
+    if (was) {
+      const v = now.clone().sub(was).setY(0).length() / t.delta;
+      slipWorst = Math.max(slipWorst, v);
+      slipMin = Math.min(slipMin, v);
+    }
+    hoofLast.set(leg, now);
+  }
+});
+
 window.ridingDo = (what) => {
   if (what === 'mount') mount.mount(horse);
+  else if (what === 'walk') testUrge = 0.22;
   else if (what === 'dismount') mount.dismount();
   else if (what === 'climb')
     climb.start({ bottom: ladder.bottom, top: ladder.top, rungSpacing: ladder.rungSpacing });
-  else if (what === 'gallop') game.input.virtualAxis.set(0, 1);
-  else if (what === 'stop') game.input.virtualAxis.set(0, 0);
+  else if (what === 'gallop') testUrge = 1;
+  else if (what === 'stop') testUrge = 0;
+  else if (what === 'resetSlip') { slipWorst = 0; slipMin = Infinity; }
+  else if (what === 'hold') holdSpeed = true;
+  else if (what === 'sideview') sideView = true;
+  else if (what === 'release') holdSpeed = false;
 };
+window.ridingLimbs = () => {
+  // Hoof positions in the horse's OWN space. If the gait clip is driving
+  // the legs these swing back and forth; if the clip is dead they are
+  // frozen, and every hoof rides along with the body — which looks exactly
+  // like the horse skating across the ground.
+  const out: Record<string, number> = {};
+  for (const leg of ['LF', 'RF', 'LH', 'RH']) {
+    const bone = horse.bones[`${leg}Hoof` as never] as unknown as {
+      getWorldPosition: (v: Vector3) => Vector3;
+    };
+    const world = bone.getWorldPosition(new Vector3());
+    out[leg] = +horse.object.worldToLocal(world).z.toFixed(3);
+  }
+  return out;
+};
+window.ridingSkate = () => ({
+  // The slowest hoof over the sample window is the planted one. If the
+  // horse is walking properly that number is near zero; if it is skating,
+  // every hoof moves at the horse's own speed.
+  plantedSlip: +slipMin.toFixed(3),
+  fastestHoof: +slipWorst.toFixed(2),
+  horseSpeed: +ride.speed.toFixed(2),
+});
 window.ridingDebug = () => {
   const gl = game.renderer.getContext();
   const riderWorld = rig.object.getWorldPosition(new Vector3());
@@ -210,10 +274,21 @@ window.ridingDebug = () => {
     climbState: climb.climbing ? 'climbing' : 'off',
     climbProgress: +climb.progress.toFixed(2),
     riderY: +riderWorld.y.toFixed(2),
-    // When seated the rider must be AT the saddle, not near it.
+    // When seated the rider's HIPS must be on the saddle. (Their root is
+    // between their feet, which hang well below it — that is the point.)
     seatGap: mount.phase === 'seated'
-      ? +riderWorld.distanceTo(horse.saddle.getWorldPosition(new Vector3())).toFixed(3)
+      ? +rig.bones.Hips.getWorldPosition(new Vector3())
+          .distanceTo(horse.saddle.getWorldPosition(new Vector3()))
+          .toFixed(3)
+      : null,
+    footDrop: mount.phase === 'seated'
+      ? +(horse.saddle.getWorldPosition(new Vector3()).y - riderWorld.y).toFixed(2)
       : null,
     drawCalls: game.renderer.info.render.calls,
+    mixerTime: +gaits.mixer.time.toFixed(2),
+    actionWeight: +gaits.mixer.clipAction(gaits.clips.canter).getEffectiveWeight().toFixed(2),
+    actionTime: +gaits.mixer.clipAction(gaits.clips.canter).time.toFixed(2),
+    actionRunning: gaits.mixer.clipAction(gaits.clips.canter).isRunning(),
+    boneQ: +horse.bones.LFUpper.quaternion.x.toFixed(4),
   };
 };

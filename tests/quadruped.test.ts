@@ -153,8 +153,11 @@ describe('gaits: footfall', () => {
         expect(high - low, `${gait} ${leg} lifts`).toBeGreaterThan(0.05);
         // One swing per stride. Counted with hysteresis — a bare threshold
         // would double-count the small ripple as the body vaults.
-        const hi = low + (high - low) * 0.65;
-        const lo = low + (high - low) * 0.35;
+        // Wide hysteresis band: during a gallop's suspension ALL four feet
+        // rise together as the body flies, so a narrow band sees that as a
+        // second swing. It isn't one — the hoof never went back down.
+        const hi = low + (high - low) * 0.78;
+        const lo = low + (high - low) * 0.22;
         let rises = 0;
         let up = ys[ys.length - 1] > hi;
         for (const y of ys) {
@@ -209,8 +212,12 @@ describe('gaits: footfall', () => {
     expect(walk).toBeGreaterThan(trot);
     expect(trot).toBeGreaterThan(gallop);
     // At the walk a horse never has fewer than two feet down; at gallop it
-    // has a moment with none at all.
-    expect(walk * 4).toBeGreaterThan(2);
+    // has a moment with none at all. Asserted from the duty factors, which
+    // are exact — the sampled share is a lower bound on them, since it only
+    // counts the flattest part of each stance.
+    expect(GAITS.walk.duty * 4).toBeGreaterThan(2);
+    expect(GAITS.gallop.duty * 4).toBeLessThan(1.5);
+    expect(walk * 4).toBeGreaterThan(1.8);
     expect(gallop * 4).toBeLessThan(2);
   });
 
@@ -268,15 +275,80 @@ describe('gaits: footfall', () => {
     expect(GAITS.canter.nod).toBeGreaterThan(0.08);
   });
 
+  it('ground speed matches the limb sweep — the horse must not skate', () => {
+    // THE regression that made the first release slide: the gait declared a
+    // stride its legs could not deliver, so the body covered twice the
+    // ground the hooves did. Measure the hoof's actual travel through
+    // stance and check the declared speed carries the body exactly that
+    // far in exactly that time.
+    const rig = horse();
+    const clips = createGaitClips(rig);
+    for (const gait of ['walk', 'trot', 'canter', 'gallop'] as const) {
+      const spec = GAITS[gait];
+      const samples = 240;
+      const mixer = new AnimationMixer(rig.mesh);
+      mixer.clipAction(clips[gait]).play();
+      // Follow one leg's hoof in Z through its stance window.
+      const zs: number[] = [];
+      let last = 0;
+      for (let i = 0; i < samples; i++) {
+        const t = (i / samples) * clips[gait].duration;
+        mixer.update(t - last);
+        last = t;
+        rig.mesh.updateMatrixWorld(true);
+        const phase = (i / samples - spec.contact.LH + 1) % 1;
+        if (phase < spec.duty) {
+          zs.push(rig.bones.LHHoof.getWorldPosition(new Vector3()).z);
+        }
+      }
+      const sweep = Math.max(...zs) - Math.min(...zs);
+      const stanceTime = spec.duty * clips[gait].duration;
+      const impliedSpeed = sweep / stanceTime;
+      const declared = clips.speeds[gait];
+      // Within 15%: the hoof must travel back under the horse at very close
+      // to the speed the horse travels forward.
+      expect(Math.abs(impliedSpeed - declared) / declared, `${gait} skate`).toBeLessThan(0.15);
+    }
+  });
+
+  it('the gaits run at the speeds a real horse runs at', () => {
+    const clips = createGaitClips(horse({ height: 1.62 }));
+    // Rough real-world bands for a riding horse, m/s.
+    expect(clips.speeds.walk).toBeGreaterThan(0.9);
+    expect(clips.speeds.walk).toBeLessThan(2.0);
+    expect(clips.speeds.trot).toBeGreaterThan(2.2);
+    expect(clips.speeds.trot).toBeLessThan(4.5);
+    expect(clips.speeds.canter).toBeGreaterThan(4);
+    expect(clips.speeds.canter).toBeLessThan(7.5);
+    expect(clips.speeds.gallop).toBeGreaterThan(8);
+    expect(clips.speeds.gallop).toBeLessThan(16);
+  });
+
+  it('the playback band covers every gait\'s whole range — any clamp is a skate', () => {
+    // A gait must stretch from the speed it takes over at, up to the speed
+    // the next gait takes over — WITHOUT hitting the clamp. Clamping the
+    // rate is exactly the moment playback stops tracking the ground.
+    const loco = new QuadrupedLocomotion(horse());
+    const { walk, trot, canter, gallop } = loco.clips.speeds;
+    const [bottom, top] = loco.rateRange;
+    const band: Array<[string, number, number, number]> = [
+      ['walk', walk, 0.15, (walk + trot) / 2],
+      ['trot', trot, (walk + trot) / 2, (trot + canter) / 2],
+      ['canter', canter, (trot + canter) / 2, (canter + gallop) / 2],
+      ['gallop', gallop, (canter + gallop) / 2, gallop * 1.3],
+    ];
+    for (const [name, reference, low, high] of band) {
+      expect(low / reference, `${name} slowest`).toBeGreaterThanOrEqual(bottom);
+      expect(high / reference, `${name} fastest`).toBeLessThanOrEqual(top);
+    }
+  });
+
   it('gait speeds increase in order and clips are loop-seamless', () => {
     const rig = horse();
     const clips = createGaitClips(rig);
     expect(clips.speeds.walk).toBeLessThan(clips.speeds.trot);
     expect(clips.speeds.trot).toBeLessThan(clips.speeds.canter);
     expect(clips.speeds.canter).toBeLessThan(clips.speeds.gallop);
-    // A horse walks at roughly human walking pace.
-    expect(clips.speeds.walk).toBeGreaterThan(1);
-    expect(clips.speeds.walk).toBeLessThan(2.2);
     for (const name of ['walk', 'trot', 'canter', 'gallop', 'idle'] as const) {
       for (const track of clips[name].tracks) {
         const v = track.values;
@@ -318,6 +390,44 @@ describe('QuadrupedLocomotion', () => {
     const fast = loco.mixer.clipAction(loco.clips.trot).timeScale;
     expect(fast).toBeGreaterThan(1);
     expect(fast).toBeLessThanOrEqual(loco.rateRange[1]);
+  });
+
+  it('actually MOVES the legs when driven through the controller', () => {
+    // The regression that shipped a sliding horse: every clip was correct
+    // and every gait was selected correctly, but the controller parked its
+    // actions at zero intrinsic weight, so the mixer wrote nothing and the
+    // horse skated along in its rest pose. The earlier tests all drove a
+    // raw AnimationMixer and sailed straight past it — so this one drives
+    // the real controller and watches the bones.
+    for (const gait of ['walk', 'trot', 'canter', 'gallop'] as const) {
+      const rig = horse();
+      const loco = new QuadrupedLocomotion(rig);
+      loco.setGait(gait);
+      const seen = new Set<string>();
+      for (let i = 0; i < 90; i++) {
+        loco.update(1 / 30, loco.clips.speeds[gait]);
+        rig.mesh.updateMatrixWorld(true);
+        seen.add(
+          LEGS.map((leg) => rig.bones[`${leg}Hoof`].getWorldPosition(new Vector3()).z.toFixed(2))
+            .join(',')
+        );
+      }
+      // A frozen rig gives one unique pose; a moving one gives many.
+      expect(seen.size, `${gait} animates`).toBeGreaterThan(10);
+    }
+  });
+
+  it('holds a real pose at idle too', () => {
+    const rig = horse();
+    const loco = new QuadrupedLocomotion(rig);
+    const seen = new Set<string>();
+    for (let i = 0; i < 120; i++) {
+      loco.update(1 / 30, 0);
+      rig.mesh.updateMatrixWorld(true);
+      seen.add(rig.bones.TailTip.getWorldPosition(new Vector3()).x.toFixed(4));
+    }
+    expect(loco.gait).toBe('idle');
+    expect(seen.size, 'idle breathes').toBeGreaterThan(5);
   });
 
   it('comes back to a standstill', () => {
