@@ -1542,6 +1542,120 @@ game.onUpdate((t) => {
 game.camera.position.set(3.4, 3.4, 6.6);
 game.start();`
   },
+{
+    id: 'office',
+    title: 'Smart office (wiring \u00b7 desk work)',
+    group: 'Scale',
+    code: `// Two things at once. The desk poses are ANIMA's: typing is carried by the
+// forearms, not the wrists, and the head stays near LEVEL — a keyboard is
+// not a phone, the screen is at eye height. The wiring is GAMA's: the lamp
+// is not switched by the code that trips the sensor, it is LINKED to it and
+// arrives a beat later, which is the one thing that makes a smart home feel
+// like hardware. Space = doorbell, M = trip the sensor.
+import { AmbientLight, PointLight, Vector3 } from 'three';
+import { createDeskSet, createFixture, createLaptop, createMonitor, createRoom,
+         createScreenLight, createSeat, createTable, PALETTES } from 'scena3d';
+import { createHumanoid, DeskWork, Interaction, Locomotion, LookAt, OUTFITS } from 'anima3d';
+import { Attention, Automation, Device, Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+const room = createRoom(['#######','#.....#','#.....#','#..S..#','#.....#','#######'],
+  { palette, unit: 1.2, wallHeight: 2.6, floor: 'plank', ceiling: true, hearthLight: false, seed: 3 });
+scene.add(room.group);
+const ambient = new AmbientLight(0x2b3550, 0.09);
+scene.add(ambient);
+const lamp = new PointLight(0xffe0b0, 0, 8, 1.8);
+lamp.position.set(0, 2.3, 0.3);
+scene.add(lamp);
+
+const desk = createTable({ palette, seed: 7 });
+desk.object.position.set(0, 0, -1.9);
+desk.object.scale.set(1.25, 1, 0.85);
+scene.add(desk.object);
+const monitor = createMonitor({ diagonal: 0.6, mode: 'chart', seed: 21, palette });
+monitor.object.position.set(0.1, 0.74, -2.15);
+scene.add(monitor.object);
+const monitorGlow = createScreenLight(monitor.screen, { gain: 0.9 });
+const workstation = new Device({ boot: 1.4, idle: 0 });
+workstation.attach(monitor.screen);
+workstation.turnOn(true);
+workstation.show('chart');
+const laptop = createLaptop({ diagonal: 0.33, mode: 'feed', scrollRate: 0.8, seed: 31 });
+laptop.object.position.set(-0.62, 0.74, -1.95);
+laptop.object.rotation.y = 0.5;
+scene.add(laptop.object);
+const set = createDeskSet({ seed: 5 });
+set.object.position.set(0.05, 0.74, -1.62);
+scene.add(set.object);
+
+const sensor = createFixture({ style: 'sensor', seed: 2, palette });
+sensor.object.position.set(-2.4, 2.3, -3.0);
+sensor.object.rotation.y = 0.7;
+scene.add(sensor.object);
+const bell = createFixture({ style: 'doorbell', seed: 4, palette });
+bell.object.position.set(1.9, 1.3, -2.9);
+scene.add(bell.object);
+
+const home = new Automation({ seed: 8, delay: 0.45 });
+// Holds after the last movement — otherwise it turns the lights off on
+// somebody sitting still at a desk, which is the classic real failure.
+home.hold('motion', 14);
+home.link('motion', 'lamp');
+home.on('lamp', (v) => sensor.setIndicator(v > 0.5 ? 0x5cff9a : 0x1e2a24, v > 0.5 ? 2 : 0.4));
+
+const chair = createSeat({ style: 'chair', palette, seed: 9 });
+chair.object.position.set(0.05, 0, -1.05);
+// A seat slot faces its own +z: unrotated, this sits somebody with their
+// back to the monitor, and every hand-position check still passes.
+chair.object.rotation.y = Math.PI;
+scene.add(chair.object);
+
+const rig = createHumanoid({ seed: 44, palette: OUTFITS.villager });
+scene.add(rig.object);
+const loco = new Locomotion(rig);
+const gaze = new LookAt(rig);
+const sitting = new Interaction(rig, loco);
+const work = new DeskWork(rig, loco, { seed: 12, rate: 6 });
+const attention = new Attention({ seed: 3, sensitivity: 0.85, latency: 0.4 });
+const slot = chair.slots && chair.slots[0];
+if (slot) {
+  chair.object.updateWorldMatrix(true, true);
+  const slotAt = slot.anchor.getWorldPosition(new Vector3());
+  chair.object.position.add(new Vector3(0.05, 0, -1.05).sub(slotAt).setY(0));
+  sitting.use(slot, { approach: false });
+}
+work.do('type');
+gaze.target = monitor.screen.surface.getWorldPosition(new Vector3());
+const bellAt = new Vector3(1.9, 1.3, -2.9);
+attention.onNotice = (a) => { if (a.at) gaze.glance(a.at, 1.6); };
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  if (game.input.wasPressed('Space')) {
+    bell.setIndicator(0xffd36b, 2.4);
+    attention.notice({ kind: 'ring', urgency: 0.92, at: bellAt, duration: 1.9 });
+  }
+  if (game.input.wasPressed('KeyM')) home.set('motion', true);
+  home.update(dt);
+  attention.update(dt);
+  workstation.update(dt);
+  monitor.screen.update(dt);
+  laptop.screen.update(dt);
+  monitorGlow.update();
+  lamp.intensity += (home.get('lamp') * 5.5 - lamp.intensity) * Math.min(1, dt * 3);
+  if (!attention.engaged) bell.setIndicator(0x2a3038, 0.4);
+  loco.update(dt, 0);
+  sitting.update(dt);
+  work.update(dt);   // wanders between type / mouse / read / think on its own
+  gaze.update(dt);
+  game.camera.position.set(2.0, 1.9, 1.7);
+  game.camera.lookAt(-0.1, 1.05, -1.7);
+});
+game.camera.position.set(2.0, 1.9, 1.7);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {

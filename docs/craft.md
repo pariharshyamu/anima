@@ -235,3 +235,20 @@ gaze.glance(phone.position, 1.2);  // ...until this goes off
 A glance overrides the standing target for as long as it runs and then simply expires, so nothing has to remember to put the old target back. A newer glance replaces an older one — you look at the newer thing. `endGlance()` cuts it short.
 
 It goes through the same clamped, smoothed chain as everything else, which means it inherits the behind-the-shoulder fade: a character will not swivel their head 85° to look at something behind them. That is correct, and it is worth knowing when staging a scene — an alert placed behind a group produces no visible reaction at all, however loud it is.
+
+## Working at a desk
+
+Sitting is solved, and so is holding a phone in two hands. Neither covers a keyboard, which is a different shape: the forearms come *forward* onto a surface rather than up in front of the chest, and the head stays near level — the screen is at eye height and the hands are not what you are looking at. Borrowing the phone lean here reads as somebody staring at their own keyboard.
+
+```ts
+const desk = new DeskWork(rig, loco, { rate: 6 });
+desk.do('type');
+game.onUpdate((t) => { loco.update(t.delta, 0); desk.update(t.delta); });
+```
+
+`type`, `mouse`, `read` and `think`, as upper-body masks over a seated pose. Left alone, `update` wanders between them — nobody types continuously for ten minutes, and a character who does is the clearest possible tell. It never picks the same task twice running.
+
+Two things worth knowing, both learned the hard way:
+
+- **A keystroke has to reach the forearm.** A bone's own rotation does not move its origin, so a strike animated purely on the wrist moves the hand not at all — it is invisible however hard you animate it.
+- **Strokes alternate and are unevenly spaced,** and the clip is sampled at 60 fps rather than 30. Eight strokes in a cycle at 30 fps is two keyframes each; interpolation smooths them away and both hands come out moving together.

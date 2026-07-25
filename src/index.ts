@@ -121,3 +121,9 @@ export {
   type PhoneUseOptions,
   type Handheld,
 } from './phone';
+export {
+  DeskWork,
+  createDeskClip,
+  type DeskTask,
+  type DeskWorkOptions,
+} from './desk';
