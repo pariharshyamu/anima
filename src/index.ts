@@ -112,3 +112,4 @@ export {
   type ClimbState,
   type ClimbOptions,
 } from './climb';
+export { Watching, type Viewable, type WatchingOptions } from './watching';

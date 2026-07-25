@@ -1249,6 +1249,115 @@ game.onUpdate((t) => {
 game.camera.position.set(0, 3, -8);
 game.start();`
   },
+{
+    id: 'screens',
+    title: 'Screens (a room lit by television)',
+    group: 'Scale',
+    code: `// A flat after dark. Nothing in this room emits light except screens.
+// The television's lamp is a wide SPOT aimed out of the glass, not a point
+// light: a point radiates in every direction and lights the wall the set
+// stands against harder than the person watching it, which is how the
+// first version came out — a halo behind the TV, the viewer in shadow.
+// The lamp carries the colour and level of the shot being drawn, so the
+// room flickers on the picture's own cuts rather than on a timer.
+// Space = the remote (watch it boot). 1-5 = change what is playing.
+import { AmbientLight, Vector3 } from 'three';
+import { createRoom, createSeat, createTable, createTelevision, createMonitor,
+         createLaptop, createScreenLight, PALETTES } from 'scena3d';
+import { createHumanoid, Interaction, Locomotion, LookAt, Mannerisms,
+         OUTFITS, Watching } from 'anima3d';
+import { Device, Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+
+// '.' is a FLOOR tile; ' ' is nothing at all. A room drawn with spaces has
+// walls, a ceiling and no floor — and looks merely very dark.
+const room = createRoom([
+  '########', '#......#', '#......#', '#......#', '#..S...#', '#......#', '########',
+], { palette, unit: 1.2, wallHeight: 2.7, floor: 'plank', ceiling: true, hearthLight: false, seed: 5 });
+scene.add(room.group);
+const ambient = new AmbientLight(0x2a3550, 0.075);
+scene.add(ambient);
+
+const media = createTable({ palette, seed: 12 });
+media.object.position.set(0, 0, -2.75);
+media.object.scale.set(1.15, 0.62, 0.75);
+scene.add(media.object);
+
+const tv = createTelevision({ diagonal: 1.25, mount: 'stand', mode: 'off', seed: 21, palette });
+tv.object.position.set(0, 0.47, -2.7);
+scene.add(tv.object);
+const tvGlow = createScreenLight(tv.screen, { gain: 1.15 });
+
+// GAMA owns whether it is on; SCENA owns what that looks like. The only
+// thing crossing between them is setMode(string).
+const set = new Device({ boot: 2.4, modes: { booting: 'standby' } });
+set.attach(tv.screen);
+set.show('video');
+set.turnOn();
+
+const desk = createTable({ palette, seed: 3 });
+desk.object.position.set(-2.9, 0, -1.0);
+desk.object.rotation.y = Math.PI / 2;
+scene.add(desk.object);
+const monitor = createMonitor({ diagonal: 0.58, mode: 'chart', seed: 31, palette });
+monitor.object.position.set(-3.05, 0.74, -1.0);
+monitor.object.rotation.y = Math.PI / 2;
+scene.add(monitor.object);
+const laptop = createLaptop({ diagonal: 0.33, mode: 'feed', scrollRate: 1.4, seed: 41 });
+laptop.object.position.set(-2.85, 0.74, -1.6);
+laptop.object.rotation.y = Math.PI / 2 + 0.35;
+scene.add(laptop.object);
+const screens = [tv.screen, monitor.screen, laptop.screen];
+
+const sofa = createSeat({ style: 'bench', palette, seed: 8 });
+sofa.object.position.set(0, 0, 1.05);
+// A seat slot faces its own +z, so an unrotated bench seats you with your
+// back to the only light in the room.
+sofa.object.rotation.y = Math.PI;
+scene.add(sofa.object);
+
+const rig = createHumanoid({ seed: 17, palette: OUTFITS.villager });
+scene.add(rig.object);
+const loco = new Locomotion(rig);
+const gaze = new LookAt(rig);
+const sitting = new Interaction(rig, loco);
+const idle = new Mannerisms(rig, loco, { context: 'seated', seed: 23 });
+// She does not stare: fixations jump around the picture, and she looks
+// away now and then and comes back to about where she left off.
+const watch = new Watching(rig, gaze, { engagement: 0.82, seed: 6 });
+if (sofa.slots?.[0]) sitting.use(sofa.slots[0], { approach: false });
+watch.watch(tv.screen);
+
+const CONTENT = ['video', 'feed', 'map', 'chart', 'call'];
+game.onUpdate((t) => {
+  const dt = t.delta;
+  if (game.input.wasPressed('Space')) set.press();
+  for (let i = 0; i < CONTENT.length; i++) {
+    if (game.input.wasPressed('Digit' + (i + 1))) set.show(CONTENT[i]);
+  }
+  set.update(dt);
+  for (const s of screens) s.update(dt);
+  tvGlow.update();
+  // Stand-in for bounce: the cone is right, but with no global illumination
+  // the corners get nothing, so tint the ambient with what is on screen.
+  ambient.color.set(0x2a3550).lerp(tv.screen.glow.color, 0.55);
+  ambient.intensity = 0.055 + Math.min(0.9, tv.screen.glow.intensity) * 0.1;
+  loco.update(dt, 0);
+  sitting.update(dt);
+  idle.update(dt);
+  watch.update(dt);
+  gaze.update(dt);
+  const head = rig.bones.Head.getWorldPosition(new Vector3());
+  const a = 2.5 + Math.sin(t.elapsed * 0.12) * 0.5;
+  game.camera.position.set(a, 1.5, 1.55);
+  game.camera.lookAt(-0.15, 1.0, -1.4);
+});
+game.camera.position.set(2.5, 1.5, 1.55);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {

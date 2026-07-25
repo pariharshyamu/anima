@@ -174,3 +174,25 @@ climb.start(ladder);          // SCENA's createLadder fits structurally
 ```
 
 Real climbing is **contralateral** — left hand moves with the *right* foot, then right hand with left foot — the same cross-body pattern as walking, and the reason is that it keeps the centre of mass over the supporting diagonal. Three points of contact are held at all times. `Climb` locks the clip to the translation (two rungs per cycle) so hands arrive where rungs actually are, and finishes with a proper **top-out**: fold over the edge, one knee up, press and stand. Cut that and the character rides the last metre like a lift.
+
+## Watching a screen
+
+`LookAt` will happily point a character's head at a television and hold it there. The result is unmistakably a mannequin — nobody watches anything that way.
+
+```ts
+const gaze = new LookAt(rig);
+const watch = new Watching(rig, gaze, { engagement: 0.8 });
+watch.watch(tv.screen);          // anything with { surface, width, height }
+game.onUpdate((t) => { watch.update(t.delta); gaze.update(t.delta); });
+```
+
+Real attention on a screen is a sequence of small jumps around the picture with occasional trips off it entirely. So:
+
+- **Fixations, not a stare.** A gaze point is held for a while and then jumps — saccades, not sliding. Dwell times are drawn exponentially, because a fixed interval reads as a metronome the moment there is more than one watcher in the room.
+- **Biased toward the middle.** Spots are picked from a triangular distribution, which puts most fixations near the centre of the picture and few at the edges — which is where they actually land.
+- **It glances away.** How often is set by `engagement`: fully engaged, almost never; distracted, every few seconds.
+- **It comes back to about where it left off.** Resumed attention, not a fresh thought — a jump to a brand-new spot after a glance away reads as a change of subject.
+
+`Watching` drives `LookAt.target` and nothing else, so it composes with locomotion, mannerisms and sitting exactly the way a bare gaze target does.
+
+`Viewable` is `{ surface, width, height }` — structurally SCENA's `ScreenPanel`, so a television drops straight in with no cross-import.

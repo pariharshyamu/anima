@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>ANIMA — screens</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #05070b; }
+      #note { position: fixed; top: 10px; left: 12px; color: #eef2f7; z-index: 5;
+        font: 13px/1.45 system-ui, sans-serif; user-select: none; max-width: 32em;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+      #hud { position: fixed; top: 10px; right: 12px; color: #fff; z-index: 5;
+        text-align: right; font: 600 15px/1.6 system-ui; text-shadow: 0 1px 3px #000;
+        user-select: none; }
+      #hud b { color: #7fc4ff; }
+      kbd { background: #2a3140; border-radius: 3px; padding: 0 4px; font: 12px monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="note">
+      <strong>ANIMA — screens</strong> · <kbd>Space</kbd> the remote (watch it
+      boot — it does not snap on), <kbd>1</kbd>–<kbd>5</kbd> change what is
+      playing, <kbd>L</kbd> the ceiling light, <kbd>C</kbd> cut between the
+      wide and her face. Nothing else in the room emits light. The flicker on
+      the walls is the television's own cuts, not a wobble on a timer — the
+      lamp carries the colour and level of the shot being drawn.
+    </div>
+    <div id="hud"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
