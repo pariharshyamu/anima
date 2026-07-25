@@ -222,3 +222,16 @@ Things worth knowing:
 - **The pose overlay runs at weight 6, not 1.** three blends actions by *normalised* weight, so an overlay at weight 1 against the idle clip at weight 1 comes out as a 50/50 average: every arm reaches exactly halfway and a phone call ends up held at chest height with the elbow barely bent. These are replacement postures, not seasoning.
 - **There are no finger bones.** The hand is one bone, so a thumb flick has to be read off the wrist — which is all that reads at any distance anyway. The flick is a quick swipe and then a pause while the eye catches up, not a sine wave.
 - **Walkers glance up.** Every few seconds, exponentially spaced, the head comes level for about a second and then goes back down. Standing still, it never happens — there is nothing to check.
+
+## Glancing
+
+`LookAt.target` is sustained tracking: it holds until something changes it. A glance is the other thing eyes do — a phone goes off across the room, a head turns for a second, and comes back.
+
+```ts
+gaze.target = table.position;      // what they are attending to
+gaze.glance(phone.position, 1.2);  // ...until this goes off
+```
+
+A glance overrides the standing target for as long as it runs and then simply expires, so nothing has to remember to put the old target back. A newer glance replaces an older one — you look at the newer thing. `endGlance()` cuts it short.
+
+It goes through the same clamped, smoothed chain as everything else, which means it inherits the behind-the-shoulder fade: a character will not swivel their head 85° to look at something behind them. That is correct, and it is worth knowing when staging a scene — an alert placed behind a group produces no visible reaction at all, however loud it is.

@@ -43,6 +43,11 @@ export class LookAt {
   /** Blend weight 0..1. */
   weight = 1;
 
+  /** What a glance is looking at, and how long it has left. */
+  private glanceTarget: Vector3 | Object3D | null = null;
+  private glanceLeft = 0;
+  private glanced: Vector3 | Object3D | null = null;
+
   private readonly rig: HumanoidRig;
   private readonly maxYaw: number;
   private readonly maxPitch: number;
@@ -76,16 +81,52 @@ export class LookAt {
     this.minDistance = options.minDistance ?? 0.5;
   }
 
+  /**
+   * Look at something briefly, then go back to whatever the gaze was on.
+   *
+   * `target` is sustained tracking — it holds until something changes it.
+   * A glance is the other thing eyes do: a phone goes off across the room
+   * and a head turns for a second and comes back. Modelling that by setting
+   * `target` and remembering to unset it later is how you end up with a
+   * character permanently staring at a doorbell.
+   *
+   * A glance overrides the standing target while it lasts, and a new glance
+   * replaces an existing one — you look at the newer thing.
+   */
+  glance(at: Vector3 | Object3D, seconds = 1.2): void {
+    this.glanceTarget = at;
+    this.glanceLeft = seconds;
+  }
+
+  /** True while a glance is running. */
+  get glancing(): boolean {
+    return this.glanceLeft > 0;
+  }
+
+  /** Cut a glance short. */
+  endGlance(): void {
+    this.glanceLeft = 0;
+    this.glanceTarget = null;
+  }
+
   update(dt: number): void {
     const { bones, object } = this.rig;
     let desiredYaw = 0;
     let desiredPitch = 0;
 
-    if (this.target && this.weight > 0) {
-      if ((this.target as Object3D).isObject3D) {
-        (this.target as Object3D).getWorldPosition(this.targetWorld);
+    if (this.glanceLeft > 0) {
+      this.glanceLeft -= dt;
+      if (this.glanceLeft <= 0) this.glanceTarget = null;
+    }
+    // A glance outranks the standing target for as long as it runs. The
+    // smoothing below carries the head there and back, so nothing snaps.
+    this.glanced = this.glanceTarget ?? this.target;
+
+    if (this.glanced && this.weight > 0) {
+      if ((this.glanced as Object3D).isObject3D) {
+        (this.glanced as Object3D).getWorldPosition(this.targetWorld);
       } else {
-        this.targetWorld.copy(this.target as Vector3);
+        this.targetWorld.copy(this.glanced as Vector3);
       }
       object.updateMatrixWorld(true);
       bones.Head.getWorldPosition(this.headWorld);
