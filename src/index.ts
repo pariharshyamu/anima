@@ -142,3 +142,9 @@ export {
   type SwimOptions,
   type WaterBody,
 } from './swim';
+export {
+  Prepping,
+  createPrepClip,
+  type PrepTask,
+  type PreppingOptions,
+} from './prep';

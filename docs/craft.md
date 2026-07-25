@@ -310,3 +310,35 @@ The crawl's body roll was **inverted**. A crawl rolls *toward* the pulling arm s
 The test that catches it is the most checkable fact about a front crawl: **the recovering hand comes out of the water and the pulling one goes deep**, and the two arms are never out at the same time.
 
 One more that the tests did find on their own: deriving stroke rate from speed is right, and is what stops a swimmer skating — but it freezes the one stroke whose speed is **zero**. The first version left a treading swimmer stopped dead at frame one with their arms out, which is a body floating in a pool, not someone holding station in it. Holding station is work, so every stroke carries an idle `cadence` as well.
+
+## Preparing food: asymmetric two-handed work
+
+Every work loop in the library was **one-handed or symmetric** — an axe, a pick, a saw, a spoon, a guitar. Preparing food is neither. One hand works and the other **holds the thing still and gets out of the way**, and that asymmetry is the entire read: a cook chopping an onion with two identical hands is a cook hammering an onion.
+
+```ts
+const prep = new Prepping(rig, loco);
+prep.do('chopBoard');
+game.onUpdate((t) => { loco.update(t.delta, 0); prep.update(t.delta); });
+```
+
+| Task | The working hand | The guide hand |
+|---|---|---|
+| `chopBoard` | lifts slowly, falls fast | **feeds** — walks backwards along the vegetable |
+| `grind` | circles a pestle | **braces** — still, because a mortar nobody holds slides |
+| `crank` | sweeps a wide circle | steadies the bed stone |
+| `knead` | pushes away | pushes too, **half a cycle out of phase** |
+| `whisk` | circles fast | tips the bowl toward you and holds it |
+
+SCENA's `createPrepStation` publishes `work` and `guide` anchors for the same pair, so the station says where the hands belong and ANIMA decides what a body does about it.
+
+### The retreat cannot live in the clip
+
+A left hand that walks backwards along a carrot for seven cuts and then starts a new piece is not something a **half-second loop** can express. The controller owns it and applies it on top of the mixer's result — exactly the division the swimmer's body roll uses, and for exactly the same reason.
+
+That is also where the bug was. The retreat was **post**-multiplied onto the arm's quaternion, which applies it about the bone's *own* rotated axis; a posed arm lies roughly along its own y, so the whole thing came out as the arm spinning about its length. **1.4 cm of hand travel where there should have been ten.** Pre-multiplying puts the rotation in the parent's frame, which is what "swing the arm sideways" means. Same family as `Arm` X doing nothing at all in the swim rig.
+
+### The reach was measured, again, and again it was the counter-intuitive axis
+
+Arm **Z** is the one the wash pose turned on: **raising it brings the hands together**, it does not lift them. At 1.42 the hands sit half a metre apart — a cook with one hand at each end of the board, which is exactly what the first render showed. At 1.88 the gap is 27 cm and both hands are over the work, still at bench height and reach.
+
+Neither the tests nor the numbers caught that one. The hand gap was inside every threshold I had written; it took looking at a picture of a man standing at a table with his arms spread like a scarecrow.
