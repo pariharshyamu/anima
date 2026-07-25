@@ -273,3 +273,40 @@ Both of those came out backwards first time, and the fix was to **sweep the rig 
 I had used the widest, highest combination of both, and it failed six tests at once. That is now three separate poses where the rig read the opposite of the intuition — it is always cheaper to probe it than to argue with it.
 
 One more that keeps recurring: **a bone's own rotation never moves its own origin.** The shake in `dry` reaches the forearm for the same reason the keystroke in `DeskWork` does, and a test that measures child origins to check a turning handle will report it as perfectly still.
+
+## Swimming
+
+Every other pose in the library leaves the root alone and moves bones. A swimmer does not: **the body stops being upright**. It is rotated onto its front, floated at a surface it did not choose, and driven forward by its own stroke. So `Swimming` takes the root the way `Climb` does, and the clips only have to do the limbs.
+
+```ts
+const swim = new Swimming(rig, loco, { stroke: 'crawl' });
+swim.steer(heading, 1);
+game.onUpdate((t) => swim.update(t.delta, pool));   // SCENA's createPool fits
+```
+
+The handshake is a depth query — `{ surfaceY, depthAt(x, z), disturb? }` — and `depthAt` returning 0 outside is the whole "am I in the water" test.
+
+### Wade or swim is the character's decision, not the caller's
+
+It is made against **their own height**, and that is why it lives here. The same pool is chest-deep on a two-metre adult and over the head of a child, and the shallow end of a real pool exists precisely so that the transition happens somewhere. In the demo one short swimmer is doing front crawl in water everyone else is standing up in, and nobody configured that.
+
+The default lift-off is 0.75 of stature — water around the shoulders. The first value was 0.62, which had a two-metre adult floating in 1.3 m of water: chest deep on them, and somewhere they would obviously still be standing.
+
+Going flat is **eased, not switched**. The clips crossfade over a quarter second but the root does not, and a body that snaps from vertical to horizontal in one frame reads as a glitch however good the stroke is. Easing it gives the entry for free, because the body pivots about its own feet and launches forward into the stroke.
+
+### What the rig actually does, measured
+
+Three of the four guesses were wrong, and the probe took five minutes:
+
+- The arm lies along the body's **x** axis at rest, so `Arm` **X does nothing at all** — it spins the arm about its own length. The first draft of the crawl animated that axis and produced a corpse.
+- `Arm` **Z** is the stroke axis: `±1.9` puts the hand straight overhead, `∓1.5` puts it down past the hip. With the body on its front, **overhead is forward**, so the whole catch-and-pull of a crawl is one sweep along a single axis.
+- `Arm` **Y** swings the arm through the body's z. Upright that is forward and back; face-down it is up out of the water and back into it, which is what makes a recovery a recovery.
+- `k * a` is the **up** direction on the stroke axis, which means the obvious sign holds a treading swimmer's arms out sideways like a scarecrow.
+
+### The bug the tests could not see, and the one that caught it
+
+The crawl's body roll was **inverted**. A crawl rolls *toward* the pulling arm so the recovering shoulder comes up; rolled the other way it drives the recovering arm under. At 0.62 rad that is 28 cm of shoulder travel — it swamps the arm's own lift completely, and the hand that should have been swinging over the water was measured **43 cm below it, deeper than during its own pull**. Twenty tests passed while that was true, including ones about roll amplitude, stroke rate and body pitch.
+
+The test that catches it is the most checkable fact about a front crawl: **the recovering hand comes out of the water and the pulling one goes deep**, and the two arms are never out at the same time.
+
+One more that the tests did find on their own: deriving stroke rate from speed is right, and is what stops a swimmer skating — but it freezes the one stroke whose speed is **zero**. The first version left a treading swimmer stopped dead at frame one with their arms out, which is a body floating in a pool, not someone holding station in it. Holding station is work, so every stroke carries an idle `cadence` as well.

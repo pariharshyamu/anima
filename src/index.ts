@@ -133,3 +133,12 @@ export {
   type WashTask,
   type WashingOptions,
 } from './wash';
+export {
+  Swimming,
+  createStrokeClip,
+  createWadeClip,
+  type Stroke,
+  type SwimState,
+  type SwimOptions,
+  type WaterBody,
+} from './swim';
