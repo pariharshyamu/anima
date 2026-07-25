@@ -149,6 +149,7 @@ A horse whose diagonals are out of sync reads as *broken* to anyone who has watc
 
 - **Body height comes from the legs.** A limb swung as a rigid pendulum sweeps its foot along an arc; hold the body still and the hoof rises at both ends of the stance. But the foot is the fixed thing — the *body* vaults up and over the supporting limb. So the ride height is derived from whichever planted limb props the body highest, then smoothed, because a body has mass and cannot turn corners at every footfall.
 - **Horses nod at walk and canter and stay level at the trot.** That is precisely why a rider can post to a trot and not to a canter, and it is the most visible thing to get backwards.
+- **Ground speed is arithmetic, not a setting.** While a hoof is planted it sweeps a fixed arc under the body (`2·R·sin(reach)`), and the body must cover exactly that in exactly the time the hoof is down (`duty × duration`). Declaring a stride length by hand instead is the classic way to end up with a horse skating along the ground with its legs cycling uselessly — so `gaitSpeed` derives it, and fore and hind limbs are angled to sweep the *same* distance (a horse "tracks up": the hind foot lands in the print the forefoot just left).
 
 `QuadrupedLocomotion` takes a speed and picks the gait, because horses **change** gait rather than blending — there is no such thing as half a trot — then stride-matches *within* the gait so hooves don't skate.
 
