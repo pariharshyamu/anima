@@ -6,12 +6,19 @@
 // - vendor/three.module.js: three's own ESM build, copied
 // - docs/*.md: the guides, copied for client-side rendering
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pub = join(root, 'site', 'public');
+// Wipe first. esbuild's code splitting names shared chunks by content hash,
+// so a changed chunk arrives under a NEW filename and the old one is simply
+// left behind — seven of them had piled up here, six dead, all deployed. It
+// also makes the stamp below a function of the source rather than of which
+// builds happened to run in this directory.
+rmSync(join(pub, 'vendor'), { recursive: true, force: true });
 mkdirSync(join(pub, 'vendor', 'gama'), { recursive: true });
 mkdirSync(join(pub, 'docs'), { recursive: true });
 
@@ -65,14 +72,29 @@ for (const file of readdirSync(join(root, 'docs'))) {
 console.log('site vendor assets built');
 
 // The vendor bundles are served under FIXED filenames (vendor/anima.js and
-// friends) because an import map cannot reference a content hash. That means
-// a browser which has fetched them once will happily keep using the old
-// library forever, however many times the docs are redeployed — the page and
-// its hashed assets update, the library silently does not. So stamp a build
-// token from the three library versions and hang it off the vendor URLs as a
-// query: same versions, same URL, still cached; new release, new URL.
-const version = (pkg) =>
-  JSON.parse(readFileSync(join(root, pkg, 'package.json'), 'utf8')).version;
-const stamp = [version('.'), version('node_modules/scena3d'), version('node_modules/gama3d')].join('-');
+// friends) because an import map has nowhere to put a content hash. So a
+// browser that fetched them once keeps using that copy of the library
+// forever, however many times the docs are redeployed — the page updates,
+// its hashed assets update, and the LIBRARY silently does not. Which is the
+// worst version of this bug, because everything looks deployed.
+//
+// So digest the bytes we just emitted and hand the result to the two places
+// that name these files — the runner's rewriter and the import map — to hang
+// off the URLs as a query. Same bytes, same URL, still cached; anything
+// changed at all, new URL. Note this hashes the OUTPUT rather than the
+// dependency versions: a locally staged dist or a bumped `three` moves the
+// stamp too, and those are exactly the cases a version list would miss.
+const digest = createHash('sha256');
+const absorb = (dir, prefix = '') => {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : 1)); // hash order must not depend on the filesystem
+  for (const entry of entries) {
+    const rel = prefix + entry.name;
+    if (entry.isDirectory()) absorb(join(dir, entry.name), `${rel}/`);
+    else if (rel !== 'build.json') digest.update(rel).update(readFileSync(join(dir, entry.name)));
+  }
+};
+absorb(join(pub, 'vendor'));
+const stamp = digest.digest('hex').slice(0, 12);
 writeFileSync(join(pub, 'vendor', 'build.json'), JSON.stringify({ stamp }));
 console.log(`vendor build stamp: ${stamp}`);

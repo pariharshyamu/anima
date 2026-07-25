@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Stamp the runner's import map with the vendor build token.
+ * Stamp the runner's import map with the vendor build digest.
  *
  * The vendor bundles are served under fixed filenames — an import map has
  * nowhere to put a content hash — so a browser that has fetched them once
  * will keep the old copies indefinitely while the hashed page assets update
- * around them. `build-vendor.mjs` writes the token; this hangs it off the
+ * around them. `build-vendor.mjs` writes the digest; this hangs it off the
  * import-map URLs so the runner's `three` resolves to the fresh copy too.
  */
 function stampVendorImports(): Plugin {

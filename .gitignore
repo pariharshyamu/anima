@@ -3,3 +3,5 @@ dist/
 *.log
 .DS_Store
 .vite/
+site/public/vendor/
+site/public/docs/
