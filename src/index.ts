@@ -148,3 +148,4 @@ export {
   type PrepTask,
   type PreppingOptions,
 } from './prep';
+export { SeaLegs, type SeaLegsOptions, type Deck } from './sealegs';

@@ -352,3 +352,24 @@ That is also where the bug was. The retreat was **post**-multiplied onto the arm
 Arm **Z** is the one the wash pose turned on: **raising it brings the hands together**, it does not lift them. At 1.42 the hands sit half a metre apart — a cook with one hand at each end of the board, which is exactly what the first render showed. At 1.88 the gap is 27 cm and both hands are over the work, still at bench height and reach.
 
 Neither the tests nor the numbers caught that one. The hand gap was inside every threshold I had written; it took looking at a picture of a man standing at a table with his arms spread like a scarecrow.
+
+### Standing up on a deck: `SeaLegs`
+
+SCENA's `createDeckedShip` publishes a deck as a **frame** rather than a height — `deckAt`, `normalAt`, and `ride`. Structural as ever; anything with those three works and neither library imports the other.
+
+```js
+const legs = new SeaLegs(rig, loco);
+game.onUpdate((t) => {
+  ship.update(t.delta, { speed: 5 });
+  loco.update(t.delta, walkVelocity);
+  legs.update(t.delta, ship);      // ride → plant → lean → stagger
+});
+```
+
+Three parts, and the first is not animation at all:
+
+1. **Get carried.** `ride` the root every frame, first. A character standing still on a deck making six knots **is travelling at six knots**, and every controller in this library assumed the floor was the world. Skip this and no amount of leaning helps — he walks out through the stern. There is a test for exactly that.
+2. **Stand up, not square.** The deck leans; a person does not lean with it. `lean` defaults to **0.25** — not 1, which welds the body to the deck and rolls it like cargo, and not 0, which leaves the feet through the planking. A person takes most of it in the ankles and knees and keeps their head over their feet, and that residue is what reads as standing on a ship rather than near one.
+3. **Lose it sometimes.** Past a threshold on the vessel's own `motion`, the compensation stops working and the body lurches. Seeded per character, so a crew does not stagger in unison — there's a test asserting two sailors on the same deck get thrown at different moments.
+
+**The bug worth recording:** the first version `premultiply`'d its correction onto the root every frame without removing the previous one. That compounds — a sailor was **five radians** off vertical after two seconds, spinning like a top. It now stores what it added and takes it back before adding the next, which is the same shape as `Prepping`'s feed tweak and leaves the heading to whatever is steering the body.
