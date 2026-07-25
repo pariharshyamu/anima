@@ -65,7 +65,7 @@ game.onUpdate((t) => { loco.update(t.delta, vel); if (!reach.done) reach.update(
 
 ### Carrying things: `Carry`
 
-Pick a thing up and it rides the body — hands landing on it by construction — **carried while walking**; put it down, hand it off, or let GAMA throw it. A **`Holdable`** is anything with `{ object, carry?, grip? }` (SCENA's carryables satisfy it):
+Pick a thing up and it rides the body — **carried while walking**; put it down, hand it off, or let GAMA throw it. A **`Holdable`** is anything with `{ object, carry?, grip? }` (SCENA's carryables satisfy it):
 
 ```js
 const carry = new Carry(rig, loco);
@@ -76,6 +76,16 @@ carry.handTo(otherCarry);                  // pass it straight to a mate
 ```
 
 The carry pose is a masked arm (and, for weight, chest) overlay over the gait — the legs keep walking. Four styles pick the posture and where the thing rides: `crate` (hugged to the chest), `tray` (out at the belly), `shoulder` (hoisted up, one hand steadying), and `side` (hanging from one hand, the other arm free to swing). `createCarryClip(rig, style)` is the clip if you want it directly. Pair with GAMA's `throwObject` for the release arc — see the **carryables** example.
+
+#### The hands did not, in fact, land on it
+
+For four releases this section claimed the hands landed on the load "by construction". They did not, and no test looked. The clips are **masked** overlays, which blend against idle by normalised weight, so at the default weight of 1 only about a third of the pose survived — and the rest of the way back to idle happened to look like carrying something.
+
+Turning the weight up did not fix it. It made every style visibly **worse**: the arms came out sideways like wings, and at full strength the porter is doing a star jump with a crate floating at his chest. The poses were wrong all along and weight 1 was hiding it.
+
+`HANG` is the idle hang angle, and every style **subtracted** from it — rotating the upper arm up and *away* from the body. Carrying anything wants the opposite: the upper arm tucks in *past* the hang, tight to the ribs, and all the reach comes from the forearm. The sign is flipped now and the numbers were re-measured against where the load actually rides — a 34 cm crate wants the hands 35 cm apart at chest height, a 42 cm tray wants them 42 cm apart at the belly. Both land within a couple of centimetres; they were 66 cm and 42 cm out.
+
+**`shoulder` is still wrong**, and is pinned rather than fixed. Its steadying hand sits 87 cm from the sack — they are on opposite sides of the body — and every tuck that brings the hand to the load also brings the load in front of the face. It is left at weight 1, exactly as it shipped, because turning its weight up makes the fault visible rather than better. There is a test asserting the 87 cm so the next person to touch it finds out immediately whether they improved it.
 
 Blending is honest: the pose crossfades against the whole gait via `Locomotion.influence`, the root tweens in the rig's **parent space** (rooms and vehicles welcome), and GAMA still owns getting there — walk to the slot with an agent, `use()` on arrival.
 
