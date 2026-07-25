@@ -113,3 +113,11 @@ export {
   type ClimbOptions,
 } from './climb';
 export { Watching, type Viewable, type WatchingOptions } from './watching';
+export {
+  PhoneUse,
+  createPhoneClip,
+  createGlanceClip,
+  type PhonePose,
+  type PhoneUseOptions,
+  type Handheld,
+} from './phone';

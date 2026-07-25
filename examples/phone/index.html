@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>ANIMA — phone</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14; }
+      #note { position: fixed; top: 10px; left: 12px; color: #eef2f7; z-index: 5;
+        font: 13px/1.45 system-ui, sans-serif; user-select: none; max-width: 32em;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.7); }
+      #hud { position: fixed; top: 10px; right: 12px; color: #fff; z-index: 5;
+        text-align: right; font: 600 15px/1.6 system-ui; text-shadow: 0 1px 3px #000; }
+      #hud b { color: #7fc4ff; }
+      kbd { background: #2a3140; border-radius: 3px; padding: 0 4px; font: 12px monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="note">
+      <strong>ANIMA — phone</strong> · <kbd>1</kbd> scroll <kbd>2</kbd> type
+      <kbd>3</kbd> call <kbd>4</kbd> photo <kbd>5</kbd> selfie <kbd>6</kbd> show
+      <kbd>0</kbd> pocket · <kbd>W</kbd> walk · <kbd>C</kbd> camera.
+      The handset is a few pixels across at this distance, so the pose does all
+      the work — you read "she's on her phone" off the head angle and the one
+      raised forearm. Walking, she slows about a fifth and glances up every
+      few seconds.
+    </div>
+    <div id="hud"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

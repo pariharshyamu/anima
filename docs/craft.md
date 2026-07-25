@@ -196,3 +196,29 @@ Real attention on a screen is a sequence of small jumps around the picture with 
 `Watching` drives `LookAt.target` and nothing else, so it composes with locomotion, mannerisms and sitting exactly the way a bare gaze target does.
 
 `Viewable` is `{ surface, width, height }` — structurally SCENA's `ScreenPanel`, so a television drops straight in with no cross-import.
+
+## Using a phone
+
+The handset is a few pixels across at any distance you would actually film from, so **the pose does all the work**. You do not read "she's on her phone" off the prop; you read it off the head angle, the rounded shoulders and the one raised forearm, from across a street.
+
+```ts
+const phone = new PhoneUse(rig, loco);
+phone.hold(createPhone());        // anything with { object }
+phone.use('scroll');
+game.onUpdate((t) => {
+  loco.update(t.delta, velocity.multiplyScalar(phone.walkScale));
+  phone.update(t.delta);
+});
+```
+
+Six postures — `scroll`, `type`, `call`, `photo`, `selfie`, `show` — plus `stow()` to pocket it (a hip socket; a phone lives in a pocket, not in mid-air).
+
+Every pose is an **upper-body mask** overlaid on whatever the legs are doing, so walking-while-texting is the same code as standing-while-texting with a different velocity. `walkScale` is what makes it read: 0.82 while scrolling, less again for two-handed typing, and **0 for `photo` and `selfie`** — nobody walks and frames a shot.
+
+Things worth knowing:
+
+- **The head turns toward the hand, not just down.** Pitching the head down alone leaves a one-handed hold about 40° off the line of sight — the handset held perfectly while the character stares past it. The one-handed poses add a yaw toward the holding side; the two-handed one does not, because the phone is already on the centreline.
+- **The screen is aimed at the eyes every frame.** This began as a fixed rotation per pose and was wrong in every pose: an angle that reads correctly for one arm posture is edge-on in the next, and a phone seen edge-on is a grey sliver. Solving it live is simpler and is what people do — you tilt the thing until you can see it. `show` inverts the target.
+- **The pose overlay runs at weight 6, not 1.** three blends actions by *normalised* weight, so an overlay at weight 1 against the idle clip at weight 1 comes out as a 50/50 average: every arm reaches exactly halfway and a phone call ends up held at chest height with the elbow barely bent. These are replacement postures, not seasoning.
+- **There are no finger bones.** The hand is one bone, so a thumb flick has to be read off the wrist — which is all that reads at any distance anyway. The flick is a quick swipe and then a pause while the eye catches up, not a sine wave.
+- **Walkers glance up.** Every few seconds, exponentially spaced, the head comes level for about a second and then goes back down. Standing still, it never happens — there is nothing to check.

@@ -1358,6 +1358,83 @@ game.onUpdate((t) => {
 game.camera.position.set(2.5, 1.5, 1.55);
 game.start();`
   },
+{
+    id: 'phone',
+    title: 'On the phone (pose, not prop)',
+    group: 'Characters',
+    code: `// The handset is a few pixels across at this distance, so the POSE does
+// all the work — you read "she's on her phone" off the head angle and the
+// one raised forearm. Every posture is an upper-body mask over whatever the
+// legs are doing, so walking-while-texting is the same code with a slower
+// velocity. 1-6 change posture, 0 pockets it, W walks.
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createPhone, createSky, createSurface,
+         createTree, PALETTES } from 'scena3d';
+import { createHumanoid, FootIK, Locomotion, OUTFITS, PhoneUse } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 3 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+for (const [x, z, s] of [[-5, -6, 1], [6, -9, 2], [-7, 7, 3], [8, 6, 4]]) {
+  const tree = createTree({ species: 'oak', seed: 10 + s, height: 5.5, palette });
+  tree.object.position.set(x, 0, z);
+  scene.add(tree.object);
+}
+
+const rig = createHumanoid({ seed: 31, palette: OUTFITS.villager });
+scene.add(rig.object);
+const loco = new Locomotion(rig);
+const ik = new FootIK(rig, { ground: () => 0 });
+const phone = new PhoneUse(rig, loco, { hand: 'Right', seed: 4, glanceEvery: 3.4 });
+
+// A phone is a Carryable with a Screen — the same prop as the television, at
+// six inches. Pick-up and hand-off already work on it.
+const handset = createPhone({ seed: 7, mode: 'feed', scrollRate: 1.1 });
+scene.add(handset.object);
+phone.hold(handset);
+phone.use('scroll');
+
+const POSES = ['scroll', 'type', 'call', 'photo', 'selfie', 'show'];
+let walking = true;
+const velocity = new Vector3();
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  for (let i = 0; i < POSES.length; i++) {
+    if (game.input.wasPressed('Digit' + (i + 1))) phone.use(POSES[i]);
+  }
+  if (game.input.wasPressed('Digit0')) phone.stow();
+  if (game.input.wasPressed('KeyW')) walking = !walking;
+
+  if (walking) {
+    const a = t.elapsed * 0.28;
+    // walkScale is 0.82 scrolling, less typing, and 0 for a photo — nobody
+    // walks and frames a shot.
+    velocity.set(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(1.5 * phone.walkScale);
+    if (velocity.lengthSq() > 0.0001) {
+      rig.object.position.addScaledVector(velocity, dt);
+      rig.object.rotation.y = Math.atan2(velocity.x, velocity.z);
+    }
+  } else {
+    velocity.set(0, 0, 0);
+  }
+  loco.update(dt, velocity);
+  phone.update(dt);
+  ik.update();
+
+  const at = rig.object.getWorldPosition(new Vector3());
+  game.camera.position.lerp(new Vector3(at.x + 2.6, 1.9, at.z + 3.2), Math.min(1, dt * 2.5));
+  game.camera.lookAt(at.x, 1.05, at.z);
+});
+game.camera.position.set(2.6, 1.9, 3.2);
+game.start();`
+  },
 ];
 
 export function findExample(id: string): Example {
