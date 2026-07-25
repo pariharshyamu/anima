@@ -6,7 +6,7 @@
 // - vendor/three.module.js: three's own ESM build, copied
 // - docs/*.md: the guides, copied for client-side rendering
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,3 +63,16 @@ for (const file of readdirSync(join(root, 'docs'))) {
 }
 
 console.log('site vendor assets built');
+
+// The vendor bundles are served under FIXED filenames (vendor/anima.js and
+// friends) because an import map cannot reference a content hash. That means
+// a browser which has fetched them once will happily keep using the old
+// library forever, however many times the docs are redeployed — the page and
+// its hashed assets update, the library silently does not. So stamp a build
+// token from the three library versions and hang it off the vendor URLs as a
+// query: same versions, same URL, still cached; new release, new URL.
+const version = (pkg) =>
+  JSON.parse(readFileSync(join(root, pkg, 'package.json'), 'utf8')).version;
+const stamp = [version('.'), version('node_modules/scena3d'), version('node_modules/gama3d')].join('-');
+writeFileSync(join(pub, 'vendor', 'build.json'), JSON.stringify({ stamp }));
+console.log(`vendor build stamp: ${stamp}`);
