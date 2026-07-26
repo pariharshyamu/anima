@@ -66,6 +66,13 @@ export {
   type MannerismsOptions,
 } from './mannerisms';
 export {
+  Dance,
+  DANCE_MOVES,
+  type DanceMove,
+  type DanceOptions,
+  type DancePulse,
+} from './dance';
+export {
   Conversation,
   type Talker,
   type ConversationOptions,

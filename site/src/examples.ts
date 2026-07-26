@@ -1001,6 +1001,88 @@ game.start();`
   },
 
   {
+    id: 'club',
+    title: 'The club (web radio · DJ tiles · dance skills)',
+    group: 'Games',
+    code: `// THE THREE-WAY COMPOSITION: SCENA owns the woofer and the DJ tiles,
+// ANIMA owns the dancers, and the only thing passing between them is the
+// pulse — { bass, mid, treble, beat, bpm } — one direction, no backchannel.
+//
+// CLICK to operate the woofer: it plays REAL web radio (SomaFM); further
+// clicks and the arrow keys toggle channels (LEDs on the cabinet = the
+// dial). Until then — and whenever the stream drops — the rig's seeded BED
+// drives everything, so the floor never freezes on a network hiccup and
+// the dancers keep dancing exactly the way a real floor does when the DJ
+// is fixing a skip.
+import { createWoofer, createDanceTiles } from 'scena3d';
+import { createHumanoid, Dance, DANCE_MOVES } from 'anima3d';
+import { Game } from 'gama3d';
+import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
+  AmbientLight, DirectionalLight, PointLight, Color } from 'three';
+
+const game = new Game();
+const scene = game.world.scene;
+scene.background = new Color(0x07080c);
+scene.add(new AmbientLight(0x9aa4c0, 0.55));
+const key = new DirectionalLight(0xb8c4ff, 0.65);
+key.position.set(6, 12, 8);
+scene.add(key);
+const glow = new PointLight(0xff66aa, 30, 30);
+glow.position.set(0, 5, -4);
+scene.add(glow);
+const ground = new Mesh(new PlaneGeometry(60, 60),
+  new MeshStandardMaterial({ color: 0x111318, roughness: 0.9 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const rig = createWoofer({ seed: 11 });
+rig.object.scale.setScalar(1.8);
+rig.object.position.set(0, 0, -7);
+scene.add(rig.object);
+const tiles = createDanceTiles({ cols: 11, rows: 9, size: 1.0, seed: 11 });
+tiles.object.position.set(0, 0, 0.8);
+scene.add(tiles.object);
+
+// THE DANCERS. One pulse feeds them all, but every dancer has a seeded
+// flair — their own timing lag and amplitude — so they dance TOGETHER
+// WITHOUT LOCKSTEP: a crowd, not a chorus line.
+const dancers = [];
+[[-3.2, 1.6], [-1.1, 2.8], [0.9, 1.2], [2.8, 2.4], [-2.0, 3.9], [1.9, 4.1]]
+  .forEach(([x, z], i) => {
+    const h = createHumanoid({ seed: 640 + i });
+    h.object.position.set(x, 0, z);
+    h.object.rotation.y = Math.PI + (x < 0 ? -0.15 : 0.15);
+    scene.add(h.object);
+    const d = new Dance(h, { seed: 40 + i * 13 });
+    d.start();
+    dancers.push(d);
+  });
+// One show-off is pinned to the robot; the rest work the repertoire.
+dancers[2].use('robot');
+
+rig.play();   // the deck idles on the bed until somebody clicks
+window.addEventListener('pointerdown', () => rig.operate());
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight') rig.next();
+  else if (e.key === 'ArrowLeft') rig.prev();
+  else if (/^[1-9]$/.test(e.key)) rig.play(Number(e.key) - 1);
+});
+rig.onStation((s) => console.log('tuned:', s.name, '—', s.genre));
+
+game.onUpdate((t) => {
+  rig.update(t.delta);
+  const pulse = rig.pulse();            // the whole coupling, all three ways
+  tiles.feed(pulse);
+  tiles.update(t.delta);
+  for (const d of dancers) d.update(t.delta, pulse);
+  glow.intensity = 12 + pulse.bass * 40;
+  game.camera.position.set(5.4, 3.6, 9.8);
+  game.camera.lookAt(-0.4, 1.1, -2);
+});
+game.start();`,
+  },
+
+  {
     id: 'gathering',
     title: 'Gatherings (choosing a seat · sitting down · talking)',
     group: 'Games',

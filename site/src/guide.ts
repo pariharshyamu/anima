@@ -7,6 +7,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'craft', title: 'IK, gaze, overlays, events' },
   { id: 'assets', title: 'Retargeting, sockets, gear' },
   { id: 'crowds', title: 'VAT crowds at scale' },
+  { id: 'dance', title: 'Dancing & the beat' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 
@@ -26,6 +27,10 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-crowd': 'crowd',
   'route-following': 'crowd',
   'the-structural-handshake': 'trio',
+  'the-beat-clock-free-runs': 'club',
+  'the-moves-are-skills-not-clips': 'club',
+  'a-crowd-not-a-chorus-line': 'club',
+  'stepping-on-and-off-the-floor': 'club',
 };
 
 const sidebar = document.getElementById('sidebar') as HTMLElement;
