@@ -1132,6 +1132,65 @@ game.camera.position.set(0, 5.4, 13);
 game.start();`
   },
   {
+    id: 'rowing',
+    title: 'A crew, and one number',
+    group: 'Animation',
+    code: `// SCENA's oar bank works out the stroke and publishes phaseAt(seat).
+// ANIMA's Rowing takes that same scalar and writes a body with it. Nothing
+// else passes between them — no clip, no event, no shared object. A shared
+// CLOCK is the third kind of handshake in the trilogy, after fields and
+// frames, and the only one that can say "together".
+import { createDeckedShip, createOarBank, createOcean, createSky,
+         createLightingRig, PALETTES } from 'scena3d';
+import { createHumanoid, OUTFITS, Rowing } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+
+const sea = createOcean({ amplitude: 0.2, wavelength: 26, size: 500, segments: 140 });
+scene.add(sea.mesh);
+
+const ship = createDeckedShip({ era: 'galley', seed: 6, palette });
+ship.float((x, z) => sea.heightAt(x, z));
+scene.add(ship.object);
+
+const SEAT = 0.45;
+const bank = createOarBank({
+  kind: 'longship', seats: 7, beam: ship.beam * 1.05,
+  gunwale: 1.3, together: 1, seed: 3, palette,
+});
+bank.setRate(22);
+ship.object.add(bank.object);
+
+const crew = bank.oars.map((oar, i) => {
+  const rig = createHumanoid({ seed: 20 + i * 7, height: 1.72, palette: OUTFITS.villager });
+  // A ROWER FACES AFT. Seat him facing the bow and the whole crew rows the
+  // wrong way while every number still agrees.
+  rig.object.rotation.y = Math.PI;
+  // The seat slot is the THWART; a rig is built from the soles of its feet.
+  const t = oar.seatSlot.anchor;
+  rig.object.position.set(t.position.x, t.position.y - SEAT, t.position.z);
+  ship.object.add(rig.object);
+  return { rig, oar, row: new Rowing(rig, { side: oar.side, style: 'fixed', seatHeight: SEAT, seed: i + 1 }) };
+});
+
+game.onUpdate((t) => {
+  sea.update(t.delta);
+  bank.update(t.delta);
+  ship.update(t.delta, { speed: bank.way, turn: bank.yaw * 0.25 });
+  for (const m of crew) m.row.update(t.delta, bank.phaseAt(m.oar.seat), m.oar.crabbing);
+  if (Math.floor(t.elapsed) % 19 === 0 && bank.crabbing === 0 && t.elapsed > 12) bank.crab(3);
+  const at = ship.object.position;
+  game.camera.position.set(at.x - 6.5, 3.9, at.z + 9.5);
+  game.camera.lookAt(at.x, 1.25, at.z - 0.5);
+});
+game.start();`,
+  },
+
+  {
     id: 'riding',
     title: 'Riding a horse (mount \u00b7 gaits \u00b7 ladder)',
     group: 'Games',

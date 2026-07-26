@@ -373,3 +373,36 @@ Three parts, and the first is not animation at all:
 3. **Lose it sometimes.** Past a threshold on the vessel's own `motion`, the compensation stops working and the body lurches. Seeded per character, so a crew does not stagger in unison — there's a test asserting two sailors on the same deck get thrown at different moments.
 
 **The bug worth recording:** the first version `premultiply`'d its correction onto the root every frame without removing the previous one. That compounds — a sailor was **five radians** off vertical after two seconds, spinning like a top. It now stores what it added and takes it back before adding the next, which is the same shape as `Prepping`'s feed tweak and leaves the heading to whatever is steering the body.
+
+### Rowing: a body driven by somebody else's clock
+
+Every other controller in this library owns its own timing. `Locomotion` picks a stride from a speed; `Mannerisms` fires when it feels like it. A rower does not get to choose — he is handed a **phase**, one scalar shared by the whole boat, and his entire body is a function of it.
+
+```js
+const oarsman = new Rowing(rig, { side: -1, style: 'fixed' });
+game.onUpdate((t) => {
+  bank.update(t.delta);                            // SCENA works out the stroke
+  oarsman.update(t.delta, bank.phaseAt(seat));     // …and this is all that crosses
+});
+```
+
+Nothing else passes between the libraries. No clip, no event, no shared object — a number. That is a **third kind of handshake**: `heightAt` and its descendants are fields, `ride` is a frame, and this is a *clock*. It is the only one of the three that can say **together**, which is why a ragged crew looks ragged rather than merely slow.
+
+#### The recovery is not the drive played backwards
+
+Through the water it is **legs then back**. Coming forward it is the other way round — **body then slide**: the back comes up first and the knees are the last thing to move. Reverse the drive instead and you get a man pulling his knees up while he is still laid back, which is the thing every coach on earth shouts about and is instantly wrong to anybody who has ever seen a boat. Two pairs of windows, in opposite orders, and everything else follows.
+
+A fixed thwart is not a sliding seat, either: a longship's rower gets his power from his back and swings much further than a man in a shell with a slide under him.
+
+#### The elbow is a consequence, not a choice
+
+`ROW_GRIP` is the same three numbers as SCENA's `OAR_GRIP`, and the arms are **solved** onto that path with a two-bone chain rather than posed near it — his hands are on the handle to within a centimetre at every phase. Which means the bend of his elbow is whatever is left over once the seat and the swing have done their part. The handle's path belongs to the oar, a rigid lever; the body's job is to be somewhere its arms can reach it from.
+
+#### Four things that only showed up when the two halves met
+
+None of these was findable from one side. Every test in both libraries passed throughout.
+
+1. **The oar's sweep was inverted.** The blade travelled bow-ward through the drive, which pushes a boat *astern*. Thrust, rate and way are all computed from the phase, so every number agreed with itself and a whole fleet rowed backwards. It took putting a body on the handle and finding its hands a full stroke-length adrift.
+2. **`ROW_GRIP` is measured from the thwart**; a rig is built from the soles of its feet. Half a metre, applied in the wrong frame, put every target down by his ankles and out of reach at every phase — so the solver clamped and the hands trailed the handle while looking roughly plausible in a still.
+3. **The inboard length of an oar is not a free choice.** The handle has to travel exactly as far as a pair of arms does, and that distance is published; given the sweep, the inboard length falls out of it. A nice-looking fraction — a third, a quarter — swings the handle half a metre further than anybody's hands go.
+4. **A rower faces aft.** Obvious, and easy to leave out: seat him facing the bow and the whole crew rows the wrong way while every number still agrees.
