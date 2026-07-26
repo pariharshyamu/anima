@@ -5,3 +5,4 @@ dist/
 .vite/
 site/public/vendor/
 site/public/docs/
+.playground-shots/
