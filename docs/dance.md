@@ -62,6 +62,24 @@ game.onUpdate((t) => {
 
 Same seed, same night: two dancers built alike are deterministic to the quaternion, which is what makes a dancing crowd verifiable headless.
 
+## Styles: the count is not the beat
+
+The club moves treat every beat the same. A **style** has a meter, a count cycle, a posture held under everything, and steps — real weight transfer, travel and return:
+
+```js
+dance.setStyle('salsa');   // 'club' | 'salsa' | 'waltz' | 'bhangra'
+dance.meter;               // 3 in a waltz, and there is no arguing with it
+dance.count;               // where we are in the figure, 0-based
+```
+
+**Salsa** counts to eight and *holds the 4 and the 8* — quick-quick-slow is a rhythm you can write down, so here it is data (the chart marks which counts step, where, and which carry the accent). The hips answer the weight **half a count late**: that lag is Cuban motion, and removing it turns salsa into someone walking sideways.
+
+**Waltz** is the meter generalisation — three beats to the bar, the box over two bars, and the rise-and-fall: down into the one, rising through the two and three. Its frame holds the arms carried wide the whole time, and its `hipAnswer` is turned nearly off, because a waltz that dances salsa hips is neither.
+
+**Bhangra** keeps 4/4 but spends the back half of every cycle with both arms above the head, shoulders bouncing on each count, weight swapping side to side with a light hop in the bar.
+
+Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
+
 ## Stepping on and off the floor
 
 `start()` captures the pose the body arrived in and eases into the dance from there; `stop()` eases back to exactly that pose, because whatever owned the body before — an idle, a conversation — is going to want it back the way it was left. Every frame is composed fresh from the entry pose, so nothing compounds and there is always a way back.

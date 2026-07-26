@@ -291,3 +291,211 @@ describe('a crowd, not a chorus line', () => {
     expect(apart).toBeGreaterThan(0.002);
   });
 });
+
+describe('styles: the count is not the beat', () => {
+  const styled = (style: 'salsa' | 'waltz' | 'bhangra', seconds = 4, bpm = 120) => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm });
+    d.setStyle(style);
+    d.start();
+    groove(d, seconds, bpm);
+    return { rig, d };
+  };
+
+  it('club is the default and the styles are listed', async () => {
+    const { DANCE_STYLES } = await import('../src');
+    const rig = createHumanoid({ seed: 4 });
+    expect(new Dance(rig).style).toBe('club');
+    expect(DANCE_STYLES).toEqual(['club', 'salsa', 'waltz', 'bhangra']);
+  });
+
+  it('a waltz has three beats to the bar and there is no arguing with it', () => {
+    const { d } = styled('waltz', 10);
+    // Ten seconds at 120 = 20 beats = 6.67 three-beat bars (4/4 would say 5).
+    expect(d.meter).toBe(3);
+    expect(d.bar).toBeGreaterThanOrEqual(6);
+    expect(d.bar).toBeLessThanOrEqual(7);
+  });
+
+  it('salsa counts to eight and wraps', () => {
+    const { d } = styled('salsa', 3.9);
+    expect(d.meter).toBe(4);
+    const seen = new Set<number>();
+    const rig2 = createHumanoid({ seed: 4 });
+    const d2 = new Dance(rig2, { seed: 3, bpm: 120 });
+    d2.setStyle('salsa');
+    d2.start();
+    for (let i = 0; i < 8 * 60; i++) {
+      d2.update(1 / 60, pulseAt(0.6, false, 120));
+      seen.add(d2.count);
+    }
+    expect([...seen].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    void d;
+  });
+
+  it('salsa steps travel and come home — the feet, not just the knees', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('salsa');
+    d.start();
+    groove(d, 2);
+    const zs: number[] = [];
+    const spb = 0.5;
+    let since = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      since += 1 / 60;
+      const beat = since >= spb;
+      if (beat) since -= spb;
+      d.update(1 / 60, pulseAt(beat ? 1 : 0.4, beat, 120));
+      zs.push(rig.bones.Hips.position.z);
+    }
+    // The body genuinely travels forward AND back across the cycle…
+    expect(Math.max(...zs)).toBeGreaterThan(0.02);
+    expect(Math.min(...zs)).toBeLessThan(-0.02);
+    // …and the average stays at home: travel-and-return, not drift.
+    const mean = zs.reduce((a, b) => a + b, 0) / zs.length;
+    expect(Math.abs(mean)).toBeLessThan(0.03);
+  });
+
+  it('the hold is a hold: nothing new is stepped on the 4 and the 8', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('salsa');
+    d.start();
+    // Advance to just after a hold count begins and freeze the chart state,
+    // then compare the feet across the whole held count: no new commitment.
+    groove(d, 4);
+    let holdDrift = 0;
+    let stepDrift = 0;
+    let prevL = rig.bones.LeftUpLeg.quaternion.clone();
+    for (let i = 0; i < 4 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.5, false, 120));
+      const drift = rig.bones.LeftUpLeg.quaternion.angleTo(prevL);
+      prevL = rig.bones.LeftUpLeg.quaternion.clone();
+      if (d.count === 3 || d.count === 7) holdDrift = Math.max(holdDrift, drift);
+      if (d.count === 0 || d.count === 4) stepDrift = Math.max(stepDrift, drift);
+    }
+    // The legs keep settling through a hold, but the big commitments happen
+    // on the breaks.
+    expect(stepDrift).toBeGreaterThan(holdDrift * 1.5);
+  });
+
+  it('Cuban motion: the hips answer the weight late, and only in salsa', () => {
+    const roll = (style: 'salsa' | 'waltz') => {
+      const rig = createHumanoid({ seed: 4 });
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 2);
+      let peak = 0;
+      const spb = 0.5;
+      let since = 0;
+      for (let i = 0; i < 6 * 60; i++) {
+        since += 1 / 60;
+        const beat = since >= spb;
+        if (beat) since -= spb;
+        d.update(1 / 60, pulseAt(beat ? 1 : 0.4, beat, 120));
+        const q = rig.bones.Hips.quaternion;
+        // z-roll magnitude, roughly.
+        peak = Math.max(peak, Math.abs(2 * Math.asin(Math.max(-1, Math.min(1, q.z)))));
+      }
+      return peak;
+    };
+    expect(roll('salsa')).toBeGreaterThan(roll('waltz') * 1.8);
+  });
+
+  it('the waltz rises and falls inside every bar', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('waltz');
+    d.start();
+    groove(d, 4);
+    const byCount: number[][] = [[], [], []];
+    for (let i = 0; i < 6 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      byCount[d.count % 3].push(rig.bones.Hips.position.y);
+    }
+    const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+    // Down into the one, up through the two and three.
+    expect(avg(byCount[0])).toBeLessThan(avg(byCount[2]));
+  });
+
+  it('the waltz frame holds: arms carried, not hanging', () => {
+    const { rig } = styled('waltz', 3);
+    const angle = (b: 'LeftArm' | 'RightArm') => {
+      const q = rig.bones[b].quaternion;
+      return 2 * Math.acos(Math.min(1, Math.abs(q.w)));
+    };
+    // Carried well away from vertical hang (~1.43 rad) AND away from T (0).
+    expect(angle('LeftArm')).toBeGreaterThan(0.3);
+    expect(angle('LeftArm')).toBeLessThan(1.2);
+  });
+
+  it('bhangra spends the back half of the cycle with both arms up', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('bhangra');
+    d.start();
+    groove(d, 2);
+    let upBoth = 0;
+    let samples = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.8, i % 30 === 0, 120));
+      if (d.count >= 4) {
+        samples++;
+        const l = rig.bones.LeftArm.quaternion;
+        const r = rig.bones.RightArm.quaternion;
+        const la = 2 * Math.acos(Math.min(1, Math.abs(l.w)));
+        const ra = 2 * Math.acos(Math.min(1, Math.abs(r.w)));
+        if (la > 1.8 && ra > 1.8) upBoth++;
+      }
+    }
+    expect(upBoth / Math.max(1, samples)).toBeGreaterThan(0.7);
+  });
+
+  it('setStyle mid-dance resets the figure cleanly', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('salsa');
+    d.start();
+    groove(d, 3);
+    d.setStyle('waltz');
+    expect(d.style).toBe('waltz');
+    expect(d.meter).toBe(3);
+    groove(d, 3);
+    // Still recoverable after the switch.
+    d.stop();
+    groove(d, 2);
+    expect(Math.abs(rig.bones.Hips.position.x)).toBeLessThan(0.01);
+    expect(Math.abs(rig.bones.Hips.position.z)).toBeLessThan(0.01);
+  });
+
+  it('stop() brings a travelled dancer all the way home', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const home = rig.bones.Hips.position.clone();
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('salsa');
+    d.start();
+    groove(d, 3.3); // mid-figure, deliberately away from home
+    d.stop();
+    groove(d, 2);
+    expect(Math.abs(rig.bones.Hips.position.x - home.x)).toBeLessThan(0.005);
+    expect(Math.abs(rig.bones.Hips.position.z - home.z)).toBeLessThan(0.005);
+    expect(Math.abs(rig.bones.Hips.position.y - home.y)).toBeLessThan(0.005);
+  });
+
+  it('styles are deterministic too: same seed, same figure', () => {
+    const a = createHumanoid({ seed: 4 });
+    const b = createHumanoid({ seed: 4 });
+    const da = new Dance(a, { seed: 6 });
+    const db = new Dance(b, { seed: 6 });
+    da.setStyle('salsa');
+    db.setStyle('salsa');
+    da.start();
+    db.start();
+    groove(da, 5);
+    groove(db, 5);
+    expect(a.bones.Hips.position.distanceTo(b.bones.Hips.position)).toBeLessThan(1e-9);
+    expect(a.bones.LeftUpLeg.quaternion.angleTo(b.bones.LeftUpLeg.quaternion)).toBeLessThan(1e-9);
+  });
+});

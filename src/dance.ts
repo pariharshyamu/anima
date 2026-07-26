@@ -88,6 +88,25 @@ export const DANCE_MOVES: DanceMove[] = [
   'robot',
 ];
 
+/**
+ * A style is not a bigger move — it is a different relationship to time.
+ *
+ * The club moves treat every beat the same. A style has a **meter** (a waltz
+ * has three beats to the bar and there is no arguing with it) and a **count
+ * cycle** in which some beats step, some hold, and the holds are the point:
+ * salsa's whole character is that counts 4 and 8 are deliberately empty.
+ * Quick-quick-slow is a rhythm you can write down, so here it is data.
+ *
+ * Styles also STEP — real weight transfer, travel and return — where the
+ * club moves pump in place. The step engine underneath is deliberately
+ * simple: feet chase charted targets, the body's weight eases onto the
+ * support foot, and the hips answer the weight a half-count late. That lag
+ * IS Cuban motion; remove it and salsa becomes someone walking sideways.
+ */
+export type DanceStyle = 'club' | 'salsa' | 'waltz' | 'bhangra';
+
+export const DANCE_STYLES: DanceStyle[] = ['club', 'salsa', 'waltz', 'bhangra'];
+
 export interface DanceOptions {
   seed?: number;
   /** Tempo the clock free-runs at before any pulse says otherwise. */
@@ -113,6 +132,17 @@ interface MoveFrame {
 }
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** Overlay shapes: later contributions compose after earlier ones. */
+function mergeShapes(...parts: Shape[]): Shape {
+  const out: Shape = {};
+  for (const part of parts) {
+    for (const bone of Object.keys(part) as BoneName[]) {
+      out[bone] = [...(out[bone] ?? []), ...part[bone]!];
+    }
+  }
+  return out;
+}
 /** A pump that lands ON the beat: sharp at phase 0, spent by the off-beat. */
 const kick = (p: number): number => Math.exp(-(p % 1) * 5);
 /** Smooth two-beat pendulum, −1..1, crossing zero on the off-beats. */
@@ -281,6 +311,154 @@ const MOVES: Record<DanceMove, (p: number, p2: number, e: number, s: number) => 
   },
 };
 
+/** One charted count: which foot goes where (metres, dancer-local). */
+interface CountStep {
+  foot?: 'L' | 'R';
+  /** +x is the dancer's left, +z is forward. Omitted = home. */
+  dx?: number;
+  dz?: number;
+  /** An accented count (the ONE, a stamp) — the upper body leans into it. */
+  accent?: boolean;
+}
+
+interface StyleSpec {
+  beatsPerBar: number;
+  /** Counts in one full cycle of the figure. */
+  counts: number;
+  /** How far a basic step reaches, as a fraction of leg length. */
+  reach: number;
+  /** The frame held under everything, scaled by energy. */
+  posture: (e: number, s: number) => Shape;
+  /** Arms, chest and head over the cycle. `c` is the fractional count. */
+  upper: (c: number, e: number, s: number) => Shape;
+  /** Vertical shape over the BAR, metres. Waltz falls on 1 and rises after. */
+  lift: (barPhase: number, e: number) => number;
+  /** The figure, one entry per count. */
+  chart: CountStep[];
+  /** How much the hips answer the weight — Cuban motion's volume knob. */
+  hipAnswer: number;
+}
+
+const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
+  // On-1 salsa: forward break, replace, home, HOLD; back break, replace,
+  // home, HOLD. The holds on 4 and 8 are what make it salsa.
+  salsa: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.5,
+    hipAnswer: 1,
+    chart: [
+      // The break carries a little LATERAL weight too — that sideways
+      // component is what the hips answer late, and it is the salsa.
+      { foot: 'L', dz: 1, dx: 0.45, accent: true },
+      { foot: 'R', dz: 0.15, dx: -0.3 },
+      { foot: 'L' },
+      {},
+      { foot: 'R', dz: -1, dx: -0.45, accent: true },
+      { foot: 'L', dz: -0.15, dx: 0.3 },
+      { foot: 'R' },
+      {},
+    ],
+    posture: (e, s) => ({
+      Chest: [[X, 0.05 * e]],
+      LeftArm: [[Z, -HANG + 0.55 * e]],
+      RightArm: [[Z, HANG - 0.55 * e]],
+      LeftForeArm: [[Z, -0.95 * e], [Y, 0.15 * s]],
+      RightForeArm: [[Z, 0.95 * e], [Y, -0.15 * s]],
+    }),
+    upper: (c, e, s) => {
+      // The arms trade places with the feet: as the left breaks forward the
+      // right arm comes across, and everything swings through the hold.
+      const swing = Math.sin((c / 8) * Math.PI * 2) * e;
+      return {
+        Chest: [[Y, 0.14 * swing * s]],
+        Head: [[Y, -0.08 * swing * s]],
+        LeftForeArm: [[Y, 0.35 * swing]],
+        RightForeArm: [[Y, 0.35 * swing]],
+      };
+    },
+    lift: () => 0,
+  },
+
+  // The box, over two bars of THREE: forward-side-close, back-side-close.
+  // Down on the one, rising through two and three — the rise-and-fall is
+  // the waltz, the way the lag is the salsa.
+  waltz: {
+    beatsPerBar: 3,
+    counts: 6,
+    reach: 0.55,
+    hipAnswer: 0.25,
+    chart: [
+      { foot: 'L', dz: 1, accent: true },
+      { foot: 'R', dz: 1, dx: -1 },
+      { foot: 'L', dz: 1, dx: -1 },
+      { foot: 'R', dz: 0, accent: true },
+      { foot: 'L', dz: 0, dx: 0 },
+      { foot: 'R', dz: 0, dx: 0 },
+    ],
+    posture: (e) => ({
+      // The frame: arms carried wide and high, and it does not slump.
+      Chest: [[X, -0.06 * e]],
+      Head: [[X, -0.03 * e], [Y, 0.18 * e]],
+      LeftArm: [[Z, -0.55 - 0.15 * e]],
+      RightArm: [[Z, 0.55 + 0.15 * e]],
+      LeftForeArm: [[Z, -0.75], [Y, 0.4]],
+      RightForeArm: [[Z, 0.75], [Y, -0.4]],
+    }),
+    upper: (c, e, s) => {
+      const sway = Math.sin((c / 6) * Math.PI * 2) * e * s;
+      return { Chest: [[Z, 0.05 * sway]], Hips: [[Y, 0.04 * sway]] };
+    },
+    // Sink into the one, rise through two, stand tall on three.
+    lift: (barPhase, e) => (Math.sin((barPhase - 0.25) * Math.PI * 2) * 0.5 + 0.5) * 0.05 * e - 0.035 * e,
+  },
+
+  // Bhangra: the bounce IS the posture, shoulders answer the kick, and the
+  // arms spend the whole cycle above the head — first one, then both.
+  bhangra: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.35,
+    hipAnswer: 0.4,
+    chart: [
+      { foot: 'L', dx: 1, accent: true },
+      { foot: 'L' },
+      { foot: 'R', dx: -1, accent: true },
+      { foot: 'R' },
+      { foot: 'L', dx: 1, accent: true },
+      { foot: 'L' },
+      { foot: 'R', dx: -1, accent: true },
+      { foot: 'R' },
+    ],
+    posture: (e) => ({
+      Chest: [[X, 0.06 * e]],
+      LeftLeg: [[X, 0.12 * e]],
+      RightLeg: [[X, 0.12 * e]],
+      LeftUpLeg: [[X, -0.06 * e]],
+      RightUpLeg: [[X, -0.06 * e]],
+    }),
+    upper: (c, e, s) => {
+      // One arm up for the first half of the cycle, both up for the second,
+      // wrists circling — and the shoulders bounce on every count.
+      const half = c < 4;
+      const bounce = Math.exp(-(c % 1) * 5) * e;
+      const circle = c * Math.PI;
+      return {
+        LeftShoulder: [[Z, -0.12 * bounce]],
+        RightShoulder: [[Z, 0.12 * bounce]],
+        LeftArm: half
+          ? [[Z, -HANG + 0.5 * e]]
+          : [[Z, -2.35 - 0.12 * bounce]],
+        RightArm: [[Z, 2.35 + 0.12 * bounce], [Y, -0.1 * s]],
+        LeftForeArm: half ? [[Z, -0.9 * e]] : [[Z, -0.35], [X, 0.35 * Math.sin(circle)]],
+        RightForeArm: [[Z, 0.35], [X, 0.35 * Math.cos(circle)]],
+        Head: [[Z, 0.05 * Math.sin(circle) * s * e]],
+      };
+    },
+    lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 4)) * 0.02 * e,
+  },
+};
+
 /** Every bone any move touches — captured for entry/exit blending. */
 const DANCE_BONES: BoneName[] = [
   'Hips', 'Spine', 'Chest', 'Neck', 'Head',
@@ -327,10 +505,22 @@ export class Dance {
   private target = 0;
   private beats = 0;
   private entry = new Map<BoneName, Quaternion>();
-  private entryHipsY = 0;
+  private entryHips = { x: 0, y: 0, z: 0 };
   private baseHipsY = 0;
+  private legLen: number;
   private q = new Quaternion();
   private step = new Quaternion();
+  private styleName: DanceStyle = 'club';
+  /** Where each foot is versus home (dancer-local metres), eased to marks. */
+  private feet = {
+    L: { x: 0, z: 0, tx: 0, tz: 0, lift: 0 },
+    R: { x: 0, z: 0, tx: 0, tz: 0, lift: 0 },
+  };
+  /** Where the weight is, eased — and where the hips think it is, later. */
+  private carry = { x: 0, z: 0 };
+  private hipEcho = { x: 0, z: 0 };
+  private support: 'L' | 'R' = 'R';
+  private lastCount = -1;
 
   constructor(rig: HumanoidRig, options: DanceOptions = {}) {
     this.rig = rig;
@@ -343,6 +533,36 @@ export class Dance {
     this.sign = this.rand() < 0.5 ? -1 : 1;
     this.move = DANCE_MOVES[Math.floor(this.rand() * DANCE_MOVES.length)];
     this.baseHipsY = rig.bones.Hips.position.y;
+    const { LeftUpLeg, LeftLeg, LeftFoot } = rig.bones;
+    this.legLen = -LeftLeg.position.y - LeftFoot.position.y;
+    void LeftUpLeg;
+  }
+
+  /** The current style. `'club'` is the freestyle repertoire. */
+  get style(): DanceStyle {
+    return this.styleName;
+  }
+
+  /** Change idiom. A style brings its own meter, counts, frame and steps. */
+  setStyle(style: DanceStyle): void {
+    this.styleName = style;
+    this.lastCount = -1;
+    this.feet.L = { x: 0, z: 0, tx: 0, tz: 0, lift: 0 };
+    this.feet.R = { x: 0, z: 0, tx: 0, tz: 0, lift: 0 };
+    this.carry = { x: 0, z: 0 };
+    this.hipEcho = { x: 0, z: 0 };
+  }
+
+  /** Beats to the bar — 3 in a waltz, 4 everywhere else. */
+  get meter(): number {
+    return this.styleName === 'club' ? 4 : STYLES[this.styleName].beatsPerBar;
+  }
+
+  /** The count within the style's cycle (integer part), 0-based. */
+  get count(): number {
+    if (this.styleName !== 'club' && this.lastCount >= 0) return this.lastCount;
+    const counts = this.styleName === 'club' ? 8 : STYLES[this.styleName].counts;
+    return Math.floor(((this.phase % counts) + counts) % counts);
   }
 
   get dancing(): boolean {
@@ -357,7 +577,8 @@ export class Dance {
     this.bar = 0;
     this.beats = 0;
     for (const bone of DANCE_BONES) this.entry.set(bone, this.rig.bones[bone].quaternion.clone());
-    this.entryHipsY = this.rig.bones.Hips.position.y;
+    const hp = this.rig.bones.Hips.position;
+    this.entryHips = { x: hp.x, y: hp.y, z: hp.z };
   }
 
   /** Step off. Eases back toward the pose the dance began from. */
@@ -397,7 +618,7 @@ export class Dance {
     this.phase += (dt * this.tempo) / 60;
     if (Math.floor(before) !== Math.floor(this.phase)) {
       this.beats++;
-      if (this.beats % 4 === 0) {
+      if (this.beats % this.meter === 0) {
         this.bar++;
         // A new skill every N bars — always a DIFFERENT one, or the change
         // is invisible and the repertoire may as well be one move.
@@ -410,12 +631,11 @@ export class Dance {
 
     // This dancer's own clock: shared beat, private flair.
     const p = this.phase + (this.lag * this.tempo) / 60;
-    const frame = MOVES[this.move](
-      ((p % 1) + 1) % 1,
-      ((p % 2) + 2) % 2,
-      this.energy * this.amp,
-      this.sign
-    );
+    const e = this.energy * this.amp;
+    const frame =
+      this.styleName === 'club'
+        ? MOVES[this.move](((p % 1) + 1) % 1, ((p % 2) + 2) % 2, e, this.sign)
+        : this.styledFrame(p, e, dt);
 
     const w = this.weight * this.weight * (3 - 2 * this.weight);
     for (const bone of DANCE_BONES) {
@@ -429,6 +649,93 @@ export class Dance {
       joint.quaternion.copy(this.entry.get(bone)!).slerp(this.q, w);
     }
     const hips = this.rig.bones.Hips;
-    hips.position.y = this.entryHipsY + (this.baseHipsY - frame.drop - this.entryHipsY) * w;
+    hips.position.y = this.entryHips.y + (this.baseHipsY - frame.drop - this.entryHips.y) * w;
+    hips.position.x = this.entryHips.x + this.carry.x * w;
+    hips.position.z = this.entryHips.z + this.carry.z * w;
+  }
+
+  /**
+   * The step engine. Counts pick chart entries; feet chase their targets;
+   * the weight eases onto the support foot; the hips answer HALF A COUNT
+   * LATE — that lag is Cuban motion, and turning it down is a waltz frame.
+   */
+  private styledFrame(p: number, e: number, dt: number): MoveFrame {
+    const spec = STYLES[this.styleName as Exclude<DanceStyle, 'club'>];
+    const c = ((p % spec.counts) + spec.counts) % spec.counts;
+    const count = Math.floor(c);
+    const stride = this.legLen * spec.reach * (0.5 + 0.5 * e);
+
+    // A NEW count: commit the chart's step for it.
+    if (count !== this.lastCount) {
+      this.lastCount = count;
+      const entry = spec.chart[count % spec.chart.length];
+      if (entry.foot) {
+        const f = this.feet[entry.foot];
+        // The MARK, not the foot: the foot spends the count getting there.
+        f.tx = (entry.dx ?? 0) * stride * 0.6;
+        f.tz = (entry.dz ?? 0) * stride;
+        f.lift = 1;
+        this.support = entry.foot === 'L' ? 'R' : 'L';
+      }
+    }
+
+    // Feet chase their marks inside the count; the lift arcs and lands.
+    const chase = Math.min(1, dt * (this.tempo / 60) * 7);
+    for (const side of ['L', 'R'] as const) {
+      const f = this.feet[side];
+      f.x += (f.tx - f.x) * chase;
+      f.z += (f.tz - f.z) * chase;
+      f.lift = Math.max(0, f.lift - dt * (this.tempo / 60) * 2.4);
+    }
+    // Weight eases to the support foot (mostly), and the hips echo it late.
+    const sup = this.feet[this.support];
+    const off = this.feet[this.support === 'L' ? 'R' : 'L'];
+    const wx = sup.x * 0.65 + off.x * 0.35;
+    const wz = sup.z * 0.65 + off.z * 0.35;
+    this.carry.x += (wx - this.carry.x) * chase;
+    this.carry.z += (wz - this.carry.z) * chase;
+    const echo = Math.min(1, dt * (this.tempo / 60) * 2.2);
+    this.hipEcho.x += (this.carry.x - this.hipEcho.x) * echo;
+    this.hipEcho.z += (this.carry.z - this.hipEcho.z) * echo;
+
+    // Pose the legs to REACH the feet: thighs from the offsets, knees from
+    // the lift, ankles keeping the soles honest.
+    const legs: Shape = {};
+    for (const side of ['L', 'R'] as const) {
+      const f = this.feet[side];
+      const pre = side === 'L' ? 'Left' : 'Right';
+      const relX = f.x - this.carry.x;
+      const relZ = f.z - this.carry.z;
+      const fwd = -Math.asin(Math.max(-0.9, Math.min(0.9, relZ / this.legLen)));
+      const out = Math.asin(Math.max(-0.9, Math.min(0.9, relX / this.legLen))) * (side === 'L' ? 1 : 1);
+      const knee = f.lift * 0.9 + Math.abs(fwd) * 0.25;
+      legs[`${pre}UpLeg` as BoneName] = [[X, fwd - f.lift * 0.35], [Z, out * 0.8]];
+      legs[`${pre}Leg` as BoneName] = [[X, knee]];
+      legs[`${pre}Foot` as BoneName] = [[X, -(fwd - f.lift * 0.35) - knee * 0.8]];
+    }
+
+    // Cuban motion: the roll is the DIFFERENCE between where the weight is
+    // and where the hips have got to — zero when they agree, biggest
+    // mid-transfer, and always a little behind the feet. Lateral transfer
+    // rolls the pelvis (Z); fore-and-aft transfer tips and turns it.
+    const ax = (this.carry.x - this.hipEcho.x) * spec.hipAnswer;
+    const az = (this.carry.z - this.hipEcho.z) * spec.hipAnswer;
+    const hipShape: Shape = {
+      Hips: [[Z, -ax * 3.2], [X, az * 1.6], [Y, az * 2.4 * this.sign]],
+      Spine: [[Z, ax * 2.2], [X, -az * 1.1]],
+    };
+
+    const barPhase = (c % spec.beatsPerBar) / spec.beatsPerBar;
+    const accent = spec.chart[count % spec.chart.length].accent ? Math.exp(-(c % 1) * 5) : 0;
+    const accentShape: Shape = { Chest: [[X, 0.05 * accent * e]] };
+
+    const shape = mergeShapes(
+      spec.posture(e, this.sign),
+      spec.upper(c, e, this.sign),
+      legs,
+      hipShape,
+      accentShape
+    );
+    return { shape, drop: 0.02 * e - spec.lift(barPhase, e) };
   }
 }

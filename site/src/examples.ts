@@ -1002,7 +1002,7 @@ game.start();`
 
   {
     id: 'club',
-    title: 'The club (web radio · DJ tiles · dance skills)',
+    title: 'The club (web radio · DJ tiles · dance styles)',
     group: 'Games',
     code: `// THE THREE-WAY COMPOSITION: SCENA owns the woofer and the DJ tiles,
 // ANIMA owns the dancers, and the only thing passing between them is the
@@ -1015,7 +1015,7 @@ game.start();`
 // the dancers keep dancing exactly the way a real floor does when the DJ
 // is fixing a skip.
 import { createWoofer, createDanceTiles } from 'scena3d';
-import { createHumanoid, Dance, DANCE_MOVES } from 'anima3d';
+import { createHumanoid, Dance, DANCE_STYLES } from 'anima3d';
 import { Game } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, PointLight, Color } from 'three';
@@ -1043,22 +1043,34 @@ const tiles = createDanceTiles({ cols: 11, rows: 9, size: 1.0, seed: 11 });
 tiles.object.position.set(0, 0, 0.8);
 scene.add(tiles.object);
 
-// THE DANCERS. One pulse feeds them all, but every dancer has a seeded
-// flair — their own timing lag and amplitude — so they dance TOGETHER
-// WITHOUT LOCKSTEP: a crowd, not a chorus line.
+// THE DANCERS — and now the STYLES. One pulse feeds them all; each dancer
+// has a seeded flair (their own lag and amplitude) so nobody is in
+// lockstep, and each has an IDIOM: the salsa pair count to eight and hold
+// the 4 and the 8, the waltzers keep three beats to the bar with the
+// rise-and-fall, the bhangra dancer spends half of every cycle with both
+// arms in the air, and the club dancers work the freestyle repertoire.
 const dancers = [];
-[[-3.2, 1.6], [-1.1, 2.8], [0.9, 1.2], [2.8, 2.4], [-2.0, 3.9], [1.9, 4.1]]
-  .forEach(([x, z], i) => {
-    const h = createHumanoid({ seed: 640 + i });
-    h.object.position.set(x, 0, z);
-    h.object.rotation.y = Math.PI + (x < 0 ? -0.15 : 0.15);
-    scene.add(h.object);
-    const d = new Dance(h, { seed: 40 + i * 13 });
-    d.start();
-    dancers.push(d);
-  });
-// One show-off is pinned to the robot; the rest work the repertoire.
-dancers[2].use('robot');
+[ [-3.6, 1.6, 'salsa'], [-2.4, 2.9, 'salsa'],
+  [3.0, 1.4, 'waltz'], [4.1, 2.6, 'waltz'],
+  [0.2, 2.0, 'bhangra'],
+  [-0.9, 4.2, 'club'], [1.7, 4.4, 'club'],
+].forEach(([x, z, style], i) => {
+  const h = createHumanoid({ seed: 640 + i });
+  h.object.position.set(x, 0, z);
+  h.object.rotation.y = Math.PI + (x < 0 ? -0.15 : 0.15);
+  scene.add(h.object);
+  const d = new Dance(h, { seed: 40 + i * 13 });
+  d.setStyle(style);
+  d.start();
+  dancers.push(d);
+});
+// Press S to send EVERYBODY round the styles together.
+let styleIdx = 0;
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 's') return;
+  styleIdx = (styleIdx + 1) % DANCE_STYLES.length;
+  for (const d of dancers) d.setStyle(DANCE_STYLES[styleIdx]);
+});
 
 rig.play();   // the deck idles on the bed until somebody clicks
 window.addEventListener('pointerdown', () => rig.operate());

@@ -68,7 +68,9 @@ export {
 export {
   Dance,
   DANCE_MOVES,
+  DANCE_STYLES,
   type DanceMove,
+  type DanceStyle,
   type DanceOptions,
   type DancePulse,
 } from './dance';
