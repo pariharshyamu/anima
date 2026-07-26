@@ -31,6 +31,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-moves-are-skills-not-clips': 'club',
   'a-crowd-not-a-chorus-line': 'club',
   'styles-the-count-is-not-the-beat': 'club',
+  'street-the-hit-and-the-freeze': 'club',
   'stepping-on-and-off-the-floor': 'club',
 };
 

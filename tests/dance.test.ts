@@ -306,7 +306,7 @@ describe('styles: the count is not the beat', () => {
     const { DANCE_STYLES } = await import('../src');
     const rig = createHumanoid({ seed: 4 });
     expect(new Dance(rig).style).toBe('club');
-    expect(DANCE_STYLES).toEqual(['club', 'salsa', 'waltz', 'bhangra']);
+    expect(DANCE_STYLES.slice(0, 4)).toEqual(['club', 'salsa', 'waltz', 'bhangra']);
   });
 
   it('a waltz has three beats to the bar and there is no arguing with it', () => {
@@ -497,5 +497,150 @@ describe('styles: the count is not the beat', () => {
     groove(db, 5);
     expect(a.bones.Hips.position.distanceTo(b.bones.Hips.position)).toBeLessThan(1e-9);
     expect(a.bones.LeftUpLeg.quaternion.angleTo(b.bones.LeftUpLeg.quaternion)).toBeLessThan(1e-9);
+  });
+});
+
+describe('street: the hit and the freeze', () => {
+  const drive = (style: 'popping' | 'locking' | 'waving' | 'tutting' | 'toprock', warm = 3) => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle(style);
+    d.start();
+    groove(d, warm);
+    return { rig, d };
+  };
+
+  it('the street styles are on the list', async () => {
+    const { DANCE_STYLES } = await import('../src');
+    for (const s of ['popping', 'locking', 'waving', 'tutting', 'toprock']) {
+      expect(DANCE_STYLES).toContain(s);
+    }
+  });
+
+  it('popping: the pose changes in the first tenth of the count and then holds', () => {
+    const { rig, d } = drive('popping');
+    let nearCount = 0;
+    let midCount = 0;
+    let prev = rig.bones.RightForeArm.quaternion.clone();
+    for (let i = 0; i < 6 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const f = d.phase % 1;
+      // The dancer's own clock leads the raw phase by their flair lag, so
+      // bucket by distance to the NEAREST count, not by the raw fraction.
+      const toCount = Math.min(f, 1 - f);
+      const step = rig.bones.RightForeArm.quaternion.angleTo(prev);
+      prev = rig.bones.RightForeArm.quaternion.clone();
+      if (toCount < 0.2) nearCount = Math.max(nearCount, step);
+      else if (toCount > 0.35) midCount = Math.max(midCount, step);
+    }
+    // The dime stop: motion lives at the top of the count, stillness after.
+    expect(nearCount).toBeGreaterThan(midCount * 4);
+    expect(midCount).toBeLessThan(0.02);
+  });
+
+  it('popping draws a different pose every count', () => {
+    const { rig, d } = drive('popping');
+    const poses: number[] = [];
+    let lastCount = -1;
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const f = d.phase % 1;
+      const c = Math.floor(d.phase % 4);
+      if (c !== lastCount && f > 0.5) {
+        lastCount = c;
+        const q = rig.bones.LeftForeArm.quaternion;
+        poses.push(Math.round((2 * Math.acos(Math.min(1, Math.abs(q.w)))) * 100));
+      }
+    }
+    expect(new Set(poses).size).toBeGreaterThan(Math.min(4, poses.length) - 1);
+  });
+
+  it('locking: the freeze is a freeze — a count and a half of zero motion', () => {
+    const { rig, d } = drive('locking');
+    let freezeDrift = 0;
+    let windupDrift = 0;
+    let prev = rig.bones.LeftForeArm.quaternion.clone();
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const c = ((d.phase % 4) + 4) % 4;
+      const step = rig.bones.LeftForeArm.quaternion.angleTo(prev);
+      prev = rig.bones.LeftForeArm.quaternion.clone();
+      if (c > 2.2 && c < 3.4) freezeDrift = Math.max(freezeDrift, step);
+      if (c > 0.1 && c < 0.9) windupDrift = Math.max(windupDrift, step);
+    }
+    expect(freezeDrift).toBeLessThan(1e-6);
+    expect(windupDrift).toBeGreaterThan(0.01);
+  });
+
+  it('waving: the wave reaches the right hand after the left', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('waving');
+    d.start();
+    groove(d, 3);
+    // Track when each forearm peaks within one full wave (2 counts).
+    let lPeakAt = 0;
+    let rPeakAt = 0;
+    let lMax = -Infinity;
+    let rMax = -Infinity;
+    for (let i = 0; i < 2 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const t = i / 60;
+      const lx = rig.bones.LeftForeArm.quaternion.x;
+      const rx = rig.bones.RightForeArm.quaternion.x;
+      if (lx > lMax) { lMax = lx; lPeakAt = t; }
+      if (rx > rMax) { rMax = rx; rPeakAt = t; }
+    }
+    // A fixed propagation delay, hand to hand — not simultaneous, not a bar.
+    const delay = ((rPeakAt - lPeakAt) % 1 + 1) % 1;
+    expect(delay).toBeGreaterThan(0.1);
+    expect(delay).toBeLessThan(0.95);
+  });
+
+  it('tutting snaps between held right-angle frames on the half-count', () => {
+    const { rig, d } = drive('tutting');
+    let still = 0;
+    let total = 0;
+    let prev = rig.bones.RightForeArm.quaternion.clone();
+    for (let i = 0; i < 6 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const step = rig.bones.RightForeArm.quaternion.angleTo(prev);
+      prev = rig.bones.RightForeArm.quaternion.clone();
+      total++;
+      if (step < 1e-4) still++;
+    }
+    // Most of tutting is the stillness between snaps.
+    expect(still / total).toBeGreaterThan(0.5);
+  });
+
+  it('toprock travels on the step engine and comes home', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('toprock');
+    d.start();
+    groove(d, 2);
+    const zs: number[] = [];
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.8, i % 30 === 0, 120));
+      zs.push(rig.bones.Hips.position.z);
+    }
+    expect(Math.max(...zs)).toBeGreaterThan(0.02);
+    const mean = zs.reduce((a, b) => a + b, 0) / zs.length;
+    expect(Math.abs(mean)).toBeLessThan(Math.max(...zs));
+  });
+
+  it('every street style still stops clean', () => {
+    for (const style of ['popping', 'locking', 'waving', 'tutting', 'toprock'] as const) {
+      const rig = createHumanoid({ seed: 4 });
+      const entry = rig.bones.RightForeArm.quaternion.clone();
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 2.7);
+      d.stop();
+      groove(d, 2);
+      expect(rig.bones.RightForeArm.quaternion.angleTo(entry), style).toBeLessThan(0.02);
+      expect(Math.abs(rig.bones.Hips.position.x), style).toBeLessThan(0.01);
+    }
   });
 });

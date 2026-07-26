@@ -78,6 +78,18 @@ dance.count;               // where we are in the figure, 0-based
 
 **Bhangra** keeps 4/4 but spends the back half of every cycle with both arms above the head, shoulders bouncing on each count, weight swapping side to side with a light hop in the bar.
 
+## Street: the hit and the freeze
+
+Street time is not smooth time, and the five street styles each break the smoothness a different way:
+
+- **`popping`** — THE HIT. Each count draws a fresh pose from a seeded die; the body crosses to it in the first tenth of the count and then *does not move*. A dime stop, four times a bar. Smooth it out and it is just somebody swaying.
+- **`locking`** — wind up (wrist circles), throw the point, and **LOCK**: from the 2 to halfway through the 4 the pose function is simply not asked again. The pause is the content; everything else is how you arrive at it.
+- **`waving`** — the body as a transmission line: one rotation enters at the left hand and leaves at the right, each joint a fixed delay behind the last. The ragged oar crew's ripple, danced.
+- **`tutting`** — right angles on the half-count, snapped harder than popping and held dead flat between: the grid, danced as strictly as it can be.
+- **`toprock`** — breaking's standing footwork on the step engine: the cross-step kicked over the standing leg, arms rocking open against the feet. (Downrock and power moves wait for floor support states — deliberately.)
+
+The freezes and hits needed **no new machinery**: a freeze is the pose function evaluated at the instant the lock lands, and a hit is an interpolation weight that spends nine tenths of the count at 1. Everything stays a pure function of the count, which is why a popper at 96 BPM and the same popper at 128 BPM hit equally hard.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

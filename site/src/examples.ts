@@ -1050,10 +1050,12 @@ scene.add(tiles.object);
 // rise-and-fall, the bhangra dancer spends half of every cycle with both
 // arms in the air, and the club dancers work the freestyle repertoire.
 const dancers = [];
-[ [-3.6, 1.6, 'salsa'], [-2.4, 2.9, 'salsa'],
-  [3.0, 1.4, 'waltz'], [4.1, 2.6, 'waltz'],
-  [0.2, 2.0, 'bhangra'],
-  [-0.9, 4.2, 'club'], [1.7, 4.4, 'club'],
+[ [-3.8, 1.5, 'salsa'], [-2.6, 2.8, 'salsa'],
+  [3.2, 1.3, 'waltz'], [4.2, 2.5, 'waltz'],
+  [0.2, 1.9, 'bhangra'],
+  [-1.2, 4.1, 'popping'], [1.8, 4.3, 'tutting'],
+  [-3.4, 4.6, 'waving'], [3.4, 4.6, 'toprock'],
+  [0.3, 5.6, 'locking'], [-0.9, 3.0, 'club'],
 ].forEach(([x, z, style], i) => {
   const h = createHumanoid({ seed: 640 + i });
   h.object.position.set(x, 0, z);
@@ -1064,7 +1066,8 @@ const dancers = [];
   d.start();
   dancers.push(d);
 });
-// Press S to send EVERYBODY round the styles together.
+// Press S to send EVERYBODY round the styles together — all nine idioms,
+// ballroom to street, on the same beat clock.
 let styleIdx = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 's') return;

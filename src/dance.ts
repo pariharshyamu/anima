@@ -103,9 +103,26 @@ export const DANCE_MOVES: DanceMove[] = [
  * support foot, and the hips answer the weight a half-count late. That lag
  * IS Cuban motion; remove it and salsa becomes someone walking sideways.
  */
-export type DanceStyle = 'club' | 'salsa' | 'waltz' | 'bhangra';
+export type DanceStyle =
+  | 'club'
+  | 'salsa'
+  | 'waltz'
+  | 'bhangra'
+  /** The hit: move BETWEEN the beats, snap rigid ON them. */
+  | 'popping'
+  /** Wind up, point — and LOCK: the pause is the content. */
+  | 'locking'
+  /** One rotation travelling hand to hand — the body as a transmission line. */
+  | 'waving'
+  /** Right angles on the half-count. Dancing the grid, strictly. */
+  | 'tutting'
+  /** Breaking's standing footwork: the cross-step, rocked. */
+  | 'toprock';
 
-export const DANCE_STYLES: DanceStyle[] = ['club', 'salsa', 'waltz', 'bhangra'];
+export const DANCE_STYLES: DanceStyle[] = [
+  'club', 'salsa', 'waltz', 'bhangra',
+  'popping', 'locking', 'waving', 'tutting', 'toprock',
+];
 
 export interface DanceOptions {
   seed?: number;
@@ -339,6 +356,26 @@ interface StyleSpec {
   hipAnswer: number;
 }
 
+/** Deterministic 0–1 from an integer — a pose die that always lands the same. */
+const hash = (i: number, salt: number): number => {
+  const x = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/**
+ * THE HIT. Street time is not smooth time: the pose change happens in the
+ * first tenth of the count and the rest is stillness — a dime stop. Feed the
+ * fractional count in, get the interpolation weight out: 0→1 fast, then held.
+ */
+const snapAt = (c: number, width = 0.12): number => {
+  const f = c - Math.floor(c);
+  const t = clamp01(f / width);
+  return t * t * (3 - 2 * t);
+};
+
+/** Linear blend of two turn angles. */
+const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
+
 const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
   // On-1 salsa: forward break, replace, home, HOLD; back break, replace,
   // home, HOLD. The holds on 4 and 8 are what make it salsa.
@@ -456,6 +493,230 @@ const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
       };
     },
     lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 4)) * 0.02 * e,
+  },
+
+  // THE HIT. Each count draws a fresh pose from a seeded table; the body
+  // crosses to it in the first tenth of the count and then DOES NOT MOVE.
+  // Everything the style is lives in that stillness — smooth it out and it
+  // is just somebody swaying.
+  popping: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0,
+    hipAnswer: 0,
+    chart: [{}, {}, {}, {}],
+    posture: (e) => ({
+      LeftUpLeg: [[X, -0.06 * e]],
+      RightUpLeg: [[X, -0.06 * e]],
+      LeftLeg: [[X, 0.12 * e]],
+      RightLeg: [[X, 0.12 * e]],
+    }),
+    upper: (c, e, s) => {
+      const i = Math.floor(c);
+      const t = snapAt(c);
+      // The pose for count i, drawn from the die — and for i−1, to leave.
+      // WRAPPED within the cycle, or the wrap from count 3 back to 0 leaves
+      // from a pose nobody was ever in and the arm teleports half a radian.
+      const wrap = (k: number) => ((k % 4) + 4) % 4;
+      const pose = (k: number) => ({
+        la: -(0.25 + 1.0 * hash(k, 1)) * e,
+        lf: -(0.2 + 1.2 * hash(k, 2)) * e,
+        lx: (hash(k, 3) - 0.5) * 1.2 * e,
+        ra: (0.25 + 1.0 * hash(k, 4)) * e,
+        rf: (0.2 + 1.2 * hash(k, 5)) * e,
+        rx: (hash(k, 6) - 0.5) * 1.2 * e,
+        hy: (hash(k, 7) - 0.5) * 0.7 * e * s,
+        cy: (hash(k, 8) - 0.5) * 0.5 * e,
+      });
+      const a = pose(wrap(i - 1));
+      const b = pose(wrap(i));
+      return {
+        LeftArm: [[Z, mix(a.la, b.la, t)]],
+        LeftForeArm: [[Z, mix(a.lf, b.lf, t)], [X, mix(a.lx, b.lx, t)]],
+        RightArm: [[Z, mix(a.ra, b.ra, t)]],
+        RightForeArm: [[Z, mix(a.rf, b.rf, t)], [X, mix(a.rx, b.rx, t)]],
+        Head: [[Y, mix(a.hy, b.hy, t)]],
+        Chest: [[Y, mix(a.cy, b.cy, t)], [X, 0.03 * (1 - t)]],
+      };
+    },
+    lift: () => 0,
+  },
+
+  // Wind up, POINT, LOCK. Counts 0–1 are fluid wrist circles, count 1 throws
+  // the point, and counts 2–3.5 are a FREEZE — the pose function evaluated
+  // at the instant the lock lands and then simply not asked again. The pause
+  // is the content; everything else is how you arrive at it.
+  locking: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0,
+    hipAnswer: 0,
+    chart: [{}, {}, { accent: true }, {}],
+    posture: (e) => ({
+      LeftUpLeg: [[X, -0.08 * e]],
+      RightUpLeg: [[X, -0.08 * e]],
+      LeftLeg: [[X, 0.16 * e]],
+      RightLeg: [[X, 0.16 * e]],
+      Chest: [[X, 0.04 * e]],
+    }),
+    upper: (c, e, s) => {
+      // THE FREEZE: from 2.0 to 3.5 the effective clock is pinned at 2.0.
+      const cEff = c >= 2 && c < 3.5 ? 2 : c;
+      if (cEff < 1) {
+        // Wrist circles, twice round per count — the wind-up.
+        const th = cEff * Math.PI * 4;
+        return {
+          LeftArm: [[Z, -HANG + 0.45 * e]],
+          RightArm: [[Z, HANG - 0.45 * e]],
+          LeftForeArm: [[Z, -0.8 * e], [X, Math.sin(th) * 0.5 * e]],
+          RightForeArm: [[Z, 0.8 * e], [X, Math.cos(th) * 0.5 * e]],
+          LeftHand: [[X, Math.cos(th) * 0.6 * e]],
+          RightHand: [[X, Math.sin(th) * 0.6 * e]],
+        };
+      }
+      if (cEff < 2) {
+        // The point: one arm thrown straight out and across, head with it.
+        const t = snapAt(cEff, 0.2);
+        return {
+          RightArm: [[Z, mix(HANG, 0.15, t)], [Y, -0.5 * t * s]],
+          RightForeArm: [[Z, 0.1 * t]],
+          LeftArm: [[Z, -HANG + 0.3 * e]],
+          Head: [[Y, -0.4 * t * s]],
+          Chest: [[Y, -0.15 * t * s]],
+        };
+      }
+      if (cEff <= 2) {
+        // THE LOCK: fists up, elbows down, chin tucked — held, not damped.
+        return {
+          LeftArm: [[Z, -0.9], [Y, 0.3]],
+          RightArm: [[Z, 0.9], [Y, -0.3]],
+          LeftForeArm: [[Z, -2.0]],
+          RightForeArm: [[Z, 2.0]],
+          LeftHand: [[X, 0.5]],
+          RightHand: [[X, 0.5]],
+          Chest: [[X, 0.08]],
+          Head: [[X, 0.1]],
+        };
+      }
+      // Recover to standing through the last half count.
+      const t = 1 - clamp01((c - 3.5) / 0.5);
+      return {
+        LeftArm: [[Z, mix(-HANG, -0.9, t)]],
+        RightArm: [[Z, mix(HANG, 0.9, t)]],
+        LeftForeArm: [[Z, -2.0 * t]],
+        RightForeArm: [[Z, 2.0 * t]],
+        Chest: [[X, 0.08 * t]],
+      };
+    },
+    lift: () => 0,
+  },
+
+  // The body as a transmission line: one rotation enters at the left hand
+  // and leaves at the right, each joint a fixed delay behind the last — the
+  // ragged oar crew's ripple, danced. Nothing here is a pose; it is a WAVE,
+  // and the joints are just where it happens to be passing through.
+  waving: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0,
+    hipAnswer: 0,
+    chart: [{}, {}, {}, {}],
+    posture: () => ({
+      // Arms carried out, a little below shoulder — the wire the wave rides.
+      LeftArm: [[Z, -0.22]],
+      RightArm: [[Z, 0.22]],
+    }),
+    upper: (c, e, s) => {
+      const th = (c / 2) * Math.PI * 2 * s;
+      const at = (delay: number) => Math.sin(th - delay) * 0.42 * e;
+      return {
+        LeftHand: [[X, at(0)]],
+        LeftForeArm: [[X, at(0.55)]],
+        LeftArm: [[X, at(1.1)]],
+        Chest: [[X, at(1.6) * 0.25], [Z, at(1.6) * 0.15]],
+        RightArm: [[X, at(2.1)]],
+        RightForeArm: [[X, at(2.65)]],
+        RightHand: [[X, at(3.2)]],
+        Head: [[Z, at(1.6) * 0.2]],
+      };
+    },
+    lift: () => 0,
+  },
+
+  // Right angles on the half-count, snapped harder than popping and held
+  // dead flat between — the grid danced as strictly as it can be.
+  tutting: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0,
+    hipAnswer: 0,
+    chart: [{}, {}, {}, {}, {}, {}, {}, {}],
+    posture: (e) => ({
+      LeftLeg: [[X, 0.1 * e]],
+      RightLeg: [[X, 0.1 * e]],
+      LeftUpLeg: [[X, -0.05 * e]],
+      RightUpLeg: [[X, -0.05 * e]],
+    }),
+    upper: (c, e, s) => {
+      const H = Math.PI / 2;
+      // Eight frames of boxes: [LArm z, LFore z, LFore x, RArm z, RFore z, RFore x]
+      const FRAMES = [
+        [-H, -H, 0, H, H, 0],
+        [-H, -H, H, H, H, -H],
+        [-H, 0, H, H, 0, -H],
+        [-H / 2, -H, 0, H / 2, H, 0],
+        [-H, -H, -H, H, H, H],
+        [-H, 0, 0, H, H, -H],
+        [-H / 2, -H, H, H, 0, 0],
+        [-H, -H, 0, H / 2, H, H],
+      ];
+      const step = Math.floor(c * 2);
+      const t = snapAt(c * 2, 0.13);
+      const a = FRAMES[((step - 1) % 8 + 8) % 8];
+      const b = FRAMES[step % 8];
+      const g = (k: number) => mix(a[k], b[k], t) * (0.6 + 0.4 * e);
+      return {
+        LeftArm: [[Z, g(0)]],
+        LeftForeArm: [[Z, g(1)], [X, g(2)]],
+        RightArm: [[Z, g(3)]],
+        RightForeArm: [[Z, g(4)], [X, g(5)]],
+        Head: [[Y, (step % 2 === 0 ? 0.12 : -0.12) * s * t]],
+      };
+    },
+    lift: () => 0,
+  },
+
+  // Toprock: the cross-step, on the 0.24 step engine — kick across, back,
+  // other side — with the arms rocking open and closed against the feet.
+  toprock: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0.6,
+    hipAnswer: 0.3,
+    chart: [
+      { foot: 'L', dz: 1, dx: -0.5, accent: true },
+      { foot: 'L' },
+      { foot: 'R', dz: 1, dx: 0.5, accent: true },
+      { foot: 'R' },
+    ],
+    posture: (e) => ({
+      Chest: [[X, -0.05 * e]],
+      Head: [[X, 0.04 * e]],
+    }),
+    upper: (c, e, s) => {
+      // Arms cross the chest on the kick and swing open on the return.
+      const open = Math.sin(c * Math.PI) * e;
+      const bounce = Math.exp(-(c % 1) * 5) * e;
+      return {
+        LeftArm: [[Z, -HANG + (0.5 + 0.45 * open) * e], [Y, 0.5 * (1 - open)]],
+        RightArm: [[Z, HANG - (0.5 + 0.45 * open) * e], [Y, -0.5 * (1 - open)]],
+        LeftForeArm: [[Z, -0.7 - 0.3 * (1 - open)]],
+        RightForeArm: [[Z, 0.7 + 0.3 * (1 - open)]],
+        Chest: [[Y, 0.12 * open * s], [X, 0.05 * bounce]],
+        Head: [[Y, -0.07 * open * s]],
+      };
+    },
+    lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 2)) * 0.015 * e,
   },
 };
 
