@@ -81,11 +81,13 @@ export {
   Asana,
   ASANAS,
   ASANA_NAMES,
+  SURYA_NAMASKAR,
   strikePose,
   type AsanaName,
   type AsanaSpec,
   type AsanaSupport,
   type AsanaOptions,
+  type FlowStep,
 } from './asana';
 export {
   Conversation,

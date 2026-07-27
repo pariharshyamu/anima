@@ -41,6 +41,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-cypher-the-floor-becomes-a-social-structure': 'club',
   'stepping-on-and-off-the-floor': 'club',
   'a-pose-is-one-frame-held-alive': 'yoga',
+  'flows-a-vinyasa-is-a-list-of-breaths': 'yoga',
   'the-breath-turns-and-you-can-hear-them': 'yoga',
   'strikepose-the-single-frame-api': 'yoga',
 };

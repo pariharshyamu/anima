@@ -1169,7 +1169,8 @@ game.start();`,
 // (most of the way fast, the last five percent at its own pace), a breath
 // that visibly lifts the chest, and a seeded balance sway — small on two
 // feet, three times larger on one, absent entirely lying down.
-import { createHumanoid, Asana, strikePose, ASANAS, ASANA_NAMES } from 'anima3d';
+import { createHumanoid, Asana, strikePose, ASANAS, ASANA_NAMES,
+  SURYA_NAMASKAR } from 'anima3d';
 import { Game } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, Color, Fog } from 'three';
@@ -1217,21 +1218,20 @@ HOLDS.forEach((pose, i) => {
   mats.push(a);
 });
 
-// SURYA NAMASKAR, breathed: the lead practitioner steps through the
-// twelve positions ON THEIR OWN BREATH — one transition per half-breath,
-// fold on the exhale, cobra on the inhale, exactly as counted.
-const SURYA = ['prayer', 'upwardSalute', 'forwardFold', 'lowLunge',
-  'plank', 'eightLimbed', 'cobra', 'downwardDog',
-  'lowLunge', 'forwardFold', 'upwardSalute', 'prayer'];
+// SURYA NAMASKAR, breathed: the lead practitioner is handed the shipped
+// classical sequence — twelve positions on the Sivananda breath map:
+// rise on the inhale, fold on the exhale, cobra IS an inhale, and plank
+// is 'retain' — kumbhaka, struck MID-breath on air that was inhaled into
+// the lunge and not yet let go. One salutation ≈ 5.5 breaths, exactly
+// as counted in a shala.
 mat(0, -1.6);
 const leadRig = createHumanoid({ seed: 890 });
 leadRig.object.position.set(0, 0.16, -1.6);
 leadRig.object.rotation.y = Math.PI;
 scene.add(leadRig.object);
 const lead = new Asana(leadRig, { seed: 77, breathsPerMinute: 10 });
-let step = 0;
-lead.strike(SURYA[0]);
-lead.onBreath(() => lead.strike(SURYA[step = (step + 1) % SURYA.length]));
+lead.flow(SURYA_NAMASKAR, { loop: true });
+lead.onPose((pose) => console.log('surya:', pose));
 
 // strikePose — the SINGLE-FRAME API. No clock, no class: the rig simply
 // IS the pose when the call returns. Pose a body, paint it stone, park it

@@ -44,18 +44,25 @@ The support tag is a floor-contact *contract*, tested as one: every shipped pose
 
 ## The breath turns, and you can hear them
 
-`onBreath` fires at the cycle's two turning points — `'inhale'` at the bottom, `'exhale'` at the top. Those are the moments a flow steps on (fold on the exhale, cobra on the inhale), so a hand-rolled sun salutation is four lines:
-
-```js
-const SURYA = ['prayer', 'upwardSalute', 'forwardFold', 'lowLunge',
-  'plank', 'eightLimbed', 'cobra', 'downwardDog',
-  'lowLunge', 'forwardFold', 'upwardSalute', 'prayer'];
-let step = 0;
-asana.strike(SURYA[0]);
-asana.onBreath(() => asana.strike(SURYA[step = (step + 1) % SURYA.length]));
-```
+`onBreath` fires at the cycle's two turning points — `'inhale'` at the bottom, `'exhale'` at the top. Those are the moments a flow steps on. `onPose` fires on every strike, manual or flow-driven.
 
 Strikes flow from wherever the body is — the chase is exponential, so nothing snaps, mid-transition strikes included. `release()` eases home to whatever the body was doing before the first strike.
+
+## Flows — a vinyasa is a list of breaths
+
+A `FlowStep` names an asana **and the half-breath it rides**, because a vinyasa is not a list of poses — it is a list of breaths that happen to have poses attached:
+
+```js
+import { SURYA_NAMASKAR } from 'anima3d';
+
+asana.flow(SURYA_NAMASKAR, { loop: true });   // the body breathes it
+```
+
+`'inhale'` and `'exhale'` steps strike at the breath's turning points. `'retain'` is **kumbhaka** — the held breath — and strikes *mid* half-breath, riding inside the previous step's air: in the shipped salutation, plank is position five precisely because you inhaled into the lunge and have not let it go yet.
+
+`SURYA_NAMASKAR` is the classical twelve on the Sivananda breath map — exhale into prayer, inhale to salute, exhale to fold, inhale to the lunge, retain into plank, exhale down through eight limbs, inhale the cobra, exhale back into the dog, and the same road home. Eleven turns plus one kumbhaka: **one salutation ≈ 5.5 breaths**, which at the default six breaths a minute is the classical ~55 seconds a round.
+
+A step may also own extra time — `{ asana: 'downwardDog', breath: 'exhale', holdBreaths: 4 }` stays five breaths where the sequence would otherwise move on. A finished non-looping flow stays in its last pose, still holding, still breathing; `clearFlow()` abandons the pointer the same way; `flowStep` reports the position, `-1` outside a flow. The whole salutation is tested floor-honest *through the transitions*, not just at the poses.
 
 ## `strikePose` — the single-frame API
 

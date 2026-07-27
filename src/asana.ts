@@ -382,6 +382,13 @@ const AXES: Record<AxisName, Vector3> = {
 /** The rig's rest hip height — the layout's constant, not the current pose. */
 const restHipsY = (rig: HumanoidRig): number => rig.legLength + 0.065 * rig.height;
 
+/** The bones a shallow `depth` is allowed to under-commit (never the legs). */
+const EXPRESSION = new Set<BoneName>([
+  'Spine', 'Chest', 'Neck', 'Head',
+  'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+  'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+]);
+
 /** Compose one bone's spec rotations into a quaternion. */
 function composeBone(
   out: Quaternion,
@@ -415,12 +422,60 @@ export function strikePose(rig: HumanoidRig, asana: AsanaName | AsanaSpec): void
   rig.object.updateWorldMatrix(true, true);
 }
 
+/**
+ * One position of a flow: an asana, and the half-breath it rides.
+ *
+ * A vinyasa is not a list of poses — it is a list of **breaths that happen
+ * to have poses attached**, which is why the step names the breath and not
+ * a duration. `'inhale'` and `'exhale'` strike at the breath's turning
+ * points; `'retain'` is kumbhaka — the held breath — and strikes MID
+ * half-breath, riding inside the previous step's air. (In the classical
+ * salutation, plank is position five precisely because the breath is held
+ * there: you inhaled into the lunge and you have not let it go yet.)
+ */
+export interface FlowStep {
+  asana: AsanaName;
+  breath: 'inhale' | 'exhale' | 'retain';
+  /** Extra FULL breaths to stay in this pose before the flow may move on. */
+  holdBreaths?: number;
+}
+
+/**
+ * Surya Namaskar A — the sun salutation, twelve positions on the classical
+ * (Sivananda) breath map: exhale into prayer, inhale to salute the sun,
+ * exhale to fold, inhale to the lunge, RETAIN into plank, exhale down
+ * through eight limbs, inhale the cobra up, exhale back into the dog, and
+ * the same road home. Hand it to `flow()` and the body breathes it.
+ */
+export const SURYA_NAMASKAR: FlowStep[] = [
+  { asana: 'prayer', breath: 'exhale' },
+  { asana: 'upwardSalute', breath: 'inhale' },
+  { asana: 'forwardFold', breath: 'exhale' },
+  { asana: 'lowLunge', breath: 'inhale' },
+  { asana: 'plank', breath: 'retain' },
+  { asana: 'eightLimbed', breath: 'exhale' },
+  { asana: 'cobra', breath: 'inhale' },
+  { asana: 'downwardDog', breath: 'exhale' },
+  { asana: 'lowLunge', breath: 'inhale' },
+  { asana: 'forwardFold', breath: 'exhale' },
+  { asana: 'upwardSalute', breath: 'inhale' },
+  { asana: 'prayer', breath: 'exhale' },
+];
+
 export interface AsanaOptions {
   seed?: number;
   /** Breaths per minute. Default 6 — a calm practice. */
   breathsPerMinute?: number;
   /** Seconds the fast part of a settle takes (the tail takes longer). */
   settle?: number;
+  /**
+   * How much of each pose's upper body this practitioner can actually
+   * reach, 0..1. A stiff student's fold simply does not go as deep — the
+   * spine, arms and head take `depth` of the pose while the legs and the
+   * root take all of it, so the floor contract is never broken by a
+   * shallow practice. Default 1.
+   */
+  depth?: number;
 }
 
 /** mulberry32, privately — same seeds, same practice. */
@@ -471,7 +526,16 @@ export class Asana {
   private heightGoal = 1;
   private spec: AsanaSpec | null = null;
   private maxErr = Math.PI;
+  private depth: number;
   private breathCbs = new Set<(side: 'inhale' | 'exhale') => void>();
+  private poseCbs = new Set<(pose: AsanaName) => void>();
+  /** A breath clock handed down from outside (an instructor). */
+  private pendingBreath: number | null = null;
+  private flowSteps: FlowStep[] | null = null;
+  private flowIdx = 0;
+  private flowLoop = false;
+  /** Breath turns this step still owns before the flow may move on. */
+  private flowWait = 0;
   /** Seeded sway personality: phases and a size of one's own. */
   private swayPhase: [number, number, number, number];
   private swaySize: number;
@@ -482,6 +546,7 @@ export class Asana {
   constructor(rig: HumanoidRig, options: AsanaOptions = {}) {
     this.rig = rig;
     this.rate = options.breathsPerMinute ?? 6;
+    this.depth = Math.min(1, Math.max(0.2, options.depth ?? 1));
     this.k = 3 / Math.max(0.2, options.settle ?? 2.2);
     this.baseHipsY = restHipsY(rig);
     const rand = makeRng(options.seed ?? 1);
@@ -514,6 +579,68 @@ export class Asana {
     return () => this.breathCbs.delete(cb);
   }
 
+  /** Hear every strike — manual or flow-driven. Returns the unsubscribe. */
+  onPose(cb: (pose: AsanaName) => void): () => void {
+    this.poseCbs.add(cb);
+    return () => this.poseCbs.delete(cb);
+  }
+
+  /**
+   * Hand the body a vinyasa: poses attached to breaths. The first step is
+   * struck immediately; every later one strikes at its named half-breath —
+   * `'inhale'` and `'exhale'` at the turns, `'retain'` mid-breath — after
+   * the previous step's `holdBreaths` are spent. A finished (non-looping)
+   * flow simply stays in its last pose, still holding, still breathing.
+   */
+  flow(steps: FlowStep[], opts: { loop?: boolean } = {}): void {
+    if (!steps.length) return;
+    this.flowSteps = steps;
+    this.flowIdx = 0;
+    this.flowLoop = opts.loop ?? false;
+    this.strike(steps[0].asana);
+    this.flowWait = (steps[0].holdBreaths ?? 0) * 2;
+  }
+
+  /** Abandon the sequence; the current pose keeps being held. */
+  clearFlow(): void {
+    this.flowSteps = null;
+  }
+
+  /** Which step of the flow is being held, or −1 outside a flow. */
+  get flowStep(): number {
+    return this.flowSteps ? this.flowIdx : -1;
+  }
+
+  /**
+   * Surrender the breath clock. A student does not keep time — they keep
+   * THE INSTRUCTOR'S time, a watching-lag late; this hands them exactly
+   * that: the phase to be on at the end of this frame's update.
+   */
+  slaveTo(breath: number): void {
+    this.pendingBreath = ((breath % 1) + 1) % 1;
+  }
+
+  /** The flow's pointer: move on IF the next step rides this event. */
+  private advanceFlow(kind: 'inhale' | 'exhale' | 'retain'): void {
+    if (!this.flowSteps) return;
+    if (this.flowWait > 0) {
+      // Holds are spent by the turns; a kumbhaka window never jumps one.
+      if (kind !== 'retain') this.flowWait--;
+      return;
+    }
+    const next = this.flowIdx + 1;
+    if (next >= this.flowSteps.length && !this.flowLoop) {
+      // The sequence is over: stay in the last pose, drop the pointer.
+      if (kind !== 'retain') this.flowSteps = null;
+      return;
+    }
+    const step = this.flowSteps[next % this.flowSteps.length];
+    if (step.breath !== kind) return;
+    this.flowIdx = next % this.flowSteps.length;
+    this.strike(step.asana);
+    this.flowWait = (step.holdBreaths ?? 0) * 2;
+  }
+
   /**
    * Take a pose. The first strike captures the entry pose — home, for
    * `release()` — and successive strikes flow from wherever the body is now:
@@ -543,11 +670,13 @@ export class Asana {
     }
     this.heightGoal = spec.root.height;
     this.maxErr = Math.PI;
+    for (const cb of this.poseCbs) cb(name);
   }
 
-  /** Ease home to the pose the practice began from. */
+  /** Ease home to the pose the practice began from. Tears up any flow. */
   release(): void {
     this.target = 0;
+    this.flowSteps = null;
   }
 
   /** One tick of the practice. */
@@ -558,11 +687,29 @@ export class Asana {
     if (this.weight <= 0.0001 || !this.spec) return;
     this.time += dt;
 
-    // The breath clock — and its two turning points.
+    // The breath clock — and its two turning points. A pending sync (an
+    // instructor's clock) overrides the advance; the wrap test tolerates
+    // the tiny backward jitter syncing can cause, so a jitter is never
+    // mistaken for a whole new breath.
     const before = this.breath;
     this.breath = (this.breath + (dt * this.rate) / 60) % 1;
-    if (this.breath < before) for (const cb of this.breathCbs) cb('inhale');
-    else if (before < 0.5 && this.breath >= 0.5) for (const cb of this.breathCbs) cb('exhale');
+    if (this.pendingBreath !== null) {
+      this.breath = this.pendingBreath;
+      this.pendingBreath = null;
+    }
+    if (this.breath < before) {
+      if (before - this.breath > 0.5) {
+        this.advanceFlow('inhale');
+        for (const cb of this.breathCbs) cb('inhale');
+      }
+    } else if (before < 0.5 && this.breath >= 0.5) {
+      this.advanceFlow('exhale');
+      for (const cb of this.breathCbs) cb('exhale');
+    }
+    // Kumbhaka windows: mid-half-breath, where 'retain' steps strike.
+    for (const mid of [0.25, 0.75]) {
+      if (before < mid && this.breath >= mid) this.advanceFlow('retain');
+    }
     // Breath displacement: smooth, full at mid-inhale, spent at the turns.
     const s = Math.sin(this.breath * Math.PI * 2);
 
@@ -609,7 +756,12 @@ export class Asana {
         if (breathAt === 'chest') this.q.multiply(this.off.setFromAxisAngle(AXES.Z, (bone === 'LeftShoulder' ? 1 : -1) * s * 0.02));
       }
       const joint = this.rig.bones[bone];
-      joint.quaternion.copy(this.entry.get(bone)!).slerp(this.q, w);
+      // Depth is expression, not support: a shallow practice folds less
+      // through the spine and arms, but the legs and root always commit —
+      // a stiff student still stands where the pose stands.
+      joint.quaternion
+        .copy(this.entry.get(bone)!)
+        .slerp(this.q, EXPRESSION.has(bone) ? w * this.depth : w);
     }
     const hips = this.rig.bones.Hips;
     const bob = s * 0.004 * this.baseHipsY;
