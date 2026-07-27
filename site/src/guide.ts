@@ -34,6 +34,8 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'street-the-hit-and-the-freeze': 'club',
   'the-two-classicals-where-the-dance-keeps-its-time': 'club',
   'the-illusions-and-the-house': 'club',
+  'routines-choreography-as-data': 'club',
+  'vogue-and-krump': 'club',
   'stepping-on-and-off-the-floor': 'club',
 };
 

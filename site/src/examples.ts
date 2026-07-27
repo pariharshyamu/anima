@@ -1059,6 +1059,7 @@ const dancers = [];
   [-4.6, 3.2, 'ballet'], [4.6, 3.4, 'bharatanatyam'],
   [-2.2, 6.0, 'moonwalk'], [2.4, 6.2, 'runningMan'],
   [-4.2, 5.8, 'glide'], [4.2, 5.9, 'house'],
+  [-5.2, 4.6, 'vogue'], [5.2, 4.7, 'krump'],
 ].forEach(([x, z, style], i) => {
   const h = createHumanoid({ seed: 640 + i });
   h.object.position.set(x, 0, z);
@@ -1077,9 +1078,28 @@ const bharata = dancers[dancers.length - 1];
 bharata.onStamp(() =>
   tiles.feed({ bass: 0.9, mid: 0.2, treble: 0.7, beat: true, bpm: 0 }));
 
-// Press S to send EVERYBODY round the styles together — fifteen idioms,
-// ballroom, street, the two classicals, the illusions and the house, all
-// on the same beat clock.
+// THE CHORUS LINE: three dancers at the back share one STRICT routine —
+// choreography as data, flair zeroed — and dance it identically to the
+// quaternion, which is what makes them read as staged where everyone
+// else reads as a crowd.
+const SET = [
+  { move: 'bounce', counts: 8 }, { move: 'raiseTheRoof', counts: 8 },
+  { move: 'clap', counts: 8 }, { move: 'robot', counts: 8 },
+];
+[[-1.5, 7.4], [0.1, 7.5], [1.7, 7.4]].forEach(([x, z], i) => {
+  const h = createHumanoid({ seed: 720 + i });
+  h.object.position.set(x, 0, z);
+  h.object.rotation.y = Math.PI;
+  scene.add(h.object);
+  const d = new Dance(h, { seed: 300 + i * 7 });
+  d.start();
+  d.routine(SET, { loop: true, strict: true });
+  dancers.push(d);
+});
+
+// Press S to send EVERYBODY round the styles together — seventeen idioms,
+// ballroom, street, classical, illusion, vogue and krump, on one clock.
+// (The chorus line keeps its set: routines outrank the style cycle.)
 let styleIdx = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 's') return;

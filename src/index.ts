@@ -71,6 +71,7 @@ export {
   DANCE_STYLES,
   type DanceMove,
   type DanceStyle,
+  type RoutineStep,
   type DanceOptions,
   type DancePulse,
 } from './dance';

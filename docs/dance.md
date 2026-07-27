@@ -114,6 +114,26 @@ The machinery behind all three is one deliberate bypass: **travel is not weight*
 
 `house` is two clocks in one body: **the jack** — the torso waving at *double* the count, each segment a phase step behind the one below (the wave machinery turned vertical) — over fast, light skating feet on the single count. The ratio between the two clocks is the style.
 
+## Routines: choreography as data
+
+Everything so far improvises — `auto` works a repertoire off a seed. A **routine** is the other thing dancing is: an authored set, written down.
+
+```js
+dance.routine([
+  { move: 'bounce', counts: 8 },
+  { style: 'salsa', counts: 16 },
+  { style: 'club', move: 'robot', counts: 8 },
+], { loop: true, strict: true });
+```
+
+Steps hold a skill or a style for a counted time; `loop` repeats the set; a finished set hands back to improvisation. And `strict` zeroes the dancer's flair for the duration — the same strict routine on twenty dancers is a **chorus line**, identical to the quaternion, where the same steps *without* strict is a crowd that happens to know the same dance. That one flag is the difference between staged and social, and the tests pin both directions.
+
+## Vogue and krump
+
+**`vogue`** dances for a camera that is not there: four counts of catwalk — the crossing strut with the hips fully answered — then two poses, hit like photographs and **held** (the freeze machinery, framed): an arm around the face, the head finding the lens, the picture staying up long enough to be taken. The pose die redraws every bar, so the shoot never repeats.
+
+**`krump`** is the energy ceiling that proves the energy model: amplitudes half again over anything else in the building, chest pops driven off the stomps, and the stomps landing deliberately **off the grid** — a syncopated schedule (`0, 0.75, 2, 2.5, 3.25`) no other style would tolerate. The stomps fire `onStamp`, so a krump floor answers back the same way a Bharatanatyam floor does — two traditions that could not be further apart, agreeing that the feet are an instrument.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

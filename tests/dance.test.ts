@@ -939,3 +939,181 @@ describe('the illusions and the house', () => {
     }
   });
 });
+
+describe('routines: dance as data', () => {
+  const setup = () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.start();
+    return { rig, d };
+  };
+
+  it('executes steps for their counted time, in order', () => {
+    const { d } = setup();
+    d.routine([
+      { move: 'bounce', counts: 4 },
+      { move: 'robot', counts: 4 },
+      { move: 'clap', counts: 4 },
+    ]);
+    expect(d.move).toBe('bounce');
+    expect(d.routineStep).toBe(0);
+    groove(d, 2.2); // ~4.4 counts
+    expect(d.move).toBe('robot');
+    expect(d.routineStep).toBe(1);
+    groove(d, 2);
+    expect(d.move).toBe('clap');
+  });
+
+  it('a routine can change styles mid-set', () => {
+    const { d } = setup();
+    d.routine([
+      { style: 'salsa', counts: 8 },
+      { style: 'club', move: 'raiseTheRoof', counts: 4 },
+    ]);
+    expect(d.style).toBe('salsa');
+    groove(d, 4.2);
+    expect(d.style).toBe('club');
+    expect(d.move).toBe('raiseTheRoof');
+  });
+
+  it('loops when asked, ends and hands back to improv when not', () => {
+    const { d } = setup();
+    d.routine([{ move: 'bounce', counts: 2 }, { move: 'twist', counts: 2 }], { loop: true });
+    groove(d, 6);
+    expect(d.routineStep).toBeGreaterThanOrEqual(0); // still running
+    d.clearRoutine();
+    expect(d.routineStep).toBe(-1);
+
+    const { d: d2 } = setup();
+    d2.routine([{ move: 'headBang', counts: 2 }]);
+    groove(d2, 2);
+    expect(d2.routineStep).toBe(-1);   // set over
+    expect(d2.auto).toBe(true);        // improv resumed
+    expect(d2.move).toBe('headBang');  // holding the last shape until it does
+  });
+
+  it('a STRICT routine is a chorus line: different seeds, identical bodies', () => {
+    const a = createHumanoid({ seed: 4 });
+    const b = createHumanoid({ seed: 4 });
+    const da = new Dance(a, { seed: 5, bpm: 120 });
+    const db = new Dance(b, { seed: 91, bpm: 120 });
+    const steps = [
+      { move: 'bounce' as const, counts: 4 },
+      { move: 'raiseTheRoof' as const, counts: 4 },
+    ];
+    da.start();
+    db.start();
+    da.routine(steps, { loop: true, strict: true });
+    db.routine(steps, { loop: true, strict: true });
+    groove(da, 5);
+    groove(db, 5);
+    expect(a.bones.Head.quaternion.angleTo(b.bones.Head.quaternion)).toBeLessThan(1e-6);
+    expect(Math.abs(a.bones.Hips.position.y - b.bones.Hips.position.y)).toBeLessThan(1e-9);
+    // …and WITHOUT strict, the same two seeds diverge (the crowd default).
+    da.clearRoutine();
+    db.clearRoutine();
+    da.use('bounce');
+    db.use('bounce');
+    groove(da, 3);
+    groove(db, 3);
+    const apart = Math.abs(a.bones.Hips.position.y - b.bones.Hips.position.y);
+    expect(apart).toBeGreaterThan(1e-6);
+  });
+
+  it('clearRoutine gives the flair back', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 91, bpm: 120 });
+    d.start();
+    d.routine([{ move: 'bounce', counts: 4 }], { loop: true, strict: true });
+    groove(d, 2);
+    d.clearRoutine();
+    // Flair restored: this dancer drifts from a strict twin again.
+    const twinRig = createHumanoid({ seed: 4 });
+    const twin = new Dance(twinRig, { seed: 5, bpm: 120 });
+    twin.start();
+    twin.use('bounce');
+    d.use('bounce');
+    groove(d, 3);
+    groove(twin, 3);
+    expect(
+      Math.abs(rig.bones.Hips.position.y - twinRig.bones.Hips.position.y)
+    ).toBeGreaterThan(1e-6);
+  });
+});
+
+describe('vogue and krump', () => {
+  it('vogue holds the pose: the frame does not move while it is being taken', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('vogue');
+    d.start();
+    groove(d, 2);
+    let poseDrift = 0;
+    let walkDrift = 0;
+    let prev = rig.bones.Head.quaternion.clone();
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const c = ((d.phase % 8) + 8) % 8;
+      const step = rig.bones.Head.quaternion.angleTo(prev);
+      prev = rig.bones.Head.quaternion.clone();
+      if ((c > 4.7 && c < 5.8) || (c > 6.7 && c < 7.8)) poseDrift = Math.max(poseDrift, step);
+      if (c > 0.3 && c < 3.5) walkDrift = Math.max(walkDrift, step);
+    }
+    expect(poseDrift).toBeLessThan(0.004);
+    expect(walkDrift).toBeGreaterThan(poseDrift * 3);
+  });
+
+  it('krump stomps off the grid, and the floor can hear it', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('krump');
+    d.start();
+    const at: number[] = [];
+    d.onStamp(() => at.push(((d.phase % 4) + 4) % 4));
+    for (let i = 0; i < 4 * 60; i++) d.update(1 / 60, pulseAt(0.8, false, 120));
+    // Five stomps per 4-count cycle, several of them OFF the counts.
+    expect(at.length).toBeGreaterThanOrEqual(4);
+    const off = at.filter((t) => {
+      const f = t % 1;
+      return f > 0.2 && f < 0.8;
+    });
+    expect(off.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('krump is the loudest thing in the building', () => {
+    const swing = (style: 'krump' | 'bhangra') => {
+      const rig = createHumanoid({ seed: 4 });
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 2);
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < 6 * 60; i++) {
+        d.update(1 / 60, pulseAt(0.7, false, 120));
+        const q = rig.bones.Chest.quaternion;
+        const pitch = 2 * Math.asin(Math.max(-1, Math.min(1, q.x)));
+        lo = Math.min(lo, pitch);
+        hi = Math.max(hi, pitch);
+      }
+      return hi - lo;
+    };
+    expect(swing('krump')).toBeGreaterThan(swing('bhangra') * 1.5);
+  });
+
+  it('both stop clean', () => {
+    for (const style of ['vogue', 'krump'] as const) {
+      const rig = createHumanoid({ seed: 4 });
+      const home = rig.bones.Hips.position.clone();
+      const entry = rig.bones.RightArm.quaternion.clone();
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 3.1);
+      d.stop();
+      groove(d, 2);
+      expect(rig.bones.RightArm.quaternion.angleTo(entry), style).toBeLessThan(0.02);
+      expect(Math.abs(rig.bones.Hips.position.z - home.z), style).toBeLessThan(0.01);
+    }
+  });
+});

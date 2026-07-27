@@ -129,14 +129,33 @@ export type DanceStyle =
   /** Sideways on rails — no steps anybody can see. */
   | 'glide'
   /** The jack: the torso at double time over fast, light feet. */
-  | 'house';
+  | 'house'
+  /** Poses hit as if photographed: the catwalk, then the frame, held. */
+  | 'vogue'
+  /** The energy ceiling: chest pops and stomps, deliberately off the grid. */
+  | 'krump';
 
 export const DANCE_STYLES: DanceStyle[] = [
   'club', 'salsa', 'waltz', 'bhangra',
   'popping', 'locking', 'waving', 'tutting', 'toprock',
   'ballet', 'bharatanatyam',
   'moonwalk', 'runningMan', 'glide', 'house',
+  'vogue', 'krump',
 ];
+
+/**
+ * One step of an authored routine: a skill or a style, held for a counted
+ * time. A routine is choreography AS DATA — the same steps handed to twenty
+ * dancers is a chorus line; handed to one, it is a set.
+ */
+export interface RoutineStep {
+  /** A club move to hold… */
+  move?: DanceMove;
+  /** …or a style to switch to. Style steps may also name a move for 'club'. */
+  style?: DanceStyle;
+  /** How long this step lasts, in counts of whatever meter is then active. */
+  counts: number;
+}
 
 export interface DanceOptions {
   seed?: number;
@@ -1077,6 +1096,112 @@ const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
     },
     lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 4)) * 0.02 * e,
   },
+
+  // Dancing for a camera that is not there. Four counts of catwalk — the
+  // crossing strut, hips fully answered — then two POSES, hit like
+  // photographs and HELD: the freeze machinery again, framed. The pose die
+  // draws arms around the face, the head finds the lens, and the picture
+  // stays up long enough to be taken.
+  vogue: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.5,
+    hipAnswer: 1.2,
+    chart: [
+      { foot: 'L', dz: 1, dx: -0.6, accent: true },
+      { foot: 'R', dz: 1, dx: 0.6, accent: true },
+      { foot: 'L', dz: 0.4, dx: -0.6 },
+      { foot: 'R', dz: 0, dx: 0 },
+      {}, {}, {}, {},
+    ],
+    posture: (e) => ({
+      Chest: [[X, -0.06 * e]],
+      Head: [[X, -0.04 * e]],
+    }),
+    upper: (c, e, s) => {
+      if (c < 4) {
+        // The catwalk: shoulders back, wrists trailing, chin up.
+        const sw = Math.sin(c * Math.PI) * e * s;
+        return {
+          LeftArm: [[Z, -HANG + 0.25 * e], [X, 0.3 * sw]],
+          RightArm: [[Z, HANG - 0.25 * e], [X, -0.3 * sw]],
+          LeftHand: [[Z, -0.5]],
+          RightHand: [[Z, 0.5]],
+          Chest: [[Y, 0.1 * sw]],
+          Head: [[Y, -0.06 * sw], [X, -0.06 * e]],
+        };
+      }
+      // Two held frames: the pose lands at 4 and at 6 and DOES NOT MOVE.
+      const which = c < 6 ? 0 : 1;
+      const cEff = which === 0 ? Math.min(c, 4.35) : Math.min(c, 6.35);
+      const t = snapAt((cEff - 4) / 2 * 2, 0.18);
+      const bar = Math.floor(c / 8);
+      const die = (k: number) => hash(bar * 2 + which, k);
+      const side = die(9) < 0.5 ? 1 : -1;
+      // One arm frames the face, the other presents; alternate by the die.
+      const frame = {
+        arm: -2.15 - 0.25 * die(1),
+        fore: -2.3 + 0.4 * die(2),
+        other: 0.6 + 0.6 * die(3),
+        head: (0.25 + 0.2 * die(4)) * side * s,
+      };
+      const L = side > 0;
+      return {
+        [L ? 'LeftArm' : 'RightArm']: [[Z, (L ? 1 : -1) * frame.arm * t]],
+        [L ? 'LeftForeArm' : 'RightForeArm']: [[Z, (L ? 1 : -1) * frame.fore * t]],
+        [L ? 'RightArm' : 'LeftArm']: [[Z, (L ? -1 : 1) * frame.other * t], [Y, (L ? -1 : 1) * 0.4 * t]],
+        [L ? 'RightForeArm' : 'LeftForeArm']: [[Z, (L ? -1 : 1) * 0.3 * t]],
+        Head: [[Z, frame.head * t], [Y, 0.15 * side * t]],
+        Chest: [[Y, -0.12 * side * t], [Z, 0.05 * side * t]],
+      } as Shape;
+    },
+    lift: () => 0,
+  },
+
+  // THE ENERGY CEILING. Krump is what proves the energy model: amplitudes
+  // half again over anything else, chest pops driven off the stomps, and the
+  // stomps land OFF the grid — a syncopated schedule no other style would
+  // tolerate. The stomps fire onStamp: a krump floor answers back.
+  krump: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0.45,
+    hipAnswer: 0.5,
+    stamps: [0, 0.75, 2, 2.5, 3.25],
+    chart: [
+      { foot: 'L', dz: 0.5, dx: 0.4, accent: true },
+      { foot: 'R', dz: -0.3, dx: -0.5 },
+      { foot: 'R', dz: 0.5, dx: -0.4, accent: true },
+      { foot: 'L', dz: -0.3, dx: 0.5 },
+    ],
+    posture: (e) => ({
+      LeftUpLeg: [[X, -0.1 * e]],
+      RightUpLeg: [[X, -0.1 * e]],
+      LeftLeg: [[X, 0.2 * e]],
+      RightLeg: [[X, 0.2 * e]],
+      Chest: [[X, 0.1 * e]],
+    }),
+    upper: (c, e0, s) => {
+      // The ceiling: half again over anything else in the building.
+      const e = Math.min(1.3, e0 * 1.5);
+      const spec = STYLES.krump;
+      const since = sinceStamp(c, spec.stamps!, 4);
+      const pop = Math.exp(-since * 7);
+      const i = Math.floor(c * 2);
+      const throwArm = (k: number) => (hash(i, k) - 0.3) * 1.6 * e;
+      const t = snapAt(c * 2, 0.25);
+      return {
+        Chest: [[X, 0.28 * pop], [Y, (hash(i, 6) - 0.5) * 0.5 * e * t]],
+        Spine: [[X, 0.14 * pop]],
+        Head: [[X, -0.15 * pop], [Y, (hash(i, 7) - 0.5) * 0.5 * s * t]],
+        LeftArm: [[Z, -HANG + Math.max(0, throwArm(1)) * t], [X, throwArm(2) * t]],
+        RightArm: [[Z, HANG - Math.max(0, throwArm(3)) * t], [X, throwArm(4) * t]],
+        LeftForeArm: [[Z, -0.5 - 0.7 * hash(i, 5) * e * t]],
+        RightForeArm: [[Z, 0.5 + 0.7 * hash(i, 8) * e * t]],
+      };
+    },
+    lift: () => 0,
+  },
 };
 
 /** Every bone any move touches — captured for entry/exit blending. */
@@ -1145,6 +1270,13 @@ export class Dance {
   private stampCbs = new Set<() => void>();
   /** This frame's glide offset (metres), applied to the root, never the hips' answer. */
   private travelNow = { x: 0, z: 0 };
+  private routineSteps: RoutineStep[] | null = null;
+  private routineIdx = 0;
+  private routineLeft = 0;
+  private routineLoop = false;
+  private routineStrict = false;
+  /** Flair stashed while a strict routine runs a chorus line. */
+  private flair: { lag: number; amp: number; sign: number } | null = null;
 
   constructor(rig: HumanoidRig, options: DanceOptions = {}) {
     this.rig = rig;
@@ -1177,6 +1309,66 @@ export class Dance {
     this.hipEcho = { x: 0, z: 0 };
     this.lastCycleTime = -1;
     this.travelNow = { x: 0, z: 0 };
+  }
+
+  /**
+   * Hand the dancer a set: choreography as data. Each step is a skill or a
+   * style held for a counted time; `loop` repeats it until told otherwise,
+   * and `strict` zeroes this dancer's flair for the duration — the same
+   * strict routine on twenty dancers is a CHORUS LINE, to the quaternion.
+   * A finished (non-looping) routine hands back to `auto` improvisation.
+   */
+  routine(steps: RoutineStep[], opts: { loop?: boolean; strict?: boolean } = {}): void {
+    if (!steps.length) return;
+    this.routineSteps = steps;
+    this.routineIdx = -1;
+    this.routineLeft = 0;
+    this.routineLoop = opts.loop ?? false;
+    this.routineStrict = opts.strict ?? false;
+    if (this.routineStrict && !this.flair) {
+      this.flair = { lag: this.lag, amp: this.amp, sign: this.sign };
+      this.lag = 0;
+      this.amp = 1;
+      this.sign = 1;
+    }
+    this.advanceRoutine();
+  }
+
+  /** Tear up the set list; flair comes back with it. */
+  clearRoutine(): void {
+    this.routineSteps = null;
+    if (this.flair) {
+      this.lag = this.flair.lag;
+      this.amp = this.flair.amp;
+      this.sign = this.flair.sign;
+      this.flair = null;
+    }
+  }
+
+  /** Which step of the routine is playing, or -1. */
+  get routineStep(): number {
+    return this.routineSteps ? this.routineIdx : -1;
+  }
+
+  private advanceRoutine(): void {
+    if (!this.routineSteps) return;
+    this.routineIdx++;
+    if (this.routineIdx >= this.routineSteps.length) {
+      if (this.routineLoop) this.routineIdx = 0;
+      else {
+        // The set is over: keep the last shape on, hand back to improv.
+        this.clearRoutine();
+        this.auto = true;
+        return;
+      }
+    }
+    const step = this.routineSteps[this.routineIdx];
+    this.routineLeft = Math.max(1, step.counts);
+    if (step.style && step.style !== this.styleName) this.setStyle(step.style);
+    if (step.move) {
+      this.move = step.move;
+      this.auto = false;
+    }
   }
 
   /**
@@ -1254,11 +1446,15 @@ export class Dance {
     this.phase += (dt * this.tempo) / 60;
     if (Math.floor(before) !== Math.floor(this.phase)) {
       this.beats++;
+      if (this.routineSteps) {
+        this.routineLeft--;
+        if (this.routineLeft <= 0) this.advanceRoutine();
+      }
       if (this.beats % this.meter === 0) {
         this.bar++;
         // A new skill every N bars — always a DIFFERENT one, or the change
         // is invisible and the repertoire may as well be one move.
-        if (this.auto && this.bar > 0 && this.bar % this.barsPerMove === 0) {
+        if (this.auto && !this.routineSteps && this.bar > 0 && this.bar % this.barsPerMove === 0) {
           const others = DANCE_MOVES.filter((m) => m !== this.move);
           this.move = others[Math.floor(this.rand() * others.length)];
         }
