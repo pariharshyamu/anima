@@ -1019,10 +1019,10 @@ import { createLifeguardTower, createBeachUmbrella, createLounger,
   createPalm, createBananaTree, createSmallCraft, createOcean,
   createSurface } from 'scena3d';
 import { createHumanoid, Locomotion, FootIK } from 'anima3d';
-import { Game, TouchControls, FollowCamera } from 'gama3d';
+import { Game, TouchControls } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, HemisphereLight, Color, Fog,
-  Vector2, Vector3 } from 'three';
+  Raycaster, Vector2, Vector3 } from 'three';
 
 const game = new Game();
 const scene = game.world.scene;
@@ -1051,8 +1051,10 @@ sandGeo.rotateX(-Math.PI / 2);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i) + 55;
     pos.setY(i, profile(x, z));
-    const wet = Math.max(0, Math.min(1, (10 - z) / 9));
-    cols.push(1 - wet * 0.3, 1 - wet * 0.28, 1 - wet * 0.24);
+    // Wet sand, dark and wide enough to cover everything the swash can
+    // reach — otherwise the drained beach flashes dry tan between waves.
+    const wet = Math.max(0, Math.min(1, (13 - z) / 11));
+    cols.push(1 - wet * 0.46, 1 - wet * 0.44, 1 - wet * 0.38);
   }
   sandGeo.setAttribute('color',
     new (Object.getPrototypeOf(pos).constructor)(new Float32Array(cols), 3));
@@ -1068,11 +1070,15 @@ const ocean = createOcean({
   level: 0, size: 700, segments: 200, amplitude: 0.42, wavelength: 23,
   choppiness: 0.6, direction: 180, shore: profile,
   shallowColor: 0x45dcd2, deepColor: 0x0a6fb4, skyColor: 0x9fd8ea,
+  // Breakers running in, and a waterline that runs up the sand and drains.
+  surf: { breakDepth: 1.8, runUp: 0.45, period: 8, bands: 2.4 },
 });
 scene.add(ocean.mesh);
 
-// The kit, seated on the profile so nothing floats or sinks.
+// The kit, seated on the profile so nothing floats or sinks. The blocker
+// list is everything the camera must not see through — filled as we build.
 const kit = [];
+const blockers = [];
 [[-28, 9, 3], [-3, 7, 7], [25, 10, 11]].forEach(([x, z, seed]) => {
   const tower = createLifeguardTower({ seed });
   tower.object.scale.setScalar(1.25);
@@ -1080,6 +1086,7 @@ const kit = [];
   tower.object.rotation.y = Math.PI + x / 90;
   scene.add(tower.object);
   kit.push(tower);
+  blockers.push(tower.object);
 });
 for (let row = 0; row < 3; row++) {
   for (let i = 0; i < 9; i++) {
@@ -1162,12 +1169,14 @@ window.addEventListener('pointermove', (e) => {
   if (dragging) camYaw -= e.movementX * 0.005;
 });
 
-// High enough to look OVER the umbrellas: at shoulder height the kit
-// keeps stepping between the camera and the walker.
-const follow = new FollowCamera(game.camera, hero.object, {
-  offset: new Vector3(0, 4.6, 6.6), lookOffset: new Vector3(0, 1.4, 0),
-  stiffness: 6,
-});
+// A third-person camera that will not be shoved through solid things:
+// it casts a ray out from the body each frame and pulls in short of
+// whatever it hits. Only STANDING things are blockers — letting parasols
+// push the lens jams it into the sand, and you can see under a parasol
+// anyway.
+const camAim = new Vector3();
+const camWant = new Vector3();
+const ray = new Raycaster();
 
 const WALK = 1.5, RUN = 4.2;
 const axis = new Vector2();
@@ -1199,15 +1208,29 @@ game.onUpdate((t) => {
   }
   const p = hero.object.position;
   p.x = Math.max(-70, Math.min(70, p.x + velocity.x * dt));
-  p.z = Math.max(0, Math.min(46, p.z + velocity.z * dt));    // shallows to dune
+  p.z = Math.max(-3, Math.min(46, p.z + velocity.z * dt));   // shallows to dune
   p.y = profile(p.x, p.z);
   hero.object.rotation.y = facing;
 
-  loco.update(dt, velocity);     // ANIMA blends idle → walk → run
-  feet.update();                 // …and plants the feet on SCENA's sand
+  // THE SWASH IS NOT JUST A PICTURE. depthOver reads the very run-up the
+  // shader is drawing, so the walker is caught by the wave you watched
+  // arrive: ankle deep it wades short and heavy, deeper it slows right
+  // down. One simulation — the water never disagrees with itself.
+  const wade = ocean.depthOver(p.y);
+  loco.update(dt, velocity.clone().multiplyScalar(wade > 0.15 ? 0.45 : 1));
+  feet.weight = wade > 0.25 ? 0 : 1;   // no foot planting once they are in it
 
-  follow.offset.set(Math.sin(camYaw) * 6.6, 4.6, Math.cos(camYaw) * 6.6);
-  follow.update(dt);
+  feet.update();                 // plants the feet on SCENA's sand
+
+  const REACH = 6.6;
+  camAim.set(p.x, p.y + 1.4, p.z);
+  camWant.set(Math.sin(camYaw) * REACH, 4.4, Math.cos(camYaw) * REACH);
+  ray.set(camAim, camWant.clone().normalize());
+  ray.far = REACH;
+  const hit = ray.intersectObjects(blockers, true)[0];
+  camWant.setLength(hit ? Math.max(3.8, hit.distance - 0.35) : REACH).add(camAim);
+  game.camera.position.lerp(camWant, Math.min(1, dt * 7));
+  game.camera.lookAt(camAim);
 });
 game.start();`,
   },
