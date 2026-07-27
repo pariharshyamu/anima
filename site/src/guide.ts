@@ -36,6 +36,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-illusions-and-the-house': 'club',
   'routines-choreography-as-data': 'club',
   'vogue-and-krump': 'club',
+  'the-couple-one-dance-two-bodies': 'club',
   'stepping-on-and-off-the-floor': 'club',
 };
 

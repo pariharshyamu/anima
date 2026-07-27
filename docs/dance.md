@@ -134,6 +134,20 @@ Steps hold a skill or a style for a counted time; `loop` repeats the set; a fini
 
 **`krump`** is the energy ceiling that proves the energy model: amplitudes half again over anything else in the building, chest pops driven off the stomps, and the stomps landing deliberately **off the grid** — a syncopated schedule (`0, 0.75, 2, 2.5, 3.25`) no other style would tolerate. The stomps fire `onStamp`, so a krump floor answers back the same way a Bharatanatyam floor does — two traditions that could not be further apart, agreeing that the feet are an instrument.
 
+## The couple: one dance, two bodies
+
+`Couple` is the first kinematic constraint between two ANIMA characters — `Conversation` couples gazes; this couples skeletons.
+
+```js
+const couple = new Couple(leaderRig, followerRig, { style: 'waltz' });
+couple.place(x, z, facing);   // face to face, closed position
+couple.start();
+game.onUpdate((t) => couple.update(t.delta, woofer.pulse()));
+couple.handGap();             // metres between the joined hands
+```
+
+Three facts make it a couple rather than two soloists who agree. **Following is a clock you surrender**: the follower keeps the *leader's* time, a connection-lag (~0.1 s) late — because that lag is physically what following is — and the follower's own beat detector is ignored entirely; the connection outranks the music, so if the leader drifts, the couple drifts *together*. **The natural opposite is a phase, not a mirror**: the follower dances the leader's own figure half a cycle out, so his forward break and her back break move the same direction across the floor — no mirrored charts, the same data, offset. **The connection is held, not aimed**: after both dancers pose, the couple points the two connection arms at a shared point computed each frame at mutual reach from the *actual posed* shoulders — and the verification is the gangway's: through eight seconds of boxes and breaks, the gap between the two hand bones stays inside a hand's breadth.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

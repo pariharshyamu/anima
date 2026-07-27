@@ -1015,7 +1015,7 @@ game.start();`
 // the dancers keep dancing exactly the way a real floor does when the DJ
 // is fixing a skip.
 import { createWoofer, createDanceTiles } from 'scena3d';
-import { createHumanoid, Dance, DANCE_STYLES } from 'anima3d';
+import { createHumanoid, Dance, Couple, DANCE_STYLES } from 'anima3d';
 import { Game } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, PointLight, Color } from 'three';
@@ -1051,7 +1051,6 @@ scene.add(tiles.object);
 // arms in the air, and the club dancers work the freestyle repertoire.
 const dancers = [];
 [ [-3.8, 1.5, 'salsa'], [-2.6, 2.8, 'salsa'],
-  [3.2, 1.3, 'waltz'], [4.2, 2.5, 'waltz'],
   [0.2, 1.9, 'bhangra'],
   [-1.2, 4.1, 'popping'], [1.8, 4.3, 'tutting'],
   [-3.4, 4.6, 'waving'], [3.4, 4.6, 'toprock'],
@@ -1070,6 +1069,18 @@ const dancers = [];
   d.start();
   dancers.push(d);
 });
+// THE COUPLE — one dance, two bodies, the first skeleton-to-skeleton
+// constraint in the trilogy. The follower keeps the LEADER'S clock (half a
+// cycle out — the natural opposite — and a connection-lag late), and after
+// both have danced, the couple re-holds the joined hands at a point both
+// arms can reach. Watch the hands: they stay met through every figure.
+const lead = createHumanoid({ seed: 700 });
+const follow = createHumanoid({ seed: 701 });
+scene.add(lead.object, follow.object);
+const couple = new Couple(lead, follow, { style: 'waltz', seed: 12 });
+couple.place(3.7, 1.9, 0.9);
+couple.start();
+
 // THE REVERSE COUPLING. Until now the pulse has only ever flowed one way:
 // woofer -> tiles, woofer -> dancers. The Bharatanatyam dancer's stamps
 // flow BACK — every strike of her feet fires a ring through the tiles,
@@ -1098,6 +1109,7 @@ const SET = [
 });
 
 // Press S to send EVERYBODY round the styles together — seventeen idioms,
+// (the couple keeps its waltz: a couple is not a solo act times two),
 // ballroom, street, classical, illusion, vogue and krump, on one clock.
 // (The chorus line keeps its set: routines outrank the style cycle.)
 let styleIdx = 0;
@@ -1122,6 +1134,7 @@ game.onUpdate((t) => {
   tiles.feed(pulse);
   tiles.update(t.delta);
   for (const d of dancers) d.update(t.delta, pulse);
+  couple.update(t.delta, pulse);
   glow.intensity = 12 + pulse.bass * 40;
   game.camera.position.set(5.4, 3.6, 9.8);
   game.camera.lookAt(-0.4, 1.1, -2);

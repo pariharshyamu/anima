@@ -1270,6 +1270,8 @@ export class Dance {
   private stampCbs = new Set<() => void>();
   /** This frame's glide offset (metres), applied to the root, never the hips' answer. */
   private travelNow = { x: 0, z: 0 };
+  /** A clock handed down from outside (a partner). Applied after advance. */
+  private pendingSync: number | null = null;
   private routineSteps: RoutineStep[] | null = null;
   private routineIdx = 0;
   private routineLeft = 0;
@@ -1309,6 +1311,16 @@ export class Dance {
     this.hipEcho = { x: 0, z: 0 };
     this.lastCycleTime = -1;
     this.travelNow = { x: 0, z: 0 };
+  }
+
+  /**
+   * Surrender the clock. A follower does not keep time — they keep THE
+   * LEADER'S time, and this hands them exactly that: the phase to be on at
+   * the end of this frame's update. Beats and bpm in the pulse are ignored
+   * while a sync is pending; the connection outranks the music.
+   */
+  slaveTo(phase: number): void {
+    this.pendingSync = phase;
   }
 
   /**
@@ -1386,6 +1398,11 @@ export class Dance {
     return this.styleName === 'club' ? 4 : STYLES[this.styleName].beatsPerBar;
   }
 
+  /** The tempo the clock is actually running at, BPM. */
+  get pulseTempo(): number {
+    return this.tempo;
+  }
+
   /** The count within the style's cycle (integer part), 0-based. */
   get count(): number {
     if (this.styleName !== 'club' && this.lastCount >= 0) return this.lastCount;
@@ -1444,6 +1461,10 @@ export class Dance {
 
     const before = this.phase;
     this.phase += (dt * this.tempo) / 60;
+    if (this.pendingSync !== null) {
+      this.phase = this.pendingSync;
+      this.pendingSync = null;
+    }
     if (Math.floor(before) !== Math.floor(this.phase)) {
       this.beats++;
       if (this.routineSteps) {
