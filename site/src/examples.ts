@@ -1410,6 +1410,263 @@ game.start();`,
   },
 
   {
+    id: 'cricket',
+    title: 'Two-over cricket (playable!)',
+    group: 'Games',
+    code: `// A PLAYABLE TWO-OVER MATCH — phone and desktop, one code path. You bat.
+// The bowler runs in, the ball pitches, and you have about a third of a
+// second to pick one of SEVEN strokes:
+//
+//   D drive · F flick · C cut · P pull · S sweep · B block · L loft
+//
+// And the stroke has to be the right one, because the bat is a real
+// object in the world: sweep at a short ball and it passes over the bat,
+// pull at a full one and it goes under. On a phone the buttons appear by
+// themselves.
+//
+// THE WHOLE TRILOGY, EACH DOING ONLY ITS OWN JOB. SCENA owns the ground —
+// 22 yards, stumps 28 inches, the rope 62 metres out, and the bails that
+// fly. ANIMA owns the bodies — the bowling arm coming over vertically,
+// the seven swing planes with both hands solved onto the handle, the
+// keeper's crouch that breathes. GAMA owns the game — the ball's flight
+// through its one bounce, the timing window, and the laws' own scoring.
+// Nothing imports anything else: they meet at a position, a callback, a
+// breakWicket() and one function that answers "where is the bat?".
+import { createCricketGround, createCricketBall, createBat, createTree,
+         createSky, createLightingRig, applyFog, PALETTES } from 'scena3d';
+import { createHumanoid, Locomotion, Cricketer } from 'anima3d';
+import { Game, TouchControls } from 'gama3d';
+import { CricketMatch } from 'gama3d/templates';
+import { Vector3 } from 'three';
+
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette: PALETTES.meadow }).mesh,
+          createLightingRig('day').group);
+applyFog(scene, 'clear', PALETTES.meadow);
+
+// ── THE GROUND ──────────────────────────────────────────────────────────
+const ground = createCricketGround({ seed: 3, boundary: 62 });
+scene.add(ground.object);
+for (let i = 0; i < 24; i++) {
+  const a = (i / 24) * Math.PI * 2;
+  const tree = createTree({ seed: 40 + i, species: i % 3 === 0 ? 'pine' : 'oak',
+    palette: PALETTES.meadow });
+  tree.object.position.set(Math.cos(a) * 74, 0, Math.sin(a) * 74);
+  scene.add(tree.object);
+}
+const ball = createCricketBall({ seed: 2 });
+scene.add(ball.object);
+
+// ── THE PLAYERS ─────────────────────────────────────────────────────────
+// One helper, because a cricketer is a rig, a gait and a Cricketer, and
+// there are nine of them.
+const cast = [];
+const player = (seed, x, z, facing) => {
+  const rig = createHumanoid({ seed, height: 1.78 });
+  rig.object.position.set(x, 0, z);
+  rig.object.rotation.y = facing;
+  scene.add(rig.object);
+  const loco = new Locomotion(rig);
+  const who = { rig, loco, cricketer: new Cricketer(rig, loco) };
+  cast.push(who);
+  return who;
+};
+
+// You: on the popping crease, facing up the pitch. The bat is parented to
+// the hand, so every swing plane carries it — nothing animates the bat.
+const striker = ground.strikerEnd;
+const batter = player(21, striker.x, striker.z, 0);
+// THE BAT IS HELD WITH BOTH HANDS. holdBat drives it from the grip the
+// swing path defines, and the arms are SOLVED onto that path every frame
+// — so the two hands are always on the same 11 cm of handle, and the bat
+// can never drift out of them.
+const bat = createBat({ seed: 4 });
+batter.cricketer.holdBat(bat.object, { grip: 0.7 });
+// And he TAKES GUARD: a held, breathing stance whose hands are already
+// where a stroke starts, so no shot has to snatch the bat into place.
+batter.cricketer.stance();
+batter.cricketer.onDone(() => batter.cricketer.stance());
+
+// The bowler starts back at his mark and runs in; the keeper crouches up
+// to the stumps; the ring stands where a ring stands.
+const bowlerEnd = ground.bowlerEnd;
+const MARK = bowlerEnd.z + 9;
+const bowler = player(34, 0.4, MARK, Math.PI);
+const keeper = player(52, 0, striker.z - 3.2, 0);
+keeper.cricketer.keep();
+const RING = [[13, 6], [-13, 6], [19, -14], [-19, -14], [0, 26],
+              [28, 12], [-28, 12], [7, -21]];
+const fielders = RING.map((p, i) =>
+  player(60 + i, p[0], striker.z + p[1], Math.atan2(-p[0], -p[1])));
+
+// ── THE MATCH ───────────────────────────────────────────────────────────
+// swingLead is the beat between committing a stroke and the bat arriving,
+// and it is ANIMA's CONTACT_PHASE on a shot clip. Set it to anything else
+// and the bat swings through a ball that is somewhere else.
+const match = new CricketMatch({
+  overs: 2, wickets: 2, boundary: 62, seed: 9, swingLead: 0.42,
+  // Where this rig's bat actually is, in front of its own stumps.
+  contact: 1.5,
+  // AND THE COLLISION. The match asks ANIMA where the middle of the bat
+  // is at the instant the bat lands, and the stroke only connects if the
+  // ball is there — which is what makes choosing between seven strokes a
+  // decision rather than a flavour.
+  bat: () => batter.cricketer.batPoint(),
+  reach: 0.45,
+});
+
+const hud = document.createElement('div');
+hud.style.cssText = 'position:fixed;top:10px;left:12px;z-index:10;color:#fff;' +
+  'font:600 15px/1.5 system-ui,sans-serif;text-shadow:0 1px 4px #0009;' +
+  'pointer-events:none';
+document.body.appendChild(hud);
+const call = document.createElement('div');
+call.style.cssText = 'position:fixed;top:32%;left:0;right:0;z-index:10;' +
+  'text-align:center;color:#fff;font:800 40px/1.2 system-ui,sans-serif;' +
+  'text-shadow:0 2px 10px #000b;pointer-events:none';
+document.body.appendChild(call);
+
+const board = () => {
+  const inn = match.innings === 1 ? '1st innings' :
+    'CHASING ' + match.target + ' · need ' + match.needed;
+  hud.textContent = match.runs + '/' + match.wickets + '  (' +
+    match.oversBowled + ' of 2)   ' + inn;
+};
+board();
+
+// ── THE BALL IS THE ONLY THING THE THREE LIBRARIES SHARE ────────────────
+// The bowler's hand says WHERE the ball starts; the match says where it
+// goes from there; the ground says what a wicket looks like.
+bowler.cricketer.onRelease(() => {
+  match.bowl(bowler.cricketer.releasePoint());
+});
+
+let restart = 0;
+match.onBall((o) => {
+  if (o.wicket === 'bowled') ground.breakWicket(-1);
+  call.textContent = o.wicket === 'bowled' ? 'BOWLED HIM'
+    : o.wicket === 'caught' ? 'CAUGHT'
+    : o.runs === 6 ? 'SIX'
+    : o.runs === 4 ? 'FOUR'
+    : o.runs > 0 ? o.runs + (o.runs === 1 ? ' run' : ' runs')
+    : o.timing === 'missed'
+      ? (o.miss > 0.45 ? 'WRONG SHOT' : 'beaten')
+    : 'no run';
+  board();
+  restart = o.innings ? 3.4 : 2.2;
+});
+match.onEnd((result) => {
+  call.textContent = result;
+  hud.textContent = 'Innings 1: ' + match.firstInnings + '   ·   Innings 2: ' +
+    match.runs + '/' + match.wickets;
+});
+
+// ── THE CONTROLS ────────────────────────────────────────────────────────
+// GAMA's touch layer writes the same key codes the keyboard writes, so
+// nothing below branches on input type.
+new TouchControls(game.input, {
+  joystick: false,
+  buttons: [
+    { label: 'DRIVE', code: 'KeyD', css: 'right:24px;bottom:132px' },
+    { label: 'FLICK', code: 'KeyF', css: 'right:110px;bottom:132px' },
+    { label: 'CUT', code: 'KeyC', css: 'right:196px;bottom:132px' },
+    { label: 'LOFT', code: 'KeyL', css: 'right:282px;bottom:132px' },
+    { label: 'PULL', code: 'KeyP', css: 'right:24px;bottom:44px' },
+    { label: 'SWEEP', code: 'KeyS', css: 'right:110px;bottom:44px' },
+    { label: 'BLOCK', code: 'KeyB', css: 'right:196px;bottom:44px' },
+  ],
+});
+const KEYS = [
+  ['drive', ['KeyD', 'ArrowUp']],
+  ['flick', ['KeyF']],
+  ['cut', ['KeyC']],
+  ['pull', ['KeyP', 'ArrowLeft']],
+  ['sweep', ['KeyS', 'ArrowDown']],
+  ['defend', ['KeyB']],
+  ['loft', ['KeyL', 'ArrowRight']],
+];
+let held = false;
+
+// ── THE LOOP ────────────────────────────────────────────────────────────
+const camAim = new Vector3(0, 1.1, striker.z + 5);
+const look = new Vector3();
+let runIn = -1;
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  ground.update(dt);
+  for (const who of cast) {
+    who.cricketer.update(dt);
+    who.loco.update(dt, 0);
+    // AFTER the gait, like FootIK: the clip has to be sampled before the
+    // arms can be solved on top of it.
+    who.cricketer.lateUpdate();
+  }
+
+  // THE RUN-UP. The clip does not translate the root — a bowling action is
+  // a body, not a journey — so the body is carried in from the mark and
+  // through the crease against the same phase the arm is swinging on.
+  if (runIn >= 0) {
+    const p = bowler.cricketer.progress;
+    bowler.rig.object.position.z = p < 0.62
+      ? MARK - (MARK - bowlerEnd.z) * (p / 0.62)
+      : bowlerEnd.z - (p - 0.62) * 5;
+  }
+
+  // A delivery every few seconds, until somebody has won.
+  if (restart > 0) {
+    restart -= dt;
+    if (restart <= 0 && !match.over) {
+      ground.resetWicket();
+      match.next();
+      call.textContent = '';
+      bowler.rig.object.position.z = MARK;
+      bowler.cricketer.bowl();
+      runIn = 1;
+      held = false;
+      board();
+    }
+  } else if (match.phase === 'ready' && runIn < 0) {
+    bowler.cricketer.bowl();
+    runIn = 1;
+  }
+
+  // ONE STROKE PER BALL. swing() commits; the bat lands 0.42 s later and
+  // only then does the game find out where the ball was.
+  //
+  // wasPressed, not isDown: a stroke is an EDGE. A held-key poll drops any
+  // tap shorter than a frame, and on a phone mid-frame taps are most of
+  // them — the stroke you played simply never happened.
+  if (!held) {
+    for (const k of KEYS) {
+      if (k[1].some((code) => game.input.wasPressed(code))) {
+        if (match.swing(k[0])) {
+          batter.cricketer.play(k[0]);
+          held = true;
+        }
+        break;
+      }
+    }
+  }
+
+  match.update(dt);
+  ball.object.position.copy(match.ball);
+  ball.object.rotation.x -= dt * 14;
+
+  // Behind the batter down the pitch, and the moment the ball is struck
+  // the camera lets it go and follows it — which is what a broadcast does,
+  // and the only way you see where your shot went.
+  const struck = match.phase === 'struck';
+  look.set(0, 1.1, striker.z + 5);
+  if (struck) look.copy(match.ball);
+  camAim.lerp(look, Math.min(1, dt * 2.4));
+  game.camera.position.set(0, 4.0, striker.z - 8.4);
+  game.camera.lookAt(camAim);
+});
+game.start();`,
+  },
+  {
     id: 'club',
     title: 'The club (web radio · DJ tiles · dance styles)',
     group: 'Games',

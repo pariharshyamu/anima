@@ -45,6 +45,8 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **Hair** — a style catalog (`bald · cap · side-part · bob · ponytail · bun · long · spiky`) with seeded style + color; hats force sensible short hair unless a style is explicit.
 - **`Crowd`** — background characters at scale: N seeded villagers as a handful of VAT `InstancedMesh`es — no skeletons, no mixers, no per-character CPU cost. Per-instance phase offsets and tints keep shared bodies looking individual; `crowd.followRoute(road.route, { surface: terrain.heightAt })` sends the whole crowd walking a SCENA road at the bake's stride-matched speed. Heroes stay heroes: full rigs near the camera, the crowd fills the distance.
 
+- **`Cricketer`** — the bowling action (run-up, gather, braced front leg, arm coming over vertically, elbow that never bends), seven strokes, the keeper's crouch, the fielder's throw, and a batting stance that breathes. **Both hands are on the bat**: strokes are authored as a path for the grip and a direction for the blade, and the arms are *solved* onto it with two-bone IK, so the grip is an invariant rather than a coincidence — and `batPoint()` gives a game something real to collide a ball against. `holdBat(bat)` drives a bat from that grip; it can never leave the hands.
+
 ## The family handshake
 
 Nothing imports anything — the shapes are structural:

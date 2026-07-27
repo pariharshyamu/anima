@@ -75,6 +75,25 @@ export {
   type DanceOptions,
   type DancePulse,
 } from './dance';
+export {
+  Cricketer,
+  createBowlClip,
+  createShotClip,
+  createKeepClip,
+  createStanceClip,
+  createThrowClip,
+  swingAt,
+  SHOTS,
+  SWINGS,
+  STANCE_KEY,
+  RELEASE_PHASE,
+  CONTACT_PHASE,
+  type Shot,
+  type SwingKey,
+  type SwingSpec,
+  type CricketAction,
+  type CricketerOptions,
+} from './cricket';
 export { Couple, type CoupleOptions } from './couple';
 export { Cypher, type CypherOptions } from './cypher';
 export {
