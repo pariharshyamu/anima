@@ -37,6 +37,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'routines-choreography-as-data': 'club',
   'vogue-and-krump': 'club',
   'the-couple-one-dance-two-bodies': 'club',
+  'the-cypher-the-floor-becomes-a-social-structure': 'club',
   'stepping-on-and-off-the-floor': 'club',
 };
 

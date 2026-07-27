@@ -148,6 +148,21 @@ couple.handGap();             // metres between the joined hands
 
 Three facts make it a couple rather than two soloists who agree. **Following is a clock you surrender**: the follower keeps the *leader's* time, a connection-lag (~0.1 s) late — because that lag is physically what following is — and the follower's own beat detector is ignored entirely; the connection outranks the music, so if the leader drifts, the couple drifts *together*. **The natural opposite is a phase, not a mirror**: the follower dances the leader's own figure half a cycle out, so his forward break and her back break move the same direction across the floor — no mirrored charts, the same data, offset. **The connection is held, not aimed**: after both dancers pose, the couple points the two connection arms at a shared point computed each frame at mutual reach from the *actual posed* shoulders — and the verification is the gangway's: through eight seconds of boxes and breaks, the gap between the two hand bones stays inside a hand's breadth.
 
+## The cypher: the floor becomes a social structure
+
+`Cypher` is the last layer: a **formation**. The circle forms (everyone placed on a ring, facing the middle), one dancer takes the centre and shows out in a seeded showcase style, the ring grooves small and holds the space, and after a counted number of bars the centre is handed on — eased, round-robin, nobody teleports, including the first walk-in.
+
+```js
+const cypher = new Cypher(rigs, { seed: 7, radius: 2.2, barsPerTurn: 2 });
+cypher.place(x, z);
+cypher.start();
+game.onUpdate((t) => cypher.update(t.delta, woofer.pulse()));
+cypher.centre;   // who has the floor
+cypher.turns;    // how many times it has been handed on
+```
+
+The mechanism worth naming: **one pulse, dealt unevenly**. The centre hears the music boosted — showing out is dancing past what the music strictly asks — and the ring hears it damped. Same body, same music, twice the size in the middle: that contrast is what makes a cypher read as a cypher rather than a crowd with a gap in it. The turn-taking is `Conversation`'s floor-passing re-keyed from speech to bars, and the whole thing is deterministic: same seeds, same night, same order round the circle.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

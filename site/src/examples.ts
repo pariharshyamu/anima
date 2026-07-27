@@ -1015,7 +1015,7 @@ game.start();`
 // the dancers keep dancing exactly the way a real floor does when the DJ
 // is fixing a skip.
 import { createWoofer, createDanceTiles } from 'scena3d';
-import { createHumanoid, Dance, Couple, DANCE_STYLES } from 'anima3d';
+import { createHumanoid, Dance, Couple, Cypher, DANCE_STYLES } from 'anima3d';
 import { Game } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, PointLight, Color } from 'three';
@@ -1081,6 +1081,22 @@ const couple = new Couple(lead, follow, { style: 'waltz', seed: 12 });
 couple.place(3.7, 1.9, 0.9);
 couple.start();
 
+// THE CYPHER — the floor becomes a social structure. Six dancers form a
+// circle off the main floor; one takes the centre and SHOWS OUT in a
+// seeded showcase style while the ring grooves small and holds the space;
+// after two bars the centre is handed on, eased, round-robin — the
+// turn-taking IS the dance. One pulse, dealt unevenly: boosted to the
+// centre, damped to the ring.
+const ringRigs = [];
+for (let i = 0; i < 6; i++) {
+  const h = createHumanoid({ seed: 760 + i });
+  scene.add(h.object);
+  ringRigs.push(h);
+}
+const cypher = new Cypher(ringRigs, { seed: 21, radius: 2.1, barsPerTurn: 2 });
+cypher.place(9.6, 3.4);
+cypher.start();
+
 // THE REVERSE COUPLING. Until now the pulse has only ever flowed one way:
 // woofer -> tiles, woofer -> dancers. The Bharatanatyam dancer's stamps
 // flow BACK — every strike of her feet fires a ring through the tiles,
@@ -1135,6 +1151,7 @@ game.onUpdate((t) => {
   tiles.update(t.delta);
   for (const d of dancers) d.update(t.delta, pulse);
   couple.update(t.delta, pulse);
+  cypher.update(t.delta, pulse);
   glow.intensity = 12 + pulse.bass * 40;
   game.camera.position.set(5.4, 3.6, 9.8);
   game.camera.lookAt(-0.4, 1.1, -2);

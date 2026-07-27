@@ -76,6 +76,7 @@ export {
   type DancePulse,
 } from './dance';
 export { Couple, type CoupleOptions } from './couple';
+export { Cypher, type CypherOptions } from './cypher';
 export {
   Conversation,
   type Talker,
