@@ -1018,11 +1018,12 @@ game.start();`
 import { createLifeguardTower, createBeachUmbrella, createLounger,
   createPalm, createBananaTree, createSmallCraft, createOcean,
   createFlock, createSurface } from 'scena3d';
-import { createHumanoid, Locomotion, FootIK } from 'anima3d';
+import { createHumanoid, Locomotion, FootIK, Swimming } from 'anima3d';
 import { Game, TouchControls } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, HemisphereLight, Color, Fog,
-  Raycaster, RingGeometry, Vector2, Vector3 } from 'three';
+  Group, Quaternion, Raycaster, RingGeometry, Vector2,
+  Vector3 } from 'three';
 
 const game = new Game();
 const scene = game.world.scene;
@@ -1088,6 +1089,35 @@ const school = createFlock({
 scene.add(school.object);
 const schoolHome = new Vector3(6, -1.2, -22);
 const schoolAt = schoolHome.clone();
+
+// THE REEF — somewhere to swim TO. Exploring needs a destination, so the
+// deep water gets a patch of coral heads and three schools of different
+// fish hanging over it, each at its own depth.
+const reef = new Group();
+reef.position.set(4, 0, -30);
+scene.add(reef);
+[0xff7a59, 0xffc04d, 0xd86bd8, 0x6be3c6, 0xf2f0dd].forEach((c, i) => {
+  const mat = new MeshStandardMaterial({ color: c, roughness: 0.85,
+    flatShading: true });
+  for (let k = 0; k < 7; k++) {
+    const a = (i * 7 + k) * 1.31;
+    const head = new Mesh(new BoxGeometry(0.7 + (k % 3) * 0.35,
+      0.5 + (k % 4) * 0.4, 0.7 + (k % 2) * 0.4), mat);
+    head.position.set(Math.sin(a) * (2 + (k % 5) * 1.7),
+      profile(4, -30) + 0.3 + (k % 3) * 0.25, Math.cos(a * 1.7) * (2 + k * 1.1));
+    head.rotation.y = a;
+    reef.add(head);
+  }
+});
+const reefFish = [
+  createFlock({ type: 'fish', count: 45, center: [4, -2.4, -30],
+    bounds: [7, 0.7, 7], speed: 1.5, size: 0.34, color: 0xffd166, seed: 11 }),
+  createFlock({ type: 'fish', count: 35, center: [1, -3.1, -33],
+    bounds: [6, 0.6, 6], speed: 1.2, size: 0.3, color: 0xff6f91, seed: 12 }),
+  createFlock({ type: 'fish', count: 30, center: [8, -1.9, -27],
+    bounds: [5, 0.6, 5], speed: 1.8, size: 0.38, color: 0x7ac6ff, seed: 13 }),
+];
+for (const f of reefFish) scene.add(f.object);
 
 // SPLASH RINGS: rings that bloom where a foot breaks the surface and
 // fade as they spread. Pooled — a beach walk would otherwise leak meshes
@@ -1189,7 +1219,10 @@ const feet = new FootIK(hero, { ground: profile, hipsAdapt: 0.5 });
 // GAMA's touch layer: a joystick and a RUN button, on phones only. The
 // keyboard keeps working — the game reads ONE axis either way.
 new TouchControls(game.input, {
-  buttons: [{ label: 'RUN', code: 'ShiftLeft', css: 'right:26px;bottom:38px' }],
+  buttons: [
+    { label: 'RUN', code: 'ShiftLeft', css: 'right:26px;bottom:38px' },
+    { label: 'DIVE', code: 'Space', css: 'right:112px;bottom:38px' },
+  ],
 });
 
 // Drag to swing the camera. (On a phone the joystick owns the bottom-left
@@ -1214,11 +1247,31 @@ const camAim = new Vector3();
 const camWant = new Vector3();
 const ray = new Raycaster();
 
+// THE WATER BODY. ANIMA's Swimming asks three things — where the surface
+// is, how deep it is here, and a place to send ripples — and SCENA can
+// answer all three off the ocean it is already drawing. depthOver folds
+// in the swash, so the water the swimmer feels is the water on screen,
+// and disturb() lands as the same splash ring a footfall throws.
+const water = {
+  surfaceY: ocean.level,
+  depthAt: (x, z) => ocean.depthOver(profile(x, z)),
+  disturb: (x, z) => splash(x, ocean.level, z),
+};
+// pace lifts the whole water gait: a real crawl is ~1.3 m/s, which is
+// honest and also a long wait when the shelf is eighty metres wide.
+const swim = new Swimming(hero, loco, { stroke: 'crawl', pace: 1.7 });
+
 const WALK = 1.5, RUN = 4.2;
 const axis = new Vector2();
 const velocity = new Vector3();
 let facing = Math.PI;
 let splashClock = 1;
+let dive = 0;                  // 0 at the surface, 1 fully under
+const qDive = new Quaternion();
+const X_AXIS = new Vector3(1, 0, 0);
+let wasUnder = false;
+const AIR_FOG = scene.fog;
+const SEA_FOG = new Fog(0x0d5f78, 2, 34);
 
 game.onUpdate((t) => {
   const dt = t.delta;
@@ -1244,16 +1297,45 @@ game.onUpdate((t) => {
     facing += d * Math.min(1, dt * 9);
   }
   const p = hero.object.position;
-  p.x = Math.max(-70, Math.min(70, p.x + velocity.x * dt));
-  p.z = Math.max(-3, Math.min(46, p.z + velocity.z * dt));   // shallows to dune
-  p.y = profile(p.x, p.z);
-  hero.object.rotation.y = facing;
+
+  // ── IN OR OUT OF THE WATER ──────────────────────────────────────────
+  // Swimming OWNS the body once it floats: it moves the root, sets the
+  // height and the roll, and derives stroke rate from speed so the
+  // swimmer never skates. Out of the water it hands everything straight
+  // back, so the branch below is just "is anybody else driving?".
+  swim.steer(facing, axis.lengthSq() > 0.001 ? (running ? 1 : 0.8) : 0);
+  swim.update(dt, water);
+  const swimming = swim.state !== 'dry';
+
+  if (!swimming) {
+    p.x = Math.max(-70, Math.min(70, p.x + velocity.x * dt));
+    p.z = Math.max(-44, Math.min(46, p.z + velocity.z * dt));
+    p.y = profile(p.x, p.z);
+    hero.object.rotation.y = facing;
+  }
+  p.x = Math.max(-70, Math.min(70, p.x));
+  p.z = Math.max(-44, Math.min(46, p.z));
+
+  // THE DIVE. Hold SPACE and the swimmer goes under — but only where
+  // there is water to go under, so you cannot submerge in the shallows.
+  // Swimming writes the height every frame, so the duck is applied AFTER
+  // it: last writer wins, and the two never argue.
+  const here = water.depthAt(p.x, p.z);
+  const canDive = swim.state === 'swimming' && here > 1.6;
+  const wantDive = canDive && game.input.isDown('Space');
+  dive += ((wantDive ? 1 : 0) - dive) * Math.min(1, dt * 2.2);
+  if (dive > 0.001) {
+    p.y -= dive * Math.min(here - 0.6, 2.4);
+    // Nose down as they go: a body that sinks flat is a corpse.
+    qDive.setFromAxisAngle(X_AXIS, dive * 0.55);
+    hero.object.quaternion.multiply(qDive);
+  }
 
   // THE SWASH IS NOT JUST A PICTURE. depthOver reads the very run-up the
   // shader is drawing, so the walker is caught by the wave you watched
   // arrive: ankle deep it wades short and heavy, deeper it slows right
   // down. One simulation — the water never disagrees with itself.
-  const wade = ocean.depthOver(p.y);
+  const wade = here;
   // The school gives way: a fish that ignores a wading human is scenery.
   schoolAt.copy(schoolHome);
   const toFish = schoolAt.clone().sub(p);
@@ -1262,6 +1344,7 @@ game.onUpdate((t) => {
   if (near < 14) schoolAt.add(toFish.normalize().multiplyScalar((14 - near) * 1.1));
   school.setCenter(schoolAt.x, schoolAt.y, schoolAt.z);
   school.update(dt);
+  for (const f of reefFish) f.update(dt);
 
   // A footfall in water throws a ring; deeper water, bigger splash.
   if (wade > 0.06) {
@@ -1278,20 +1361,33 @@ game.onUpdate((t) => {
     s.ring.material.opacity = Math.max(0, s.life) * 0.5;
     if (s.life <= 0) s.ring.visible = false;
   }
-  loco.update(dt, velocity.clone().multiplyScalar(wade > 0.15 ? 0.45 : 1));
-  feet.weight = wade > 0.25 ? 0 : 1;   // no foot planting once they are in it
-
-  feet.update();                 // plants the feet on SCENA's sand
+  // Ashore the gait drives; afloat Swimming has already muted it and the
+  // mixer only needs the clock. Feet stop planting the moment they are
+  // off the bottom — an IK foot reaching for sand two metres below is
+  // the swimmer doing the splits.
+  loco.update(dt, swimming ? 0 : velocity.clone().multiplyScalar(wade > 0.15 ? 0.45 : 1));
+  feet.weight = swimming || wade > 0.25 ? 0 : 1;
+  feet.update();
 
   const REACH = 6.6;
-  camAim.set(p.x, p.y + 1.4, p.z);
-  camWant.set(Math.sin(camYaw) * REACH, 4.4, Math.cos(camYaw) * REACH);
+  camAim.set(p.x, p.y + 1.4 - dive * 0.5, p.z);
+  camWant.set(Math.sin(camYaw) * REACH, 4.4 - dive * 4.6, Math.cos(camYaw) * REACH);
   ray.set(camAim, camWant.clone().normalize());
   ray.far = REACH;
   const hit = ray.intersectObjects(blockers, true)[0];
   camWant.setLength(hit ? Math.max(3.8, hit.distance - 0.35) : REACH).add(camAim);
   game.camera.position.lerp(camWant, Math.min(1, dt * 7));
   game.camera.lookAt(camAim);
+
+  // UNDER THE SURFACE the world is a different place: the air's long
+  // clear fog gives way to a close blue-green one, and the sky goes with
+  // it. Without this the dive is just a camera that moved down.
+  const under = game.camera.position.y < ocean.level - 0.05;
+  if (under !== wasUnder) {
+    wasUnder = under;
+    scene.fog = under ? SEA_FOG : AIR_FOG;
+    scene.background = new Color(under ? 0x0d5f78 : 0x6fc6e8);
+  }
 });
 game.start();`,
   },
