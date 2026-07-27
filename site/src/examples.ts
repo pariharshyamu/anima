@@ -1001,6 +1001,218 @@ game.start();`
   },
 
   {
+    id: 'miami',
+    title: 'Miami beach walk (playable!)',
+    group: 'Games',
+    code: `// A PLAYABLE HUMANOID ON A SCENA BEACH — phone and desktop, one code
+// path. Drag anywhere to swing the camera; WASD / arrows to walk, hold
+// SHIFT to run. On a phone the joystick and the RUN button appear by
+// themselves (GAMA's TouchControls writes the same virtual axis the
+// keyboard writes, so nothing in the game branches on input type).
+//
+// THE WHOLE TRILOGY IN ONE LOOP: SCENA owns the beach (its props, its
+// sand profile, its sea), ANIMA owns the body (the rig, the blended
+// gaits, the feet), GAMA owns the game (input, camera, the clock) — and
+// the ONLY things crossing between them are a velocity vector and a
+// heightAt function.
+import { createLifeguardTower, createBeachUmbrella, createLounger,
+  createPalm, createBananaTree, createSmallCraft, createOcean,
+  createSurface } from 'scena3d';
+import { createHumanoid, Locomotion, FootIK } from 'anima3d';
+import { Game, TouchControls, FollowCamera } from 'gama3d';
+import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
+  AmbientLight, DirectionalLight, HemisphereLight, Color, Fog,
+  Vector2, Vector3 } from 'three';
+
+const game = new Game();
+const scene = game.world.scene;
+scene.background = new Color(0x6fc6e8);
+scene.fog = new Fog(0x9fd8ea, 260, 900);
+scene.add(new HemisphereLight(0xdff2ff, 0xe8d9a8, 0.75));
+scene.add(new AmbientLight(0xffffff, 0.25));
+const sun = new DirectionalLight(0xfff6e0, 1.35);
+sun.position.set(-30, 40, 22);
+scene.add(sun);
+
+// THE BEACH PROFILE — one function, and everything reads it: the sand
+// mesh, the sea's shore fade, the props' footings, and the player's feet.
+const profile = (x, z) => {
+  const face = Math.max(-4.2, Math.min(2.1, (z - 4) * 0.155));
+  const dune = Math.max(0, Math.min(1, (z - 34) / 18));
+  const dry = Math.max(0, Math.min(1, (z - 7) / 10));
+  return face + dune * dune * 2.8
+    + dry * (Math.sin(x * 0.07) * 0.2 + Math.cos(z * 0.05 + x * 0.02) * 0.16);
+};
+const sandGeo = new PlaneGeometry(330, 220, 100, 80);
+sandGeo.rotateX(-Math.PI / 2);
+{
+  const pos = sandGeo.getAttribute('position');
+  const cols = [];
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i) + 55;
+    pos.setY(i, profile(x, z));
+    const wet = Math.max(0, Math.min(1, (10 - z) / 9));
+    cols.push(1 - wet * 0.3, 1 - wet * 0.28, 1 - wet * 0.24);
+  }
+  sandGeo.setAttribute('color',
+    new (Object.getPrototypeOf(pos).constructor)(new Float32Array(cols), 3));
+  sandGeo.computeVertexNormals();
+}
+const sandMat = createSurface('sand', { seed: 4, color: 0xf3e6c4 });
+sandMat.vertexColors = true;
+const sand = new Mesh(sandGeo, sandMat);
+sand.position.z = 55;
+scene.add(sand);
+
+const ocean = createOcean({
+  level: 0, size: 700, segments: 200, amplitude: 0.42, wavelength: 23,
+  choppiness: 0.6, direction: 180, shore: profile,
+  shallowColor: 0x45dcd2, deepColor: 0x0a6fb4, skyColor: 0x9fd8ea,
+});
+scene.add(ocean.mesh);
+
+// The kit, seated on the profile so nothing floats or sinks.
+const kit = [];
+[[-28, 9, 3], [-3, 7, 7], [25, 10, 11]].forEach(([x, z, seed]) => {
+  const tower = createLifeguardTower({ seed });
+  tower.object.scale.setScalar(1.25);
+  tower.object.position.set(x, profile(x, z), z);
+  tower.object.rotation.y = Math.PI + x / 90;
+  scene.add(tower.object);
+  kit.push(tower);
+});
+for (let row = 0; row < 3; row++) {
+  for (let i = 0; i < 9; i++) {
+    const x = -34 + i * 8.5 + (row % 2) * 3.6;
+    const z = 14 + row * 6.5;
+    const umbrella = createBeachUmbrella({ seed: row * 20 + i });
+    umbrella.object.position.set(x, profile(x, z), z);
+    scene.add(umbrella.object);
+    kit.push(umbrella);
+    for (const side of [-1.05, 1.05]) {
+      const lounger = createLounger({ seed: row * 40 + i * 3 + (side > 0 ? 1 : 0),
+        recline: ['flat', 'reading', 'upright'][(i + row) % 3] });
+      lounger.object.position.set(x + side, profile(x + side, z + 0.6), z + 0.6);
+      lounger.object.rotation.y = Math.PI + side * 0.12;
+      scene.add(lounger.object);
+      kit.push(lounger);
+    }
+  }
+}
+[[-42, 33, 10], [-30, 31, 8.6], [-18, 33, 10.5], [-6, 31, 9],
+ [6, 32, 10.2], [18, 31, 8.8], [30, 33, 10], [42, 31, 9.4]]
+  .forEach(([x, z, h], i) => {
+  const palm = createPalm({ seed: 60 + i, height: h, lean: 0.13 });
+  palm.object.position.set(x, profile(x, z), z);
+  palm.object.rotation.y = (i % 2 ? 1 : -1) * Math.PI / 2;
+  scene.add(palm.object);
+  kit.push(palm);
+});
+[[-36, 39], [-11, 40], [14, 39], [37, 40]].forEach(([x, z], i) => {
+  const banana = createBananaTree({ seed: 80 + i, fruiting: i % 2 === 0 });
+  banana.object.position.set(x, profile(x, z), z);
+  scene.add(banana.object);
+  kit.push(banana);
+});
+[[-36, 3], [-19, 1], [-2, 4], [15, 2], [32, 5]].forEach(([x, seed], i) => {
+  const hue = [0xff9ec4, 0x6fdcd2, 0xffd166, 0xa9b8ff, 0xffab7a][i];
+  const wall = new MeshStandardMaterial({ color: hue, roughness: 0.85 });
+  const trim = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
+  const storeys = 2 + (seed % 3), w = 11 + (seed % 4);
+  const block = new Mesh(new BoxGeometry(w, storeys * 3.4, 9), wall);
+  block.position.set(x, 2.6 + storeys * 1.7, 54);
+  scene.add(block);
+  for (let f = 1; f <= storeys; f++) {
+    const brow = new Mesh(new BoxGeometry(w + 0.9, 0.35, 9.6), trim);
+    brow.position.set(x, 2.6 + f * 3.4 - 0.5, 54);
+    scene.add(brow);
+  }
+});
+const boat = createSmallCraft({ fit: 'open', length: 4.6, seed: 12 });
+boat.object.position.set(34, profile(34, 8) + 0.2, 8);
+boat.object.rotation.set(0, 2.5, 0.09);
+scene.add(boat.object);
+
+// ── THE PLAYER ────────────────────────────────────────────────────────
+// A seeded ANIMA body, its synthesized gaits, and feet that read SCENA's
+// ground. Nothing here knows it is in a game.
+const hero = createHumanoid({ seed: 27, height: 1.78,
+  outfit: { top: 'shirt', bottom: 'shorts', sleeves: 'short' } });
+hero.object.position.set(0, profile(0, 20), 20);
+scene.add(hero.object);
+const loco = new Locomotion(hero);
+const feet = new FootIK(hero, { ground: profile, hipsAdapt: 0.5 });
+
+// GAMA's touch layer: a joystick and a RUN button, on phones only. The
+// keyboard keeps working — the game reads ONE axis either way.
+new TouchControls(game.input, {
+  buttons: [{ label: 'RUN', code: 'ShiftLeft', css: 'right:26px;bottom:38px' }],
+});
+
+// Drag to swing the camera. (On a phone the joystick owns the bottom-left
+// corner, so drags elsewhere are look-around — no mode switch needed.)
+// Yaw 0 puts the camera BEHIND the walker, looking out over the water:
+// push forward and you walk away from the camera, down the beach.
+let camYaw = 0;
+let dragging = false;
+const canvas = game.renderer.domElement;
+canvas.addEventListener('pointerdown', (e) => { dragging = e.button === 0; });
+window.addEventListener('pointerup', () => { dragging = false; });
+window.addEventListener('pointermove', (e) => {
+  if (dragging) camYaw -= e.movementX * 0.005;
+});
+
+// High enough to look OVER the umbrellas: at shoulder height the kit
+// keeps stepping between the camera and the walker.
+const follow = new FollowCamera(game.camera, hero.object, {
+  offset: new Vector3(0, 4.6, 6.6), lookOffset: new Vector3(0, 1.4, 0),
+  stiffness: 6,
+});
+
+const WALK = 1.5, RUN = 4.2;
+const axis = new Vector2();
+const velocity = new Vector3();
+let facing = Math.PI;
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  ocean.update(dt);
+  for (const prop of kit) prop.update(dt);
+
+  // ONE axis, whatever wrote it: keys, gamepad stick or thumb.
+  game.input.moveAxis(axis);
+  const running = game.input.isDown('ShiftLeft') || game.input.isDown('ShiftRight');
+  const speed = running ? RUN : WALK;
+
+  // Camera-relative: "forward" is wherever you are looking.
+  const sin = Math.sin(camYaw), cos = Math.cos(camYaw);
+  velocity.set(
+    (axis.x * cos - axis.y * sin) * speed, 0,
+    (axis.x * -sin - axis.y * cos) * speed
+  );
+  if (axis.lengthSq() > 0.001) {
+    // Turn toward travel by the shortest way, never snapping.
+    const want = Math.atan2(velocity.x, velocity.z);
+    let d = want - facing;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    facing += d * Math.min(1, dt * 9);
+  }
+  const p = hero.object.position;
+  p.x = Math.max(-70, Math.min(70, p.x + velocity.x * dt));
+  p.z = Math.max(0, Math.min(46, p.z + velocity.z * dt));    // shallows to dune
+  p.y = profile(p.x, p.z);
+  hero.object.rotation.y = facing;
+
+  loco.update(dt, velocity);     // ANIMA blends idle → walk → run
+  feet.update();                 // …and plants the feet on SCENA's sand
+
+  follow.offset.set(Math.sin(camYaw) * 6.6, 4.6, Math.cos(camYaw) * 6.6);
+  follow.update(dt);
+});
+game.start();`,
+  },
+
+  {
     id: 'club',
     title: 'The club (web radio · DJ tiles · dance styles)',
     group: 'Games',

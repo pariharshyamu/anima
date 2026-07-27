@@ -73,7 +73,7 @@
     "@types/node": "^26.1.1",
     "@types/three": "^0.165.0",
     "gama3d": "^0.20.0",
-    "scena3d": "^0.78.0",
+    "scena3d": "^0.83.0",
     "three": "^0.165.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
