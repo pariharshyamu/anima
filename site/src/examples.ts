@@ -1073,9 +1073,12 @@ const ocean = createOcean({
   shallowColor: 0x51e3d6, deepColor: 0x0a6fb4, skyColor: 0x9fd8ea,
   // Breakers running in, and a waterline that runs up the sand and drains.
   surf: { breakDepth: 1.8, runUp: 0.45, period: 8, bands: 2.4 },
-  // A WIDE turquoise shelf, and the chop that breaks the light on it.
+  // A WIDE turquoise shelf, the chop that breaks the light on it, and
+  // water you can see the bottom through — which is the whole point of
+  // swimming out to a reef.
   shoalDepth: 13,
   ripples: { strength: 0.4, scale: 0.8 },
+  clarity: 0.8,
 });
 
 // LIFE IN THE SHALLOWS. A school out on the turquoise shelf — and it
@@ -1087,8 +1090,11 @@ const school = createFlock({
   speed: 2.2, size: 0.42, color: 0x86d8e8, seed: 5,
 });
 scene.add(school.object);
-const schoolHome = new Vector3(6, -1.2, -22);
-const schoolAt = schoolHome.clone();
+// One list, so a school added later cannot forget to be shy.
+const schools = [{ flock: school, home: new Vector3(6, -1.2, -22),
+  shy: 14, give: 1.1 }];
+const scatterAt = new Vector3();
+const away = new Vector3();
 
 // THE REEF — somewhere to swim TO. Exploring needs a destination, so the
 // deep water gets a patch of coral heads and three schools of different
@@ -1117,7 +1123,12 @@ const reefFish = [
   createFlock({ type: 'fish', count: 30, center: [8, -1.9, -27],
     bounds: [5, 0.6, 5], speed: 1.8, size: 0.38, color: 0x7ac6ff, seed: 13 }),
 ];
-for (const f of reefFish) scene.add(f.object);
+reefFish.forEach((f, i) => {
+  scene.add(f.object);
+  const home = [[4, -2.4, -30], [1, -3.1, -33], [8, -1.9, -27]][i];
+  // Shy, but loyal: they part at four metres and re-form behind you.
+  schools.push({ flock: f, home: new Vector3(...home), shy: 4.5, give: 0.9 });
+});
 
 // SPLASH RINGS: rings that bloom where a foot breaks the surface and
 // fade as they spread. Pooled — a beach walk would otherwise leak meshes
@@ -1336,15 +1347,21 @@ game.onUpdate((t) => {
   // arrive: ankle deep it wades short and heavy, deeper it slows right
   // down. One simulation — the water never disagrees with itself.
   const wade = here;
-  // The school gives way: a fish that ignores a wading human is scenery.
-  schoolAt.copy(schoolHome);
-  const toFish = schoolAt.clone().sub(p);
-  toFish.y = 0;
-  const near = toFish.length();
-  if (near < 14) schoolAt.add(toFish.normalize().multiplyScalar((14 - near) * 1.1));
-  school.setCenter(schoolAt.x, schoolAt.y, schoolAt.z);
-  school.update(dt);
-  for (const f of reefFish) f.update(dt);
+  // EVERY school gives way, not just the one in the shallows: a fish that
+  // ignores a diver in its face is scenery. Reef fish hold tighter to
+  // home than the shelf school — a reef IS the thing they will not
+  // leave — so they bulge aside and slide straight back.
+  for (const sc of schools) {
+    scatterAt.copy(sc.home);
+    away.copy(scatterAt).sub(p);
+    const near = away.length();
+    if (near < sc.shy) {
+      away.normalize().multiplyScalar((sc.shy - near) * sc.give);
+      scatterAt.add(away);
+    }
+    sc.flock.setCenter(scatterAt.x, scatterAt.y, scatterAt.z);
+    sc.flock.update(dt);
+  }
 
   // A footfall in water throws a ring; deeper water, bigger splash.
   if (wade > 0.06) {
@@ -1369,13 +1386,13 @@ game.onUpdate((t) => {
   feet.weight = swimming || wade > 0.25 ? 0 : 1;
   feet.update();
 
-  const REACH = 6.6;
-  camAim.set(p.x, p.y + 1.4 - dive * 0.5, p.z);
-  camWant.set(Math.sin(camYaw) * REACH, 4.4 - dive * 4.6, Math.cos(camYaw) * REACH);
+  const REACH = 4.3;
+  camAim.set(p.x, p.y + 1.25 - dive * 0.35, p.z);
+  camWant.set(Math.sin(camYaw) * REACH, 2.6 - dive * 2.9, Math.cos(camYaw) * REACH);
   ray.set(camAim, camWant.clone().normalize());
   ray.far = REACH;
   const hit = ray.intersectObjects(blockers, true)[0];
-  camWant.setLength(hit ? Math.max(3.8, hit.distance - 0.35) : REACH).add(camAim);
+  camWant.setLength(hit ? Math.max(2.6, hit.distance - 0.3) : REACH).add(camAim);
   game.camera.position.lerp(camWant, Math.min(1, dt * 7));
   game.camera.lookAt(camAim);
 
