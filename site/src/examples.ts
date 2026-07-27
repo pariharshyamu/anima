@@ -1017,12 +1017,12 @@ game.start();`
 // heightAt function.
 import { createLifeguardTower, createBeachUmbrella, createLounger,
   createPalm, createBananaTree, createSmallCraft, createOcean,
-  createSurface } from 'scena3d';
+  createFlock, createSurface } from 'scena3d';
 import { createHumanoid, Locomotion, FootIK } from 'anima3d';
 import { Game, TouchControls } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, HemisphereLight, Color, Fog,
-  Raycaster, Vector2, Vector3 } from 'three';
+  Raycaster, RingGeometry, Vector2, Vector3 } from 'three';
 
 const game = new Game();
 const scene = game.world.scene;
@@ -1069,10 +1069,46 @@ scene.add(sand);
 const ocean = createOcean({
   level: 0, size: 700, segments: 200, amplitude: 0.42, wavelength: 23,
   choppiness: 0.6, direction: 180, shore: profile,
-  shallowColor: 0x45dcd2, deepColor: 0x0a6fb4, skyColor: 0x9fd8ea,
+  shallowColor: 0x51e3d6, deepColor: 0x0a6fb4, skyColor: 0x9fd8ea,
   // Breakers running in, and a waterline that runs up the sand and drains.
   surf: { breakDepth: 1.8, runUp: 0.45, period: 8, bands: 2.4 },
+  // A WIDE turquoise shelf, and the chop that breaks the light on it.
+  shoalDepth: 13,
+  ripples: { strength: 0.4, scale: 0.8 },
 });
+
+// LIFE IN THE SHALLOWS. A school out on the turquoise shelf — and it
+// KNOWS you are there: wade toward it and it slides away, which is the
+// single cheapest thing that makes water feel inhabited rather than
+// decorated.
+const school = createFlock({
+  type: 'fish', count: 70, center: [6, -1.2, -22], bounds: [16, 0.9, 12],
+  speed: 2.2, size: 0.42, color: 0x86d8e8, seed: 5,
+});
+scene.add(school.object);
+const schoolHome = new Vector3(6, -1.2, -22);
+const schoolAt = schoolHome.clone();
+
+// SPLASH RINGS: rings that bloom where a foot breaks the surface and
+// fade as they spread. Pooled — a beach walk would otherwise leak meshes
+// for as long as you play.
+const ringGeo = new RingGeometry(0.18, 0.3, 14).rotateX(-Math.PI / 2);
+const splashes = [];
+for (let i = 0; i < 14; i++) {
+  const ring = new Mesh(ringGeo, new MeshStandardMaterial({
+    color: 0xffffff, transparent: true, opacity: 0, roughness: 0.6 }));
+  ring.visible = false;
+  scene.add(ring);
+  splashes.push({ ring, life: 0 });
+}
+let splashNext = 0;
+const splash = (x, y, z) => {
+  const s = splashes[splashNext = (splashNext + 1) % splashes.length];
+  s.ring.position.set(x, y + 0.03, z);
+  s.ring.scale.setScalar(0.6);
+  s.ring.visible = true;
+  s.life = 1;
+};
 scene.add(ocean.mesh);
 
 // The kit, seated on the profile so nothing floats or sinks. The blocker
@@ -1182,6 +1218,7 @@ const WALK = 1.5, RUN = 4.2;
 const axis = new Vector2();
 const velocity = new Vector3();
 let facing = Math.PI;
+let splashClock = 1;
 
 game.onUpdate((t) => {
   const dt = t.delta;
@@ -1217,6 +1254,30 @@ game.onUpdate((t) => {
   // arrive: ankle deep it wades short and heavy, deeper it slows right
   // down. One simulation — the water never disagrees with itself.
   const wade = ocean.depthOver(p.y);
+  // The school gives way: a fish that ignores a wading human is scenery.
+  schoolAt.copy(schoolHome);
+  const toFish = schoolAt.clone().sub(p);
+  toFish.y = 0;
+  const near = toFish.length();
+  if (near < 14) schoolAt.add(toFish.normalize().multiplyScalar((14 - near) * 1.1));
+  school.setCenter(schoolAt.x, schoolAt.y, schoolAt.z);
+  school.update(dt);
+
+  // A footfall in water throws a ring; deeper water, bigger splash.
+  if (wade > 0.06) {
+    splashClock -= dt * (2.2 + velocity.length() * 0.7);
+    if (splashClock <= 0) {
+      splashClock = 1;
+      splash(p.x, ocean.level + ocean.runUp * 0.3, p.z);
+    }
+  }
+  for (const s of splashes) {
+    if (s.life <= 0) continue;
+    s.life -= dt * 1.4;
+    s.ring.scale.setScalar(0.6 + (1 - s.life) * 2.6);
+    s.ring.material.opacity = Math.max(0, s.life) * 0.5;
+    if (s.life <= 0) s.ring.visible = false;
+  }
   loco.update(dt, velocity.clone().multiplyScalar(wade > 0.15 ? 0.45 : 1));
   feet.weight = wade > 0.25 ? 0 : 1;   // no foot planting once they are in it
 
