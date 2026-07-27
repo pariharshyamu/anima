@@ -33,6 +33,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'styles-the-count-is-not-the-beat': 'club',
   'street-the-hit-and-the-freeze': 'club',
   'the-two-classicals-where-the-dance-keeps-its-time': 'club',
+  'the-illusions-and-the-house': 'club',
   'stepping-on-and-off-the-floor': 'club',
 };
 

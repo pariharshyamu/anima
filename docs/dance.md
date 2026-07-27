@@ -106,6 +106,14 @@ dancer.onStamp(() => tiles.feed({ bass: 0.9, treble: 0.7, beat: true, ... }));
 
 Until now the pulse has only flowed one way — music to body. A stamp flows *back*: the floor can hear the dancer. In the club playground the Bharatanatyam dancer's strikes fire rings through the DJ tiles, which is the trilogy's first piece of motion the scenery reacts to.
 
+## The illusions and the house
+
+The illusion styles are the first that are *about lying*, and the lie is stated as data. `moonwalk`'s chart says the feet **walk forward**; its `travel` channel says the body **glides back**; the contradiction is the dance — four counts of the lie, four counts of honest walking to come home, juxtaposed every cycle. `runningMan` runs at full stride and goes nowhere: every count one foot drives forward with the knee high while the *other* — a second, quieter chart commitment — slides back under the body without a lift. `glide` crosses a metre of floor with the knees barely bent and no step anybody can see.
+
+The machinery behind all three is one deliberate bypass: **travel is not weight**. The hip-answer lag that makes salsa salsa never sees the glide, so a gliding body slides as one rigid piece — which is exactly what makes a moonwalk read as a moonwalk, and it is verified: a crossing glide carries less than half the hip roll of a salsa basic.
+
+`house` is two clocks in one body: **the jack** — the torso waving at *double* the count, each segment a phase step behind the one below (the wave machinery turned vertical) — over fast, light skating feet on the single count. The ratio between the two clocks is the style.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

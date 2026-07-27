@@ -121,12 +121,21 @@ export type DanceStyle =
   /** Phrase time: the dancer arrives EARLY and the music catches up. */
   | 'ballet'
   /** Subdivision time: araimandi held, stamps on the ta-ka-di-mi. */
-  | 'bharatanatyam';
+  | 'bharatanatyam'
+  /** The legs walk forward; the body glides back. Apparent weight is a lie. */
+  | 'moonwalk'
+  /** Flat out, going nowhere: the run without the travel. */
+  | 'runningMan'
+  /** Sideways on rails — no steps anybody can see. */
+  | 'glide'
+  /** The jack: the torso at double time over fast, light feet. */
+  | 'house';
 
 export const DANCE_STYLES: DanceStyle[] = [
   'club', 'salsa', 'waltz', 'bhangra',
   'popping', 'locking', 'waving', 'tutting', 'toprock',
   'ballet', 'bharatanatyam',
+  'moonwalk', 'runningMan', 'glide', 'house',
 ];
 
 export interface DanceOptions {
@@ -341,6 +350,12 @@ interface CountStep {
   dz?: number;
   /** An accented count (the ONE, a stamp) — the upper body leans into it. */
   accent?: boolean;
+  /**
+   * A second, quieter commitment for the OTHER foot on the same count — the
+   * planted foot that slides back while the free one steps forward, which is
+   * the whole running man.
+   */
+  also?: { foot: 'L' | 'R'; dx?: number; dz?: number };
 }
 
 interface StyleSpec {
@@ -371,6 +386,13 @@ interface StyleSpec {
    * `onStamp` listeners, because a stamp is an event the world can hear.
    */
   stamps?: number[];
+  /**
+   * Root motion the hips do NOT answer, in stride units — the glides. The
+   * weight-lag machinery is deliberately bypassed: a body that slides as one
+   * rigid piece is exactly what makes a moonwalk look wrong in the right
+   * way. Must be periodic with zero net drift; dancers stay on their spot.
+   */
+  travel?: (c: number, e: number) => { x: number; z: number };
 }
 
 /** Signed distance from `c` back to the most recent stamp, or Infinity. */
@@ -903,6 +925,158 @@ const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
     },
     lift: () => 0,
   },
+
+  // THE ILLUSION, stated as data: the chart says the feet WALK FORWARD, the
+  // travel says the body GLIDES BACK, and the contradiction is the dance.
+  // Four counts of moonwalk, then four of honest forward walking to come
+  // home — the lie and the truth, juxtaposed every cycle.
+  moonwalk: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.45,
+    hipAnswer: 0,
+    chart: [
+      { foot: 'L', dz: 0.8 },
+      { foot: 'R', dz: 0.8 },
+      { foot: 'L', dz: 0.8 },
+      { foot: 'R', dz: 0.8 },
+      { foot: 'L', dz: 0.4 },
+      { foot: 'R', dz: 0.4 },
+      { foot: 'L', dz: 0 },
+      { foot: 'R', dz: 0 },
+    ],
+    // Back a full stride over counts 0–4, forward again over 4–8. Zero mean.
+    travel: (c) => ({ x: 0, z: c < 4 ? -(c / 4) * 2.2 : -((8 - c) / 4) * 2.2 }),
+    posture: (e) => ({
+      Chest: [[X, 0.1 * e]],
+      Head: [[X, -0.08 * e]],
+    }),
+    upper: (c, e, s) => {
+      // The gliding half keeps the arms eerily still; the walking half swings
+      // them honestly — the same contrast the feet are making.
+      const gliding = c < 4;
+      const sw = Math.sin(c * Math.PI) * e * (gliding ? 0.15 : 0.6);
+      return {
+        LeftArm: [[Z, -HANG + 0.1 * e], [X, sw]],
+        RightArm: [[Z, HANG - 0.1 * e], [X, -sw]],
+        LeftForeArm: [[Z, -0.15 - (gliding ? 0 : 0.2 * e)]],
+        RightForeArm: [[Z, 0.15 + (gliding ? 0 : 0.2 * e)]],
+        // The trailing heel pops UP on the glide — the push the eye misses.
+        [c % 2 === 0 ? 'RightFoot' : 'LeftFoot']: [[X, gliding ? 0.55 : 0]],
+      } as Shape;
+    },
+    lift: () => 0,
+  },
+
+  // Flat out, going nowhere. Every count one foot drives forward with the
+  // knee high while the OTHER — the `also` — slides back under the body, so
+  // the legs scissor at full stride and the hips never leave the spot.
+  runningMan: {
+    beatsPerBar: 4,
+    counts: 4,
+    reach: 0.7,
+    hipAnswer: 0,
+    chart: [
+      { foot: 'L', dz: 1, accent: true, also: { foot: 'R', dz: -0.7 } },
+      { foot: 'R', dz: 1, accent: true, also: { foot: 'L', dz: -0.7 } },
+      { foot: 'L', dz: 1, accent: true, also: { foot: 'R', dz: -0.7 } },
+      { foot: 'R', dz: 1, accent: true, also: { foot: 'L', dz: -0.7 } },
+    ],
+    posture: (e) => ({
+      Chest: [[X, 0.12 * e]],
+    }),
+    upper: (c, e, s) => {
+      const pump = Math.sin(c * Math.PI * 2) * e * s;
+      const bounce = Math.exp(-(c % 1) * 5) * e;
+      return {
+        LeftArm: [[Z, -HANG + 0.3 * e], [X, pump]],
+        RightArm: [[Z, HANG - 0.3 * e], [X, -pump]],
+        LeftForeArm: [[Z, -0.85 * e]],
+        RightForeArm: [[Z, 0.85 * e]],
+        Head: [[X, 0.06 * bounce]],
+        Chest: [[X, 0.05 * bounce]],
+      };
+    },
+    lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 4)) * 0.035 * e,
+  },
+
+  // Sideways on rails. The knees barely bend, the feet never visibly step,
+  // and the body crosses a metre of floor anyway — left for four counts,
+  // right for four, home every cycle by construction.
+  glide: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.3,
+    hipAnswer: 0,
+    chart: new Array(8).fill({}),
+    travel: (c) => ({
+      x: c < 4 ? Math.sin((c / 4) * Math.PI) * 2.4 : -Math.sin(((c - 4) / 4) * Math.PI) * 2.4,
+      z: 0,
+    }),
+    posture: (e) => ({
+      LeftLeg: [[X, 0.06 * e]],
+      RightLeg: [[X, 0.06 * e]],
+    }),
+    upper: (c, e, s) => {
+      // Arms out like a wire-walker, tilting INTO the travel; the trailing
+      // heel lifts, which is the entire visible mechanism.
+      const dir = c < 4 ? 1 : -1;
+      const t = Math.sin(((c % 4) / 4) * Math.PI);
+      return {
+        LeftArm: [[Z, -0.35 - 0.15 * dir * t * e]],
+        RightArm: [[Z, 0.35 - 0.15 * dir * t * e]],
+        LeftForeArm: [[X, 0.2 * Math.sin(c * Math.PI) * e * s]],
+        RightForeArm: [[X, -0.2 * Math.sin(c * Math.PI) * e * s]],
+        Chest: [[Z, 0.08 * dir * t * e]],
+        Head: [[Z, -0.06 * dir * t * e]],
+        [dir > 0 ? 'RightFoot' : 'LeftFoot']: [[X, 0.45 * t]],
+      } as Shape;
+    },
+    lift: () => 0,
+  },
+
+  // House: THE JACK — the torso waves at DOUBLE the count, rippling spine to
+  // head a fraction late, over fast light skating feet. Two clocks in one
+  // body, and the ratio between them is the style.
+  house: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0.35,
+    hipAnswer: 0.3,
+    chart: [
+      { foot: 'L', dx: 0.8, dz: 0.3 },
+      { foot: 'R', dx: -0.4 },
+      { foot: 'R', dx: -0.8, dz: 0.3 },
+      { foot: 'L', dx: 0.4 },
+      { foot: 'L', dx: 0.8, dz: -0.3 },
+      { foot: 'R', dx: -0.4 },
+      { foot: 'R', dx: -0.8, dz: -0.3 },
+      { foot: 'L', dx: 0.4 },
+    ],
+    posture: (e) => ({
+      LeftUpLeg: [[X, -0.08 * e]],
+      RightUpLeg: [[X, -0.08 * e]],
+      LeftLeg: [[X, 0.16 * e]],
+      RightLeg: [[X, 0.16 * e]],
+    }),
+    upper: (c, e, s) => {
+      // The jack: 2x the count, and each segment a phase step behind the one
+      // below — the wave machinery, turned vertical and doubled.
+      const th = c * Math.PI * 2 * 2;
+      const jack = (delay: number) => Math.sin(th - delay) * 0.16 * e;
+      return {
+        Spine: [[X, jack(0)]],
+        Chest: [[X, jack(0.7)]],
+        Neck: [[X, jack(1.3)]],
+        Head: [[X, jack(1.9)]],
+        LeftArm: [[Z, -HANG + 0.35 * e], [X, jack(1.0) * s]],
+        RightArm: [[Z, HANG - 0.35 * e], [X, -jack(1.0) * s]],
+        LeftForeArm: [[Z, -0.5 * e]],
+        RightForeArm: [[Z, 0.5 * e]],
+      };
+    },
+    lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 4)) * 0.02 * e,
+  },
 };
 
 /** Every bone any move touches — captured for entry/exit blending. */
@@ -969,6 +1143,8 @@ export class Dance {
   private lastCount = -1;
   private lastCycleTime = -1;
   private stampCbs = new Set<() => void>();
+  /** This frame's glide offset (metres), applied to the root, never the hips' answer. */
+  private travelNow = { x: 0, z: 0 };
 
   constructor(rig: HumanoidRig, options: DanceOptions = {}) {
     this.rig = rig;
@@ -1000,6 +1176,7 @@ export class Dance {
     this.carry = { x: 0, z: 0 };
     this.hipEcho = { x: 0, z: 0 };
     this.lastCycleTime = -1;
+    this.travelNow = { x: 0, z: 0 };
   }
 
   /**
@@ -1109,8 +1286,8 @@ export class Dance {
     }
     const hips = this.rig.bones.Hips;
     hips.position.y = this.entryHips.y + (this.baseHipsY - frame.drop - this.entryHips.y) * w;
-    hips.position.x = this.entryHips.x + this.carry.x * w;
-    hips.position.z = this.entryHips.z + this.carry.z * w;
+    hips.position.x = this.entryHips.x + (this.carry.x + this.travelNow.x) * w;
+    hips.position.z = this.entryHips.z + (this.carry.z + this.travelNow.z) * w;
   }
 
   /**
@@ -1149,6 +1326,13 @@ export class Dance {
         f.lift = 1;
         this.support = entry.foot === 'L' ? 'R' : 'L';
       }
+      if (entry.also) {
+        // The quiet half of the illusion: the planted foot re-marks WITHOUT
+        // a lift — it slides, it does not step, and nobody is meant to see.
+        const f = this.feet[entry.also.foot];
+        f.tx = (entry.also.dx ?? 0) * stride * 0.6;
+        f.tz = (entry.also.dz ?? 0) * stride;
+      }
     }
 
     // Feet chase their marks inside the count; the lift arcs and lands.
@@ -1170,14 +1354,23 @@ export class Dance {
     this.hipEcho.x += (this.carry.x - this.hipEcho.x) * echo;
     this.hipEcho.z += (this.carry.z - this.hipEcho.z) * echo;
 
+    // The glides: root motion ON TOP of the weight, which the hip-answer
+    // machinery never sees — a body that slides as one rigid piece is what
+    // makes a moonwalk read as a moonwalk.
+    const tv = spec.travel ? spec.travel(c, e) : { x: 0, z: 0 };
+    this.travelNow.x = tv.x * stride * 0.6;
+    this.travelNow.z = tv.z * stride;
+    const rootX = this.carry.x + this.travelNow.x;
+    const rootZ = this.carry.z + this.travelNow.z;
+
     // Pose the legs to REACH the feet: thighs from the offsets, knees from
     // the lift, ankles keeping the soles honest.
     const legs: Shape = {};
     for (const side of ['L', 'R'] as const) {
       const f = this.feet[side];
       const pre = side === 'L' ? 'Left' : 'Right';
-      const relX = f.x - this.carry.x;
-      const relZ = f.z - this.carry.z;
+      const relX = f.x - rootX;
+      const relZ = f.z - rootZ;
       const fwd = -Math.asin(Math.max(-0.9, Math.min(0.9, relZ / this.legLen)));
       const out = Math.asin(Math.max(-0.9, Math.min(0.9, relX / this.legLen))) * (side === 'L' ? 1 : 1);
       const knee = f.lift * 0.9 + Math.abs(fwd) * 0.25;

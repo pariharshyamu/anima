@@ -796,3 +796,146 @@ describe('the two classicals', () => {
     }
   });
 });
+
+describe('the illusions and the house', () => {
+  const styled = (style: 'moonwalk' | 'runningMan' | 'glide' | 'house', warm = 2) => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle(style);
+    d.start();
+    groove(d, warm);
+    return { rig, d };
+  };
+
+  it('the four are on the list', async () => {
+    const { DANCE_STYLES } = await import('../src');
+    for (const s of ['moonwalk', 'runningMan', 'glide', 'house']) {
+      expect(DANCE_STYLES).toContain(s);
+    }
+  });
+
+  it('the moonwalk: the body travels backward while the chart walks forward', () => {
+    const { rig, d } = styled('moonwalk');
+    const zs: number[] = [];
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      zs.push(rig.bones.Hips.position.z);
+    }
+    // Well back of home at the glide's deepest…
+    expect(Math.min(...zs)).toBeLessThan(-0.15);
+    // …and never meaningfully in FRONT of it: the walk only recovers.
+    expect(Math.max(...zs)).toBeLessThan(0.08);
+    // Home again by cycle's end (mean stays near the spot).
+    const mean = zs.reduce((a, b) => a + b, 0) / zs.length;
+    expect(mean).toBeGreaterThan(Math.min(...zs));
+  });
+
+  it('the running man goes flat out and goes nowhere', () => {
+    const { rig, d } = styled('runningMan');
+    let minThigh = Infinity;
+    let maxThigh = -Infinity;
+    const zs: number[] = [];
+    for (let i = 0; i < 6 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.8, i % 30 === 0, 120));
+      const q = rig.bones.LeftUpLeg.quaternion;
+      const pitch = 2 * Math.asin(Math.max(-1, Math.min(1, q.x)));
+      minThigh = Math.min(minThigh, pitch);
+      maxThigh = Math.max(maxThigh, pitch);
+      zs.push(rig.bones.Hips.position.z);
+    }
+    // The legs scissor through a big arc…
+    expect(maxThigh - minThigh).toBeGreaterThan(0.5);
+    // …and the body stays on its spot.
+    expect(Math.max(...zs.map(Math.abs))).toBeLessThan(0.09);
+  });
+
+  it('the glide crosses the floor and comes home, with the knees barely bent', () => {
+    const { rig, d } = styled('glide');
+    const xs: number[] = [];
+    let maxKnee = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      xs.push(rig.bones.Hips.position.x);
+      const q = rig.bones.LeftLeg.quaternion;
+      maxKnee = Math.max(maxKnee, 2 * Math.asin(Math.min(1, Math.abs(q.x))));
+    }
+    // Both directions, a real distance…
+    expect(Math.max(...xs)).toBeGreaterThan(0.1);
+    expect(Math.min(...xs)).toBeLessThan(-0.1);
+    // …with less knee than a single club bounce uses.
+    expect(maxKnee).toBeLessThan(0.55);
+  });
+
+  it('the glide is rigid: the hips do not answer the travel', () => {
+    // hipAnswer machinery reacts to WEIGHT; travel bypasses it. A gliding
+    // body slides as one piece — measure hip roll while crossing.
+    const { rig, d } = styled('glide');
+    let maxRoll = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const q = rig.bones.Hips.quaternion;
+      maxRoll = Math.max(maxRoll, Math.abs(2 * Math.asin(Math.max(-1, Math.min(1, q.z)))));
+    }
+    const salsaRig = createHumanoid({ seed: 4 });
+    const salsa = new Dance(salsaRig, { seed: 3, bpm: 120 });
+    salsa.setStyle('salsa');
+    salsa.start();
+    groove(salsa, 2);
+    let salsaRoll = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      salsa.update(1 / 60, pulseAt(0.7, false, 120));
+      const q = salsaRig.bones.Hips.quaternion;
+      salsaRoll = Math.max(salsaRoll, Math.abs(2 * Math.asin(Math.max(-1, Math.min(1, q.z)))));
+    }
+    expect(salsaRoll).toBeGreaterThan(maxRoll * 2);
+  });
+
+  it('the jack runs at double the count', () => {
+    // Count chest pitch direction changes per count: the jack turns twice
+    // per count (4 sign flips); the waltz sways once per CYCLE.
+    const flipsPerCount = (style: 'house' | 'waltz') => {
+      const rig = createHumanoid({ seed: 4 });
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 2);
+      let flips = 0;
+      let counts = 0;
+      let lastSign = 0;
+      let lastCount = -1;
+      let prevPitch = 0;
+      for (let i = 0; i < 8 * 60; i++) {
+        d.update(1 / 60, pulseAt(0.7, false, 120));
+        const pitch = rig.bones.Chest.quaternion.x;
+        const v = pitch - prevPitch;
+        prevPitch = pitch;
+        const sign = v > 1e-6 ? 1 : v < -1e-6 ? -1 : lastSign;
+        if (lastSign !== 0 && sign !== lastSign) flips++;
+        lastSign = sign;
+        if (d.count !== lastCount) {
+          lastCount = d.count;
+          counts++;
+        }
+      }
+      return flips / Math.max(1, counts);
+    };
+    expect(flipsPerCount('house')).toBeGreaterThan(flipsPerCount('waltz') * 2.5);
+  });
+
+  it('all four stop clean and come home', () => {
+    for (const style of ['moonwalk', 'runningMan', 'glide', 'house'] as const) {
+      const rig = createHumanoid({ seed: 4 });
+      const home = rig.bones.Hips.position.clone();
+      const entry = rig.bones.LeftUpLeg.quaternion.clone();
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 3.4); // deliberately mid-glide
+      d.stop();
+      groove(d, 2);
+      expect(Math.abs(rig.bones.Hips.position.x - home.x), style).toBeLessThan(0.01);
+      expect(Math.abs(rig.bones.Hips.position.z - home.z), style).toBeLessThan(0.01);
+      expect(rig.bones.LeftUpLeg.quaternion.angleTo(entry), style).toBeLessThan(0.02);
+    }
+  });
+});

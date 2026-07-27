@@ -1057,6 +1057,8 @@ const dancers = [];
   [-3.4, 4.6, 'waving'], [3.4, 4.6, 'toprock'],
   [0.3, 5.6, 'locking'], [-0.9, 3.0, 'club'],
   [-4.6, 3.2, 'ballet'], [4.6, 3.4, 'bharatanatyam'],
+  [-2.2, 6.0, 'moonwalk'], [2.4, 6.2, 'runningMan'],
+  [-4.2, 5.8, 'glide'], [4.2, 5.9, 'house'],
 ].forEach(([x, z, style], i) => {
   const h = createHumanoid({ seed: 640 + i });
   h.object.position.set(x, 0, z);
@@ -1075,8 +1077,9 @@ const bharata = dancers[dancers.length - 1];
 bharata.onStamp(() =>
   tiles.feed({ bass: 0.9, mid: 0.2, treble: 0.7, beat: true, bpm: 0 }));
 
-// Press S to send EVERYBODY round the styles together — all eleven idioms,
-// ballroom to street to the two classicals, on the same beat clock.
+// Press S to send EVERYBODY round the styles together — fifteen idioms,
+// ballroom, street, the two classicals, the illusions and the house, all
+// on the same beat clock.
 let styleIdx = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 's') return;
