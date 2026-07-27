@@ -1169,8 +1169,8 @@ game.start();`,
 // (most of the way fast, the last five percent at its own pace), a breath
 // that visibly lifts the chest, and a seeded balance sway — small on two
 // feet, three times larger on one, absent entirely lying down.
-import { createHumanoid, Asana, strikePose, ASANAS, ASANA_NAMES,
-  SURYA_NAMASKAR } from 'anima3d';
+import { createHumanoid, Asana, YogaClass, strikePose, ASANAS,
+  ASANA_NAMES } from 'anima3d';
 import { Game } from 'gama3d';
 import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
   AmbientLight, DirectionalLight, Color, Fog } from 'three';
@@ -1198,40 +1198,48 @@ const mat = (x, z) => {
   scene.add(m);
 };
 
-// THE CLASS (hand-laid for now): a rank of holders, each in a different
-// asana — standing, balancing, folded, prone, seated — every one of them
-// breathing on its own seeded clock. Nobody is frozen; watch the tree
-// pose WORK for its balance while savasana lies perfectly still.
-const HOLDS = ['mountain', 'tree', 'warrior2', 'triangle',
-  'downwardDog', 'cobra', 'child', 'lotus', 'corpse'];
-const mats = [];
+// THE CLASS — one practice, many bodies, none of them clones. The
+// instructor (front mat, facing the room) is the only body running the
+// sequence: SURYA NAMASKAR on the Sivananda breath map — rise on the
+// inhale, fold on the exhale, cobra IS an inhale, and plank is 'retain':
+// kumbhaka, struck MID-breath on air inhaled into the lunge and not yet
+// let go. The students keep THE INSTRUCTOR'S clock a watching-lag late
+// (you see the teacher move, then you move), and each draws a seeded
+// DEPTH — a stiff student's fold simply does not go as deep, in the
+// spine and arms only, so nobody's shallow practice ever breaks the
+// floor. Watch one salutation: the wave of each pose rolls back through
+// the room, and no two folds match.
+const classRigs = [];
+for (let i = 0; i < 7; i++) {
+  const h = createHumanoid({ seed: 880 + i });
+  scene.add(h.object);
+  classRigs.push(h);
+}
+const cls = new YogaClass(classRigs, { seed: 6, breathsPerMinute: 10 });
+cls.place(0, 1.2);                            // instructor front, class behind
+for (const r of classRigs) {
+  mat(r.object.position.x, r.object.position.z);
+  r.object.position.y = 0.16;                 // up onto the mats
+}
+cls.start();                                  // the salutation, looped
+cls.instructor.onPose((pose) => console.log('surya:', pose));
+
+// THE HOLDERS: the poses the salutation never visits, held alive on
+// their own seeded clocks — balancing, lateral, seated, supine. Watch
+// tree pose WORK for its balance while savasana lies perfectly still.
+const HOLDS = ['tree', 'warrior2', 'triangle', 'lotus', 'corpse'];
+const holders = [];
 HOLDS.forEach((pose, i) => {
-  const x = -6.4 + (i % 5) * 3.2;
-  const z = i < 5 ? 1.4 : 3.6;
-  mat(x, z);
+  const x = -6.4 + i * 3.2;
+  mat(x, 4.2);
   const h = createHumanoid({ seed: 900 + i });
-  h.object.position.set(x, 0.16, z);
-  h.object.rotation.y = Math.PI;             // the class faces the sun
+  h.object.position.set(x, 0.16, 4.2);
+  h.object.rotation.y = Math.PI;
   scene.add(h.object);
   const a = new Asana(h, { seed: 30 + i * 11, breathsPerMinute: 5 + (i % 3) });
   a.strike(pose);
-  mats.push(a);
+  holders.push(a);
 });
-
-// SURYA NAMASKAR, breathed: the lead practitioner is handed the shipped
-// classical sequence — twelve positions on the Sivananda breath map:
-// rise on the inhale, fold on the exhale, cobra IS an inhale, and plank
-// is 'retain' — kumbhaka, struck MID-breath on air that was inhaled into
-// the lunge and not yet let go. One salutation ≈ 5.5 breaths, exactly
-// as counted in a shala.
-mat(0, -1.6);
-const leadRig = createHumanoid({ seed: 890 });
-leadRig.object.position.set(0, 0.16, -1.6);
-leadRig.object.rotation.y = Math.PI;
-scene.add(leadRig.object);
-const lead = new Asana(leadRig, { seed: 77, breathsPerMinute: 10 });
-lead.flow(SURYA_NAMASKAR, { loop: true });
-lead.onPose((pose) => console.log('surya:', pose));
 
 // strikePose — the SINGLE-FRAME API. No clock, no class: the rig simply
 // IS the pose when the call returns. Pose a body, paint it stone, park it
@@ -1247,19 +1255,20 @@ statue.object.rotation.y = Math.PI + 0.4;
 scene.add(statue.object);
 strikePose(statue, 'tree');                  // one call; done — never updated
 
-// Press S and the whole class flows to the next asana in the repertoire.
+// Press S and the holders flow to the next asana in the repertoire
+// (the class keeps its salutation: a sequence outranks a whim).
 let round = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 's') return;
   round++;
-  mats.forEach((a, i) =>
+  holders.forEach((a, i) =>
     a.strike(ASANA_NAMES[(i + round) % ASANA_NAMES.length]));
 });
 console.log('poses:', ASANA_NAMES.length, '— e.g. tree =', ASANAS.tree.sanskrit);
 
 game.onUpdate((t) => {
-  for (const a of mats) a.update(t.delta);
-  lead.update(t.delta);
+  cls.update(t.delta);
+  for (const a of holders) a.update(t.delta);
   game.camera.position.set(6.5, 4.6, 9.6);
   game.camera.lookAt(-0.6, 0.8, 0.4);
 });

@@ -42,6 +42,7 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'stepping-on-and-off-the-floor': 'club',
   'a-pose-is-one-frame-held-alive': 'yoga',
   'flows-a-vinyasa-is-a-list-of-breaths': 'yoga',
+  'the-class-one-practice-many-bodies': 'yoga',
   'the-breath-turns-and-you-can-hear-them': 'yoga',
   'strikepose-the-single-frame-api': 'yoga',
 };

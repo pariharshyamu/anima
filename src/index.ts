@@ -89,6 +89,7 @@ export {
   type AsanaOptions,
   type FlowStep,
 } from './asana';
+export { YogaClass, type YogaClassOptions } from './yogaclass';
 export {
   Conversation,
   type Talker,
