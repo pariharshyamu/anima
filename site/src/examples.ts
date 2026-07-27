@@ -1056,6 +1056,7 @@ const dancers = [];
   [-1.2, 4.1, 'popping'], [1.8, 4.3, 'tutting'],
   [-3.4, 4.6, 'waving'], [3.4, 4.6, 'toprock'],
   [0.3, 5.6, 'locking'], [-0.9, 3.0, 'club'],
+  [-4.6, 3.2, 'ballet'], [4.6, 3.4, 'bharatanatyam'],
 ].forEach(([x, z, style], i) => {
   const h = createHumanoid({ seed: 640 + i });
   h.object.position.set(x, 0, z);
@@ -1066,8 +1067,16 @@ const dancers = [];
   d.start();
   dancers.push(d);
 });
-// Press S to send EVERYBODY round the styles together — all nine idioms,
-// ballroom to street, on the same beat clock.
+// THE REVERSE COUPLING. Until now the pulse has only ever flowed one way:
+// woofer -> tiles, woofer -> dancers. The Bharatanatyam dancer's stamps
+// flow BACK — every strike of her feet fires a ring through the tiles,
+// which is what it feels like to stand near that dance in real life.
+const bharata = dancers[dancers.length - 1];
+bharata.onStamp(() =>
+  tiles.feed({ bass: 0.9, mid: 0.2, treble: 0.7, beat: true, bpm: 0 }));
+
+// Press S to send EVERYBODY round the styles together — all eleven idioms,
+// ballroom to street to the two classicals, on the same beat clock.
 let styleIdx = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 's') return;

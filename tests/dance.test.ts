@@ -644,3 +644,155 @@ describe('street: the hit and the freeze', () => {
     }
   });
 });
+
+describe('the two classicals', () => {
+  const classical = (style: 'ballet' | 'bharatanatyam', warm = 2) => {
+    const rig = createHumanoid({ seed: 4 });
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle(style);
+    d.start();
+    groove(d, warm);
+    return { rig, d };
+  };
+
+  it('both are on the list, and a ballet bar has three beats', () => {
+    const { d } = classical('ballet');
+    expect(d.meter).toBe(3);
+    const { d: b } = classical('bharatanatyam');
+    expect(b.meter).toBe(4);
+  });
+
+  it('araimandi is HELD: the hips never come up', () => {
+    const rig = createHumanoid({ seed: 4 });
+    const base = rig.bones.Hips.position.y;
+    const d = new Dance(rig, { seed: 3, bpm: 120 });
+    d.setStyle('bharatanatyam');
+    d.start();
+    groove(d, 2);
+    let highest = -Infinity;
+    for (let i = 0; i < 8 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      highest = Math.max(highest, rig.bones.Hips.position.y);
+    }
+    // The half-sit is a POSTURE, not a moment: even its highest point is
+    // well below standing.
+    expect(highest).toBeLessThan(base - 0.05);
+  });
+
+  it('the stamps land on the subdivisions and fire onStamp', () => {
+    const { d } = classical('bharatanatyam', 0.5);
+    const at: number[] = [];
+    d.onStamp(() => at.push(((d.phase % 8) + 8) % 8));
+    // Exactly one full cycle at 120 BPM: 8 counts = 4 seconds.
+    for (let i = 0; i < 4 * 60; i++) d.update(1 / 60, pulseAt(0.7, false, 120));
+    // The adavu has 11 strikes per cycle, and some are OFF the counts.
+    expect(at.length).toBeGreaterThanOrEqual(10);
+    expect(at.length).toBeLessThanOrEqual(12);
+    const fractional = at.filter((t) => {
+      const f = t % 1;
+      return f > 0.2 && f < 0.8;
+    });
+    expect(fractional.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a stamp moves the leg that stamps', () => {
+    const { rig, d } = classical('bharatanatyam');
+    let calm = Infinity;
+    let strike = 0;
+    let sinceStamp = 10;
+    d.onStamp(() => { sinceStamp = 0; });
+    let prev = rig.bones.LeftLeg.quaternion.clone();
+    for (let i = 0; i < 6 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      sinceStamp += 1 / 60;
+      const step = rig.bones.LeftLeg.quaternion.angleTo(prev);
+      prev = rig.bones.LeftLeg.quaternion.clone();
+      if (sinceStamp < 0.1) strike = Math.max(strike, step);
+      if (sinceStamp > 0.3) calm = Math.min(calm, step);
+    }
+    expect(strike).toBeGreaterThan(0.01);
+    expect(calm).toBeLessThan(strike);
+  });
+
+  it('onStamp unsubscribes, and club dancers never stamp', () => {
+    const { d } = classical('bharatanatyam', 0.5);
+    let n = 0;
+    const off = d.onStamp(() => n++);
+    groove(d, 2);
+    const seen = n;
+    expect(seen).toBeGreaterThan(0);
+    off();
+    groove(d, 2);
+    expect(n).toBe(seen);
+
+    const rig2 = createHumanoid({ seed: 5 });
+    const club = new Dance(rig2, { seed: 3 });
+    club.start();
+    let clubStamps = 0;
+    club.onStamp(() => clubStamps++);
+    groove(club, 4);
+    expect(clubStamps).toBe(0);
+  });
+
+  it('the pirouette turns the whole body through a revolution', () => {
+    const { rig, d } = classical('ballet');
+    let maxYaw = 0;
+    for (let i = 0; i < 24 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const q = rig.bones.Hips.quaternion;
+      // Yaw magnitude from the quaternion's y component (turnout is small).
+      maxYaw = Math.max(maxYaw, 2 * Math.asin(Math.min(1, Math.abs(q.y))));
+    }
+    // Passes through the half-revolution mark (2π wraps back through 0).
+    expect(maxYaw).toBeGreaterThan(2.6);
+  });
+
+  it('the head spots: one whip per revolution, faster than anything else ballet does', () => {
+    const { rig, d } = classical('ballet');
+    let inTurn = 0;
+    let elsewhere = 0;
+    let prev = rig.bones.Head.quaternion.clone();
+    for (let i = 0; i < 24 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const c = ((d.phase % 12) + 12) % 12;
+      const step = rig.bones.Head.quaternion.angleTo(prev);
+      prev = rig.bones.Head.quaternion.clone();
+      if (c > 9 && c < 11) inTurn = Math.max(inTurn, step);
+      if (c > 1 && c < 8) elsewhere = Math.max(elsewhere, step);
+    }
+    expect(inTurn).toBeGreaterThan(elsewhere * 3);
+  });
+
+  it('ballet leads the count — anticipation, not correction', () => {
+    // Drive two dancers identically; the ballet clock evaluates AHEAD, so at
+    // the moment a count arrives ballet is already partway into that count's
+    // shape. Cheapest observable: at raw phase just below an integer, the
+    // ballet pirouette (which its own clock places at 9+) has already begun.
+    const { rig, d } = classical('ballet');
+    let turnedEarly = false;
+    for (let i = 0; i < 24 * 60; i++) {
+      d.update(1 / 60, pulseAt(0.7, false, 120));
+      const c = ((d.phase % 12) + 12) % 12;
+      const q = rig.bones.Hips.quaternion;
+      const yaw = 2 * Math.asin(Math.min(1, Math.abs(q.y)));
+      if (c > 8.75 && c < 9 && yaw > 0.15) turnedEarly = true;
+    }
+    expect(turnedEarly).toBe(true);
+  });
+
+  it('both classicals stop clean, out of the sit and the turn alike', () => {
+    for (const style of ['ballet', 'bharatanatyam'] as const) {
+      const rig = createHumanoid({ seed: 4 });
+      const home = rig.bones.Hips.position.clone();
+      const entry = rig.bones.Head.quaternion.clone();
+      const d = new Dance(rig, { seed: 3, bpm: 120 });
+      d.setStyle(style);
+      d.start();
+      groove(d, 5.2);
+      d.stop();
+      groove(d, 2);
+      expect(Math.abs(rig.bones.Hips.position.y - home.y), style).toBeLessThan(0.005);
+      expect(rig.bones.Head.quaternion.angleTo(entry), style).toBeLessThan(0.02);
+    }
+  });
+});

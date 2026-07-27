@@ -90,6 +90,22 @@ Street time is not smooth time, and the five street styles each break the smooth
 
 The freezes and hits needed **no new machinery**: a freeze is the pose function evaluated at the instant the lock lands, and a hit is an interpolation weight that spends nine tenths of the count at 1. Everything stays a pure function of the count, which is why a popper at 96 BPM and the same popper at 128 BPM hit equally hard.
 
+## The two classicals: where the dance keeps its time
+
+Ballet and Bharatanatyam sit at opposite poles of the same question, which is why they ship together.
+
+**`ballet`** is **phrase time**: twelve counts of 3/4 — plié and port de bras, the arabesque line, the gather to fifth, and a **pirouette** — and none of it lands *on* a beat. The style's clock runs a fifth of a count **early** (`lead`), because a dancer arrives and settles where everyone else drifts and corrects: anticipation, the exact inverse of the club's nudge. The pirouette turns the whole body through a revolution while the head **spots** — it cancels the body's turn as far as the neck will bear, and when the wrapped angle flips sign it whips through: one fast move per revolution, which is all spotting is, and it falls straight out of `wrapPi`.
+
+**`bharatanatyam`** is **subdivision time**, stricter than any club beat: **araimandi** — the half-sit — is held for the entire dance (a posture *is* a height: even its highest moment is well below standing), the arms hold flat geometric lines that change like flags, and the feet stamp the **ta-ka-di-mi** — singles on the counts, doubles across the back half, finer than the beat itself.
+
+And the stamps are **events**:
+
+```js
+dancer.onStamp(() => tiles.feed({ bass: 0.9, treble: 0.7, beat: true, ... }));
+```
+
+Until now the pulse has only flowed one way — music to body. A stamp flows *back*: the floor can hear the dancer. In the club playground the Bharatanatyam dancer's strikes fire rings through the DJ tiles, which is the trilogy's first piece of motion the scenery reacts to.
+
 Underneath the styles sits the **step engine**: counts commit marks from the chart, feet spend the count getting there, the body's weight eases onto the support foot, and the travelling figure always averages home — travel-and-return, not drift. `stop()` brings a mid-figure dancer all the way back to where they started standing.
 
 ## Stepping on and off the floor

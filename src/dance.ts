@@ -117,11 +117,16 @@ export type DanceStyle =
   /** Right angles on the half-count. Dancing the grid, strictly. */
   | 'tutting'
   /** Breaking's standing footwork: the cross-step, rocked. */
-  | 'toprock';
+  | 'toprock'
+  /** Phrase time: the dancer arrives EARLY and the music catches up. */
+  | 'ballet'
+  /** Subdivision time: araimandi held, stamps on the ta-ka-di-mi. */
+  | 'bharatanatyam';
 
 export const DANCE_STYLES: DanceStyle[] = [
   'club', 'salsa', 'waltz', 'bhangra',
   'popping', 'locking', 'waving', 'tutting', 'toprock',
+  'ballet', 'bharatanatyam',
 ];
 
 export interface DanceOptions {
@@ -354,7 +359,38 @@ interface StyleSpec {
   chart: CountStep[];
   /** How much the hips answer the weight — Cuban motion's volume knob. */
   hipAnswer: number;
+  /**
+   * Counts of anticipation. Ballet arrives EARLY and settles into the beat —
+   * the exact opposite of the club's drift-late-and-correct — so its clock
+   * runs ahead of everyone else's by this much.
+   */
+  lead?: number;
+  /**
+   * When the feet STRIKE, in cycle time. Not necessarily on the counts —
+   * Bharatanatyam stamps the subdivisions — and every strike fires the
+   * `onStamp` listeners, because a stamp is an event the world can hear.
+   */
+  stamps?: number[];
 }
+
+/** Signed distance from `c` back to the most recent stamp, or Infinity. */
+function sinceStamp(c: number, stamps: number[], cycle: number): number {
+  let best = Infinity;
+  for (const t of stamps) {
+    let d = c - t;
+    if (d < 0) d += cycle;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/** Wrap an angle into (−π, π] — the whip in a spotted turn lives here. */
+const wrapPi = (a: number): number => {
+  let x = a % (Math.PI * 2);
+  if (x > Math.PI) x -= Math.PI * 2;
+  if (x <= -Math.PI) x += Math.PI * 2;
+  return x;
+};
 
 /** Deterministic 0–1 from an integer — a pose die that always lands the same. */
 const hash = (i: number, salt: number): number => {
@@ -718,6 +754,155 @@ const STYLES: Record<Exclude<DanceStyle, 'club'>, StyleSpec> = {
     },
     lift: (barPhase, e) => Math.abs(Math.sin(barPhase * Math.PI * 2)) * 0.015 * e,
   },
+
+  // PHRASE TIME. Nothing here lands ON a beat: the phrase is twelve counts
+  // of 3/4 — plié and port de bras out, the arabesque line, the arms
+  // gathering to fifth, and a PIROUETTE — and the whole thing runs a fifth
+  // of a count EARLY, because a dancer arrives and settles where everyone
+  // else drifts and corrects. The head does the one sharp thing ballet
+  // allows: it SPOTS — holds the audience as long as the neck can bear,
+  // then whips round ahead of the body to find them again.
+  ballet: {
+    beatsPerBar: 3,
+    counts: 12,
+    reach: 0,
+    hipAnswer: 0,
+    lead: 0.2,
+    chart: new Array(12).fill({}),
+    posture: (e) => ({
+      // Turnout from the hips, a lifted chest, and arms rounded low —
+      // held under the whole phrase, never dropped.
+      LeftUpLeg: [[Y, 0.35]],
+      RightUpLeg: [[Y, -0.35]],
+      Chest: [[X, -0.07 * (0.5 + 0.5 * e)]],
+      Neck: [[X, -0.03]],
+      LeftArm: [[Z, -HANG + 0.35]],
+      RightArm: [[Z, HANG - 0.35]],
+      LeftForeArm: [[Z, -0.5], [Y, 0.25]],
+      RightForeArm: [[Z, 0.5], [Y, -0.25]],
+    }),
+    upper: (c, e, s) => {
+      const amp = 0.55 + 0.45 * e;
+      if (c < 3) {
+        // Bar 1: plié as the arms open from low first toward second.
+        const t = (c / 3) * (c / 3) * (3 - 2 * (c / 3));
+        return {
+          LeftArm: [[Z, mix(0, -0.55, t) * amp]],
+          RightArm: [[Z, mix(0, 0.55, t) * amp]],
+          LeftForeArm: [[Z, mix(0, 0.3, t)]],
+          RightForeArm: [[Z, mix(0, -0.3, t)]],
+          Head: [[Y, 0.12 * t * s]],
+        };
+      }
+      if (c < 6) {
+        // Bar 2: the line — one leg unfolds behind, arms allongé.
+        const t = Math.sin(((c - 3) / 3) * Math.PI);
+        const back = s > 0 ? 'Left' : 'Right';
+        return {
+          [`${back}UpLeg`]: [[X, 0.85 * t * amp]],
+          [`${back}Leg`]: [[X, -0.1 * t]],
+          Chest: [[X, 0.22 * t * amp]],
+          Head: [[X, -0.18 * t]],
+          LeftArm: [[Z, -0.75 * t * amp]],
+          RightArm: [[Z, 0.75 * t * amp]],
+          LeftForeArm: [[Z, 0.25 * t]],
+          RightForeArm: [[Z, -0.25 * t]],
+        } as Shape;
+      }
+      if (c < 9) {
+        // Bar 3: gather — the arms rise through first to FIFTH, overhead.
+        const t = (c - 6) / 3;
+        const sm = t * t * (3 - 2 * t);
+        return {
+          LeftArm: [[Z, mix(-0.55, -2.3, sm) * amp]],
+          RightArm: [[Z, mix(0.55, 2.3, sm) * amp]],
+          LeftForeArm: [[Z, mix(0.3, -0.45, sm)], [Y, 0.3 * sm]],
+          RightForeArm: [[Z, mix(-0.3, 0.45, sm)], [Y, -0.3 * sm]],
+          Head: [[X, -0.08 * sm]],
+        };
+      }
+      // Bar 4: THE PIROUETTE. The body turns a full 2π across a count and a
+      // half, on relevé, arms held in first; then lands and settles. The
+      // head SPOTS: it cancels the body's turn as far as the neck allows,
+      // and when the wrapped angle flips sign it whips through — one fast
+      // move per revolution, which is exactly what spotting is.
+      const t = clamp01((c - 9) / 1.5);
+      const settle = clamp01((c - 10.5) / 1.5);
+      const yaw = t * t * (3 - 2 * t) * Math.PI * 2 * s;
+      const spot = Math.max(-1.15, Math.min(1.15, -wrapPi(yaw)));
+      return {
+        Hips: [[Y, yaw]],
+        Head: [[Y, spot * (1 - settle)]],
+        LeftArm: [[Z, (-0.45 - 0.3 * (1 - settle)) * amp]],
+        RightArm: [[Z, (0.45 + 0.3 * (1 - settle)) * amp]],
+        LeftForeArm: [[Z, -0.55], [Y, 0.5 * (1 - settle)]],
+        RightForeArm: [[Z, 0.55], [Y, -0.5 * (1 - settle)]],
+      };
+    },
+    // Plié into bar 1, relevé (risen) through the pirouette.
+    lift: () => 0,
+  },
+
+  // SUBDIVISION TIME. Araimandi — the half-sit — is HELD for the whole
+  // dance; the stamps land on the ta-ka-di-mi, twice as fine as the count;
+  // the arms hold geometric lines that change like flags, not like limbs.
+  // Every stamp fires `onStamp`: a stamp is a fact the floor can hear.
+  bharatanatyam: {
+    beatsPerBar: 4,
+    counts: 8,
+    reach: 0,
+    hipAnswer: 0,
+    // The adavu: singles on 0–3, then ta-ka-di-mi doubles across 4–6, land 7.
+    stamps: [0, 1, 2, 3, 4, 4.5, 5, 5.5, 6, 6.5, 7],
+    chart: new Array(8).fill({}),
+    posture: (e) => ({
+      // Araimandi: knees out over turned-out feet, half sat, back tall.
+      LeftUpLeg: [[Y, 0.55], [X, -0.5]],
+      RightUpLeg: [[Y, -0.55], [X, -0.5]],
+      LeftLeg: [[X, 1.0]],
+      RightLeg: [[X, 1.0]],
+      LeftFoot: [[X, -0.5]],
+      RightFoot: [[X, -0.5]],
+      Chest: [[X, -0.04 * e]],
+    }),
+    upper: (c, e, s) => {
+      const spec = STYLES.bharatanatyam;
+      const since = sinceStamp(c, spec.stamps!, 8);
+      const strike = Math.exp(-since * 9);
+      // Which foot stamps alternates with the count of stamps passed.
+      let idx = 0;
+      for (const t of spec.stamps!) if (t <= c) idx++;
+      const side = idx % 2 === 0 ? 'Left' : 'Right';
+      const legShape: Shape = {
+        [`${side}UpLeg`]: [[X, -0.45 * strike]],
+        [`${side}Leg`]: [[X, 0.55 * strike]],
+        [`${side}Foot`]: [[X, 0.3 * strike]],
+      } as Shape;
+      // The arms: flat geometric lines — straight out (pataka) for half the
+      // cycle, one bent to the chest for the other half — snapped like
+      // tutting but held DEAD level; the head slides against the line.
+      const half = Math.floor(c / 2) % 2 === 0;
+      const t = snapAt(c / 2, 0.1);
+      const arms: Shape = half
+        ? {
+            LeftArm: [[Z, mix(-0.6, -0.05, t)]],
+            RightArm: [[Z, mix(0.6, 0.05, t)]],
+            LeftHand: [[Z, -0.5]],
+            RightHand: [[Z, 0.5]],
+          }
+        : {
+            LeftArm: [[Z, mix(-0.05, -0.6, t)], [Y, 0.8 * t]],
+            RightArm: [[Z, mix(0.05, 0.6, t)]],
+            LeftForeArm: [[Z, -1.5 * t]],
+            RightHand: [[Z, 0.5]],
+          };
+      return mergeShapes(legShape, arms, {
+        Neck: [[Z, 0.14 * Math.sin(c * Math.PI) * s]],
+        Head: [[Z, -0.2 * Math.sin(c * Math.PI) * s]],
+      });
+    },
+    lift: () => 0,
+  },
 };
 
 /** Every bone any move touches — captured for entry/exit blending. */
@@ -782,6 +967,8 @@ export class Dance {
   private hipEcho = { x: 0, z: 0 };
   private support: 'L' | 'R' = 'R';
   private lastCount = -1;
+  private lastCycleTime = -1;
+  private stampCbs = new Set<() => void>();
 
   constructor(rig: HumanoidRig, options: DanceOptions = {}) {
     this.rig = rig;
@@ -812,6 +999,17 @@ export class Dance {
     this.feet.R = { x: 0, z: 0, tx: 0, tz: 0, lift: 0 };
     this.carry = { x: 0, z: 0 };
     this.hipEcho = { x: 0, z: 0 };
+    this.lastCycleTime = -1;
+  }
+
+  /**
+   * Hear the feet. Bharatanatyam's stamps land here — on the subdivisions,
+   * not the counts — and anything can listen: a floor tile, a sound, a
+   * drummer answering back. Returns the unsubscribe.
+   */
+  onStamp(cb: () => void): () => void {
+    this.stampCbs.add(cb);
+    return () => this.stampCbs.delete(cb);
   }
 
   /** Beats to the bar — 3 in a waltz, 4 everywhere else. */
@@ -922,7 +1120,20 @@ export class Dance {
    */
   private styledFrame(p: number, e: number, dt: number): MoveFrame {
     const spec = STYLES[this.styleName as Exclude<DanceStyle, 'club'>];
-    const c = ((p % spec.counts) + spec.counts) % spec.counts;
+    // Anticipation: a style with a lead evaluates AHEAD of the shared clock.
+    const led = p + (spec.lead ?? 0);
+    const c = ((led % spec.counts) + spec.counts) % spec.counts;
+    // Stamps: fire every strike the clock has crossed since last frame.
+    if (spec.stamps && this.lastCycleTime >= 0) {
+      for (const t of spec.stamps) {
+        const crossed =
+          this.lastCycleTime < c
+            ? t > this.lastCycleTime && t <= c
+            : t > this.lastCycleTime || t <= c; // the cycle wrapped
+        if (crossed) for (const cb of this.stampCbs) cb();
+      }
+    }
+    this.lastCycleTime = c;
     const count = Math.floor(c);
     const stride = this.legLen * spec.reach * (0.5 + 0.5 * e);
 
@@ -997,6 +1208,17 @@ export class Dance {
       hipShape,
       accentShape
     );
-    return { shape, drop: 0.02 * e - spec.lift(barPhase, e) };
+    // Some postures ARE a height: araimandi sits a tenth of the leg down and
+    // stays there; a pirouette rises onto relevé for exactly its count and a
+    // half. Held sits belong to the style, not to the moment.
+    let sit = 0.02 * e;
+    if (this.styleName === 'bharatanatyam') sit = this.legLen * 0.16;
+    if (this.styleName === 'ballet') {
+      const t = ((c % 12) + 12) % 12;
+      if (t < 3) sit = 0.03 + 0.05 * Math.sin((t / 3) * Math.PI);
+      else if (t >= 9 && t < 10.5) sit = -0.035;
+      else sit = 0.03;
+    }
+    return { shape, drop: sit - spec.lift(barPhase, e) };
   }
 }
