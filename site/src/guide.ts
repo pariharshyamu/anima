@@ -8,6 +8,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'assets', title: 'Retargeting, sockets, gear' },
   { id: 'crowds', title: 'VAT crowds at scale' },
   { id: 'dance', title: 'Dancing & the beat' },
+  { id: 'yoga', title: 'Yoga: asanas & breath' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 
@@ -39,6 +40,9 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-couple-one-dance-two-bodies': 'club',
   'the-cypher-the-floor-becomes-a-social-structure': 'club',
   'stepping-on-and-off-the-floor': 'club',
+  'a-pose-is-one-frame-held-alive': 'yoga',
+  'the-breath-turns-and-you-can-hear-them': 'yoga',
+  'strikepose-the-single-frame-api': 'yoga',
 };
 
 const sidebar = document.getElementById('sidebar') as HTMLElement;

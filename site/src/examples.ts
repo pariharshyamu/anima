@@ -1160,6 +1160,113 @@ game.start();`,
   },
 
   {
+    id: 'yoga',
+    title: 'Yoga (asanas · breath · the held frame)',
+    group: 'Animation',
+    code: `// YOGA is the anti-dance: the clock is BREATH (a sine, not a tick), and
+// the content is the HOLD. A held pose with zero motion reads as a
+// mannequin glitch, so every Asana holds ALIVE: an exponential settle
+// (most of the way fast, the last five percent at its own pace), a breath
+// that visibly lifts the chest, and a seeded balance sway — small on two
+// feet, three times larger on one, absent entirely lying down.
+import { createHumanoid, Asana, strikePose, ASANAS, ASANA_NAMES } from 'anima3d';
+import { Game } from 'gama3d';
+import { Mesh, BoxGeometry, PlaneGeometry, MeshStandardMaterial,
+  AmbientLight, DirectionalLight, Color, Fog } from 'three';
+
+const game = new Game();
+const scene = game.world.scene;
+scene.background = new Color(0xf2e4cf);            // dawn
+scene.fog = new Fog(0xf2e4cf, 26, 60);
+scene.add(new AmbientLight(0xfff0dc, 0.75));
+const sun = new DirectionalLight(0xffd9a0, 1.1);   // surya, low in the east
+sun.position.set(-14, 6, 18);
+scene.add(sun);
+const ground = new Mesh(new PlaneGeometry(80, 80),
+  new MeshStandardMaterial({ color: 0xcdb98f, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const deck = new Mesh(new BoxGeometry(16, 0.14, 10),
+  new MeshStandardMaterial({ color: 0x9a7b52, roughness: 0.85 }));
+deck.position.y = 0.07;
+scene.add(deck);
+const matMat = new MeshStandardMaterial({ color: 0x7a4f9e, roughness: 0.95 });
+const mat = (x, z) => {
+  const m = new Mesh(new BoxGeometry(0.8, 0.02, 2.0), matMat);
+  m.position.set(x, 0.15, z);
+  scene.add(m);
+};
+
+// THE CLASS (hand-laid for now): a rank of holders, each in a different
+// asana — standing, balancing, folded, prone, seated — every one of them
+// breathing on its own seeded clock. Nobody is frozen; watch the tree
+// pose WORK for its balance while savasana lies perfectly still.
+const HOLDS = ['mountain', 'tree', 'warrior2', 'triangle',
+  'downwardDog', 'cobra', 'child', 'lotus', 'corpse'];
+const mats = [];
+HOLDS.forEach((pose, i) => {
+  const x = -6.4 + (i % 5) * 3.2;
+  const z = i < 5 ? 1.4 : 3.6;
+  mat(x, z);
+  const h = createHumanoid({ seed: 900 + i });
+  h.object.position.set(x, 0.16, z);
+  h.object.rotation.y = Math.PI;             // the class faces the sun
+  scene.add(h.object);
+  const a = new Asana(h, { seed: 30 + i * 11, breathsPerMinute: 5 + (i % 3) });
+  a.strike(pose);
+  mats.push(a);
+});
+
+// SURYA NAMASKAR, breathed: the lead practitioner steps through the
+// twelve positions ON THEIR OWN BREATH — one transition per half-breath,
+// fold on the exhale, cobra on the inhale, exactly as counted.
+const SURYA = ['prayer', 'upwardSalute', 'forwardFold', 'lowLunge',
+  'plank', 'eightLimbed', 'cobra', 'downwardDog',
+  'lowLunge', 'forwardFold', 'upwardSalute', 'prayer'];
+mat(0, -1.6);
+const leadRig = createHumanoid({ seed: 890 });
+leadRig.object.position.set(0, 0.16, -1.6);
+leadRig.object.rotation.y = Math.PI;
+scene.add(leadRig.object);
+const lead = new Asana(leadRig, { seed: 77, breathsPerMinute: 10 });
+let step = 0;
+lead.strike(SURYA[0]);
+lead.onBreath(() => lead.strike(SURYA[step = (step + 1) % SURYA.length]));
+
+// strikePose — the SINGLE-FRAME API. No clock, no class: the rig simply
+// IS the pose when the call returns. Pose a body, paint it stone, park it
+// on a pedestal: a statue, and SCENA never imported ANIMA to get one.
+const plinth = new Mesh(new BoxGeometry(1.3, 0.5, 1.3),
+  new MeshStandardMaterial({ color: 0x8d8578, roughness: 0.9 }));
+plinth.position.set(7.2, 0.25, -2.4);
+scene.add(plinth);
+const statue = createHumanoid({ seed: 41, colors: { skin: 0x9b9489,
+  hair: 0x8d8578, top: 0x9b9489, bottom: 0x8d8578, boots: 0x847c6f } });
+statue.object.position.set(7.2, 0.5, -2.4);
+statue.object.rotation.y = Math.PI + 0.4;
+scene.add(statue.object);
+strikePose(statue, 'tree');                  // one call; done — never updated
+
+// Press S and the whole class flows to the next asana in the repertoire.
+let round = 0;
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 's') return;
+  round++;
+  mats.forEach((a, i) =>
+    a.strike(ASANA_NAMES[(i + round) % ASANA_NAMES.length]));
+});
+console.log('poses:', ASANA_NAMES.length, '— e.g. tree =', ASANAS.tree.sanskrit);
+
+game.onUpdate((t) => {
+  for (const a of mats) a.update(t.delta);
+  lead.update(t.delta);
+  game.camera.position.set(6.5, 4.6, 9.6);
+  game.camera.lookAt(-0.6, 0.8, 0.4);
+});
+game.start();`,
+  },
+
+  {
     id: 'gathering',
     title: 'Gatherings (choosing a seat · sitting down · talking)',
     group: 'Games',

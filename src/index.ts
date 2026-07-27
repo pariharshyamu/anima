@@ -78,6 +78,16 @@ export {
 export { Couple, type CoupleOptions } from './couple';
 export { Cypher, type CypherOptions } from './cypher';
 export {
+  Asana,
+  ASANAS,
+  ASANA_NAMES,
+  strikePose,
+  type AsanaName,
+  type AsanaSpec,
+  type AsanaSupport,
+  type AsanaOptions,
+} from './asana';
+export {
   Conversation,
   type Talker,
   type ConversationOptions,
