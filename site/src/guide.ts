@@ -10,6 +10,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'dance', title: 'Dancing & the beat' },
   { id: 'yoga', title: 'Yoga: asanas & breath' },
   { id: 'cricket', title: 'Cricket: actions & the two-handed grip' },
+  { id: 'reactions', title: 'Reactions: flinch, KO & the get-up' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

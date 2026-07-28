@@ -86,7 +86,9 @@ export function bakeVAT(rig: HumanoidRig, clip: AnimationClip, fps = 15): VATDat
   mixer.stopAllAction();
 
   const makeTexture = (data: Float32Array): DataTexture => {
-    const texture = new DataTexture(data as unknown as BufferSource, vertexCount, frames, RGBAFormat, FloatType);
+    // r165's types wanted a BufferSource cast here; r185's take the typed
+    // array directly — and the old cast fails against them. Plain data in.
+    const texture = new DataTexture(data, vertexCount, frames, RGBAFormat, FloatType);
     texture.magFilter = NearestFilter;
     texture.minFilter = NearestFilter;
     texture.needsUpdate = true;

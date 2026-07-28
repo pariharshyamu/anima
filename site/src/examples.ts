@@ -2656,6 +2656,158 @@ game.onUpdate((t) => {
 game.camera.position.set(2.0, 1.9, 1.7);
 game.start();`
   },
+  {
+    id: 'knockout',
+    title: 'Dodgeball: hits, KO & the get-up',
+    group: 'Games',
+    code: `// PHASE C OF THE GAMING ROADMAP, all three libraries in one loop.
+// GAMA's Health decides what a hit costs (i-frames, the death edge);
+// GAMA's Projectiles deliver it; ANIMA's Reactions make the body SHOW
+// it — the directional flinch, the stagger on the heavy ball, the
+// crumple-and-kneel knockout, the get-up. SCENA bursts and rings at
+// every impact. The thrower celebrates the KO; the get-up deflates him.
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createEffects, createLightingRig, createSky,
+         createSurface, PALETTES } from 'scena3d';
+import { createHumanoid, Locomotion, Reactions, OUTFITS } from 'anima3d';
+import { Game, Health, Projectiles, Hud, Soundboard } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'clear', palette);
+const ground = new Mesh(new PlaneGeometry(80, 80),
+  createSurface('moss', { seed: 5 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const hud = new Hud();
+const sounds = new Soundboard({ seed: 4 });
+sounds.unlock();
+sounds.onCaption((c) => hud.caption('♪ ' + c.text));
+hud.objective('Dodgeball. Nobody dodges.');
+const fx = createEffects({ seed: 7 });
+scene.add(fx.group);
+
+// The two of them, six metres apart.
+const victim = createHumanoid({ seed: 21, palette: OUTFITS.villager });
+victim.object.position.set(-3, 0, 0);
+victim.object.rotation.y = Math.PI / 2;
+scene.add(victim.object);
+const victimLoco = new Locomotion(victim);
+const victimReact = new Reactions(victim);
+
+const thrower = createHumanoid({ seed: 34, palette: OUTFITS.knight });
+thrower.object.position.set(3, 0, 0);
+thrower.object.rotation.y = -Math.PI / 2;
+scene.add(thrower.object);
+const throwerLoco = new Locomotion(thrower);
+const throwerReact = new Reactions(thrower);
+
+let koCount = 0, reviveAt = Infinity, heavyCounter = 0, elapsed = 0;
+const health = new Health({
+  max: 5,
+  invulnerable: 0.7,
+  onDamage: (e) => {
+    hud.hearts(health.current, 5);
+    sounds.impact('soft', 0.5 + e.amount * 0.2, { at: victim.object.position });
+    // The heavy ball staggers; the light ones flinch. Direction matters:
+    // the recoil bends AWAY from where the ball came from.
+    if (e.amount > 1) victimReact.stagger(e.from, e.amount);
+    else victimReact.flinch(e.from, 1);
+    fx.burst('dust', new Vector3().copy(victim.object.position).setY(1),
+      { count: 5 });
+  },
+  onDeath: (e) => {
+    koCount++;
+    victimReact.knockOut();
+    throwerReact.celebrate(1.6);
+    hud.banner('KNOCKED OUT', 2);
+    sounds.fail();
+    fx.ring(new Vector3().copy(victim.object.position).setY(0.02),
+      { radius: 1.6 });
+    reviveAt = elapsed + 3;
+  },
+  onRevive: () => {
+    victimReact.getUp();
+    throwerReact.dejected(1.8); // back up already?
+    hud.banner('BACK UP!', 1.4);
+    hud.hearts(5, 5);
+    sounds.success();
+  },
+});
+hud.hearts(5, 5);
+
+const shots = new Projectiles({
+  gravity: 7,
+  floor: 0,
+  size: 0.16,
+  color: 0xd9534f,
+  onHit: ({ target, at }) => {
+    const heavy = heavyCounter % 3 === 0;
+    health.damage({ amount: heavy ? 2 : 1, from: at, knockback: 3 }, target.center);
+    fx.burst('sparks', new Vector3(at.x, at.y, at.z), { count: 6 });
+  },
+  onExpire: (at) => fx.burst('dust', new Vector3(at.x, 0.15, at.z), { count: 4 }),
+});
+scene.add(shots.mesh);
+// The hitbox lives at CHEST height. A target centred on the object's
+// origin sits at the feet — and a ball crossing at 1.1 m never comes
+// within half a metre of the floor, so every throw would miss. The
+// centre is a live vector the loop keeps at the victim's chest.
+const chest = new Vector3(-3, 1.05, 0);
+shots.addTarget({ center: chest, radius: 0.6, team: 'victim' });
+
+let nextThrow = 1.5;
+game.onUpdate((t) => {
+  const dt = t.delta;
+  elapsed += dt;
+  health.update(dt);
+  chest.set(victim.object.position.x, 1.05, victim.object.position.z);
+
+  // The thrower lobs — a bigger one every third ball.
+  if (elapsed > nextThrow && health.alive) {
+    heavyCounter++;
+    nextThrow = elapsed + 1.7;
+    const from = new Vector3().copy(thrower.object.position).setY(1.4);
+    const to = new Vector3().copy(victim.object.position).setY(1.1);
+    const flight = 0.7;
+    shots.fire(from, new Vector3(
+      (to.x - from.x) / flight,
+      (to.y - from.y) / flight + 7 * flight * 0.5,
+      (to.z - from.z) / flight
+    ), { team: 'thrower' });
+    sounds.whoosh(0.7);
+    throwerReact.flinch(undefined, 0.6); // the follow-through reads as effort
+  }
+  if (elapsed > reviveAt) {
+    reviveAt = Infinity;
+    health.revive();
+  }
+
+  // THE ORDER: locomotion writes the pose, reactions bend the result.
+  victimLoco.update(dt);
+  victimReact.update(dt);
+  throwerLoco.update(dt);
+  throwerReact.update(dt);
+  shots.update(dt);
+  fx.update(dt);
+  hud.update(dt);
+
+  game.camera.position.set(Math.sin(elapsed * 0.1) * 3, 2.6, 7.5);
+  game.camera.lookAt(0, 1, 0);
+});
+
+window.knockoutDebug = () => ({
+  victimHp: health.current,
+  down: victimReact.down,
+  koCount,
+  shotsActive: shots.active,
+});
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {

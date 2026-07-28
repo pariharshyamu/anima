@@ -144,12 +144,17 @@ await mkdir(OUT, { recursive: true });
 
 const browser = await chromium.launch({
   ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}),
-  args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: [
+      '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+      // Nobody clicks in headless; examples that synthesize audio need a
+      // RUNNING AudioContext, not Chrome's autoplay policy.
+      '--autoplay-policy=no-user-gesture-required',
+    ],
 });
 // "AudioContext was not allowed to start" is Chrome's autoplay policy doing
 // its job on a page nobody has clicked — for a prop with a radio in it, that
 // warning IS the correct headless behaviour, not a defect.
-const benign = (t) => /favicon|404|Failed to load resource|WebGL.*deprecat|pointer-lock|Unrecognized feature|AudioContext was not allowed to start/i.test(t);
+const benign = (t) => /favicon|404|Failed to load resource|WebGL.*deprecat|pointer-lock|Unrecognized feature|AudioContext was not allowed to start|Blocked call to navigator.vibrate/i.test(t);
 
 const only = process.argv.slice(2);
 const page0 = await browser.newPage();
@@ -195,7 +200,7 @@ for (const id of list) {
     try {
       const shot = await page
         .frameLocator('iframe')
-        .locator('canvas')
+        .locator('body > canvas').first()
         .screenshot({ timeout: 8000 });
       pix = { ok: true, ...measure(decodePng(shot)) };
     } catch (e) {
@@ -203,7 +208,7 @@ for (const id of list) {
     }
     if (pix.ok && !looksBlank(pix)) break;
     try {
-      const box = await page.frameLocator('iframe').locator('canvas').boundingBox();
+      const box = await page.frameLocator('iframe').locator('body > canvas').first().boundingBox();
       if (box && box.width > 8 && box.height > 8) {
         const whole = await page.screenshot({
           clip: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -216,13 +221,13 @@ for (const id of list) {
     if (pix.ok && !looksBlank(pix)) break;
   }
   const banner = await page.evaluate(() => {
-    const el = document.querySelector('.error, [data-error], .runner-error');
+    const el = document.querySelector('.pg-error, #error, .error, [data-error], .runner-error');
     return el ? el.textContent.trim().slice(0, 160) : '';
   });
   // Empty = one colour over almost everything and nothing varying.
   const blank = !pix.ok || (pix.flattest > 0.985 && pix.stdev < 1.5);
   rows.push({ id, blank, errs: errs.length, banner, ...pix });
-  const flag = blank ? 'BLANK' : errs.length ? 'errs ' : '  ok ';
+  const flag = blank ? 'BLANK' : banner ? 'ERROR' : errs.length ? 'errs ' : '  ok ';
   console.log(
     `${flag} ${id.padEnd(16)} distinct ${String(pix.distinct ?? 0).padStart(5)}` +
     ` flattest ${String(pix.flattest ?? 1).padStart(5)} stdev ${String(pix.stdev ?? 0).padStart(6)}` +
@@ -234,7 +239,10 @@ for (const id of list) {
   await page.close();
 }
 
-const bad = rows.filter((r) => r.blank || r.errs);
+// A caught runner error draws no scene but whatever mounted before the
+// throw can vary enough pixels to pass the blank check (GAMA's juice
+// example proved it). The banner is part of the verdict.
+const bad = rows.filter((r) => r.blank || r.banner || r.errs);
 console.log(`\n${rows.length - bad.length}/${rows.length} render something.`);
 if (bad.length) console.log('PROBLEMS:', bad.map((r) => r.id).join(', '));
 await browser.close();

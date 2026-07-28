@@ -65,6 +65,7 @@ export {
   type MannerismContext,
   type MannerismsOptions,
 } from './mannerisms';
+export { Reactions, type ReactionsOptions } from './reactions';
 export {
   Dance,
   DANCE_MOVES,
