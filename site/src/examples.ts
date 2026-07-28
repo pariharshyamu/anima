@@ -2808,6 +2808,158 @@ window.knockoutDebug = () => ({
 
 game.start();`,
   },
+  {
+    id: 'lamplighter',
+    title: 'The lamplighter',
+    group: 'Scale',
+    code: `// THE LIGHTING ARC'S PAYOFF. Dusk falls on a village lane (SCENA's
+// day cycle), and instead of a photocell, a PERSON: the lamplighter
+// makes their rounds, lantern in hand, lighting each street lamp in
+// turn — setLit is the same verb a photocell or a lever would use.
+// Thirteen glows, six real lights: the LightBudget follows the camera.
+// At dawn the lamps are doused and the rounds begin again.
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createDayCycle, createHouse, createLanternLight,
+         createLightBudget, createLightingRig, createSky, createStreetLight,
+         createSurface, PALETTES } from 'scena3d';
+import { createHumanoid, Locomotion, attach, OUTFITS } from 'anima3d';
+import { Game, Hud, Soundboard } from 'gama3d';
+
+const palette = PALETTES.dusk;
+const game = new Game();
+const scene = game.world.scene;
+const sky = createSky({ palette });
+const rig = createLightingRig('day');
+scene.add(sky.mesh, rig.group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(80, 60),
+  createSurface('moss', { seed: 9 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const hud = new Hud();
+const sounds = new Soundboard({ seed: 14 });
+sounds.unlock();
+sounds.onCaption((c) => hud.caption('♪ ' + c.text));
+
+// The lane: houses on the far side (their windows warm after dark).
+const houses = [-14, -7, 0, 7, 14].map((x, i) => {
+  const house = createHouse({ seed: 31 + i, palette });
+  house.object.position.set(x, 0, -7);
+  scene.add(house.object);
+  return house;
+});
+
+// Six lamps down the lane, all dark until someone comes.
+const lamps = [-12.5, -7.5, -2.5, 2.5, 7.5, 12.5].map((x, i) => {
+  const lamp = createStreetLight({ style: 'village', seed: 41 + i });
+  lamp.object.position.set(x, 0, -1);
+  scene.add(lamp.object);
+  lamp.setLit(false);
+  return lamp;
+});
+
+// The budget: every glow claims; six real lights follow the camera.
+const budget = createLightBudget({ max: 6 });
+scene.add(budget.group);
+for (const lamp of lamps) budget.register(lamp.claim);
+
+// The day, turning. Houses hand their nightGlow panes to the cycle.
+const cycle = createDayCycle({ sky, rig, scene, lamps: houses,
+  dayLength: 80, timeOfDay: 0.62 });
+
+// ---- The lamplighter, hand-lantern swinging.
+const walker = createHumanoid({ seed: 77, palette: OUTFITS.villager,
+  accessories: ['hat'] });
+walker.object.position.set(-16, 0, 1.5);
+scene.add(walker.object);
+const loco = new Locomotion(walker);
+const handLantern = createLanternLight({ hanging: true, seed: 3 });
+handLantern.object.scale.setScalar(0.62);
+attach(walker, 'handLeft', handLantern.object);
+budget.register(handLantern.claim);
+handLantern.setLit(false);
+
+const HOME = new Vector3(-16, 0, 1.5);
+let target = -1;       // which lamp we're walking to; -1 = home
+let dwell = 0;         // seconds left standing at the current lamp
+let phase = 'waiting'; // waiting → rounds → done → (dawn) waiting
+hud.objective('Dusk approaches. The lamplighter waits.');
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  cycle.update(dt);
+
+  // Dusk: pick up the lantern and go. Dawn: douse and go home.
+  if (phase === 'waiting' && cycle.sunElevation < 0.12) {
+    phase = 'rounds';
+    target = 0;
+    handLantern.setLit(true);
+    hud.banner('LAMPS AHOY', 1.6);
+    hud.objective('The rounds: 0/' + lamps.length + ' lamps lit');
+  }
+  if (phase !== 'waiting' && cycle.sunElevation > 0.2) {
+    phase = 'waiting';
+    target = -1;
+    for (const lamp of lamps) lamp.setLit(false);
+    handLantern.setLit(false);
+    hud.objective('Morning. The lamps sleep; so should the lamplighter.');
+  }
+
+  // Walk toward the target (a lamp, or home), dwell, ignite, move on.
+  const goal = target >= 0
+    ? new Vector3(lamps[target].object.position.x, 0,
+        lamps[target].object.position.z + 1.1)
+    : HOME;
+  const dx = goal.x - walker.object.position.x;
+  const dz = goal.z - walker.object.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  let speed = 0;
+  if (dwell > 0) {
+    dwell -= dt;
+    if (dwell <= 0 && phase === 'rounds') {
+      lamps[target].setLit(true);
+      sounds.chime(target);
+      const lit = lamps.filter((l) => l.lit).length;
+      hud.objective('The rounds: ' + lit + '/' + lamps.length + ' lamps lit');
+      target++;
+      if (target >= lamps.length) {
+        phase = 'done';
+        target = -1;
+        hud.banner('ALL LIT — good night', 2.2);
+        sounds.success();
+      }
+    }
+  } else if (dist > 0.5) {
+    speed = Math.min(1.4, dist);
+    walker.object.position.x += (dx / dist) * speed * dt;
+    walker.object.position.z += (dz / dist) * speed * dt;
+    walker.object.rotation.y = Math.atan2(dx, dz);
+  } else if (phase === 'rounds' && target >= 0 && !lamps[target].lit) {
+    dwell = 1.1; // the pause at the post — reach up, touch flame to mantle
+  }
+  loco.update(dt, speed);
+
+  hud.update(dt);
+  const cx = walker.object.position.x * 0.55;
+  game.camera.position.set(cx, 4.6, 12.5);
+  game.camera.lookAt(cx * 0.8, 1.4, -2);
+  budget.update(game.camera.position);
+});
+
+window.lamplighterDebug = () => ({
+  timeOfDay: Number(cycle.timeOfDay.toFixed(3)),
+  sunElevation: Number(cycle.sunElevation.toFixed(3)),
+  phase,
+  target,
+  lit: lamps.filter((l) => l.lit).length,
+  handLantern: handLantern.lit,
+  granted: budget.active,
+  walkerX: Number(walker.object.position.x.toFixed(2)),
+});
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {

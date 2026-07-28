@@ -79,6 +79,7 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 - [x] v0.5 "The Face": eyes/brows/nose/mouth/ears, resting expressions, hair style catalog, facial hair — seeded and overridable
 - [x] v0.6 "The Wardrobe": body types, garment layers (dresses, tunics, jackets, skirts, belts, collars), and the `describeHumanoid` creator API with byte-identical round-trips
 - [x] v0.35 "The Reaction": `Reactions` — directional flinch/stagger, crumple-and-kneel knockout, get-up, celebrate & dejected, applied capture-and-restore after the mixer so nothing drifts; wired to GAMA `Health` events ([docs](docs/reactions.md))
+- [x] v0.36 "The Lamplighter": the lighting arc's payoff demo — a villager makes dusk rounds with a hand lantern (socket-attached SCENA `createLanternLight`, its claim in the same `LightBudget` as the street lamps), lighting each lamp by the same `setLit` a photocell or a lever would use; deps to gama3d 0.31 / scena3d 0.98
 
 ## Development
 
