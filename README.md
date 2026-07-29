@@ -45,6 +45,8 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **Hair** — a style catalog (`bald · cap · side-part · bob · ponytail · bun · long · spiky`) with seeded style + color; hats force sensible short hair unless a style is explicit.
 - **`Crowd`** — background characters at scale: N seeded villagers as a handful of VAT `InstancedMesh`es — no skeletons, no mixers, no per-character CPU cost. Per-instance phase offsets and tints keep shared bodies looking individual; `crowd.followRoute(road.route, { surface: terrain.heightAt })` sends the whole crowd walking a SCENA road at the bake's stride-matched speed. Heroes stay heroes: full rigs near the camera, the crowd fills the distance.
 
+- **`Cockpit`** — the body of somebody strapped to an aeroplane, and the exact mirror of `SeaLegs`: a sailor stands *up out of* a deck's frame, a pilot is **bolted into** the airframe's and goes inverted with it. What is left is the four things a pilot still owns — the **weight** (`1/cos(bank)` in the turn plus `V·q/g` in the pull, sagging the head and compressing the spine into the seat, floating the body off the cushion at zero g), the **gaze** that leads the aeroplane (computed in the aircraft's frame, because half a dogfight is spent inverted), the **cost of both together** (gaze authority falls as load rises), and **losing it** — greyout, G-LOC, and a recovery that lags the g coming off. Consumes GAMA's `FlightController`/`HoverController` structurally: `{ pitch, bank, speed }`.
+
 - **`Cricketer`** — the bowling action (run-up, gather, braced front leg, arm coming over vertically, elbow that never bends), seven strokes, the keeper's crouch, the fielder's throw, and a batting stance that breathes. **Both hands are on the bat**: strokes are authored as a path for the grip and a direction for the blade, and the arms are *solved* onto it with two-bone IK, so the grip is an invariant rather than a coincidence — and `batPoint()` gives a game something real to collide a ball against. `holdBat(bat)` drives a bat from that grip; it can never leave the hands.
 
 ## The family handshake
@@ -80,6 +82,7 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 - [x] v0.6 "The Wardrobe": body types, garment layers (dresses, tunics, jackets, skirts, belts, collars), and the `describeHumanoid` creator API with byte-identical round-trips
 - [x] v0.35 "The Reaction": `Reactions` — directional flinch/stagger, crumple-and-kneel knockout, get-up, celebrate & dejected, applied capture-and-restore after the mixer so nothing drifts; wired to GAMA `Health` events ([docs](docs/reactions.md))
 - [x] v0.36 "The Lamplighter": the lighting arc's payoff demo — a villager makes dusk rounds with a hand lantern (socket-attached SCENA `createLanternLight`, its claim in the same `LightBudget` as the street lamps), lighting each lamp by the same `setLit` a photocell or a lever would use; deps to gama3d 0.31 / scena3d 0.98
+- [x] v0.37 "The Sortie": `Cockpit` — a pilot strapped into a SCENA fighter, wearing the g GAMA's flight model is pulling; plus the `pilot` pose (stick hand in on the centreline, throttle hand out on the quadrant) and the aviation arc's finale playground, where all three libraries fly one dogfight over the airfield ([docs](docs/craft.md))
 
 ## Development
 

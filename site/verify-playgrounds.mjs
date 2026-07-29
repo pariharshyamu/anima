@@ -193,15 +193,25 @@ for (const id of list) {
   // composited, no fresh readback), and give the whole sequence three goes
   // with a breath between them. Only an example that is blank every way,
   // every time, is blank.
+  // The wait AND the capture deadline both ESCALATE, because "blank" has two
+  // causes that want opposite things. A lost readback race clears on the next
+  // try. But a scene heavy enough to hold the main thread — Havenbrook is
+  // terrain, a VAT crowd bake and a village of props — makes Playwright's
+  // screenshot itself time out, and a TIMEOUT was being recorded as BLANK.
+  // That is the worse half of this bug: it reports "draws nothing" about a
+  // scene that draws perfectly, and it gets worse as the libraries grow. A
+  // healthy example pays none of it — it breaks out on the first attempt.
+  const BACKOFF = [0, 1500, 3000, 6000];
+  const DEADLINE = [8000, 12000, 20000, 30000];
   const looksBlank = (m) => m.flattest > 0.985 && m.stdev < 1.5;
   let pix = { ok: false };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt) await page.waitForTimeout(1500);
+  for (let attempt = 0; attempt < BACKOFF.length; attempt++) {
+    if (attempt) await page.waitForTimeout(BACKOFF[attempt]);
     try {
       const shot = await page
         .frameLocator('iframe')
         .locator('body > canvas').first()
-        .screenshot({ timeout: 8000 });
+        .screenshot({ timeout: DEADLINE[attempt] });
       pix = { ok: true, ...measure(decodePng(shot)) };
     } catch (e) {
       pix = { ok: false, why: String(e).slice(0, 80) };
@@ -212,7 +222,7 @@ for (const id of list) {
       if (box && box.width > 8 && box.height > 8) {
         const whole = await page.screenshot({
           clip: { x: box.x, y: box.y, width: box.width, height: box.height },
-          timeout: 8000,
+          timeout: DEADLINE[attempt],
         });
         const again = measure(decodePng(whole));
         if (!looksBlank(again)) pix = { ok: true, via: 'page-clip', ...again };

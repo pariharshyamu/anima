@@ -2960,6 +2960,345 @@ window.lamplighterDebug = () => ({
 
 game.start();`,
   },
+  {
+    id: 'sortie',
+    title: 'The sortie',
+    group: 'Scale',
+    code: `// THE SORTIE — the aviation arc's finale, and the trilogy's handshake in
+// one scene. SCENA builds the airfield and both deltas; GAMA flies them,
+// locks on and launches; ANIMA puts a PILOT in the cockpit who WEARS the
+// g the turn is pulling — head sagging, gaze dragging, greying out if the
+// pull is held too long — and a ground crew on the apron whose heads
+// track the fight across the sky. Nothing here imports anything else.
+// The view cuts every nine seconds: cockpit, chase, apron.
+import { AnimationMixer, Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createEffects, createFighterJet, createHangar,
+         createLightingRig, createRunway, createSky, createSurface,
+         createTrail, createWindsock, PALETTES } from 'scena3d';
+import { Cockpit, createHumanoid, createPoseClip, LookAt, Locomotion,
+         OUTFITS } from 'anima3d';
+import { FlightController, Game, GameFeel, Hud, LockOn, Missiles } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const grass = new Mesh(new PlaneGeometry(2000, 2000), createSurface('moss', { seed: 5 }));
+grass.rotation.x = -Math.PI / 2;
+scene.add(grass);
+
+// ---- SCENA: the airfield the sortie flies from.
+scene.add(createRunway({ length: 90, width: 10, number: 27, seed: 3 }).object);
+const hangar = createHangar({ width: 14, depth: 11, seed: 4 });
+hangar.object.position.set(-26, 0, -18);
+scene.add(hangar.object);
+const sock = createWindsock({ seed: 6 });
+sock.object.position.set(20, 0, -34);
+scene.add(sock.object);
+const fx = createEffects({ seed: 8 });
+scene.add(fx.group);
+
+// ---- SCENA: two deltas, and the contrails behind them.
+const jet = createFighterJet({ seed: 7, color: 0x5d6a78 });
+const bandit = createFighterJet({ seed: 11, color: 0x6e5a48 });
+scene.add(jet.object, bandit.object);
+const trails = [jet, bandit].map(() => {
+  const trail = createTrail({ length: 60, width: 0.5, life: 2.4, opacity: 0.4 });
+  scene.add(trail.mesh);
+  return trail;
+});
+
+// ---- GAMA: the flight models. Both are the same arcade physics; only
+// the autopilot flying each stick differs.
+const air = (o) => new FlightController(Object.assign({
+  maxSpeed: 68, stallSpeed: 20, rotateSpeed: 22,
+  pitchRate: 1.05, rollRate: 2.4, turnCoupling: 1.15,
+}, o));
+const mine = air({});
+const his = air({ maxSpeed: 52 });
+for (const [f, x, z, h] of [[mine, 0, -150, 0], [his, 60, 40, 2.4]]) {
+  f.position.set(x, 70, z);
+  f.heading = h;
+  f.speed = 55;
+  f.throttle = 0.85;
+  f.grounded = false;
+}
+
+const missiles = new Missiles({
+  seed: 5, speed: 105, turnRate: 2.8, motorTime: 6, capacity: 6,
+  onHit: () => {
+    fx.burst('debris', his.position);
+    feel.shake(0.7);
+    kills++;
+    hud.banner('SPLASH — ' + kills);
+    // The bandit is replaced by another one, well out in front.
+    his.position.set(mine.position.x + 90, 60 + (kills % 3) * 12, mine.position.z + 110);
+    his.speed = 58;
+    jet.rearm();
+  },
+  onMiss: () => { hud.caption('Missile timed out'); jet.rearm(); },
+});
+scene.add(missiles.group);
+const lock = new LockOn({ halfAngle: 0.62, range: 130, lockTime: 0.9 });
+const feel = new GameFeel({ seed: 3 });
+const hud = new Hud();
+let kills = 0;
+
+// ---- ANIMA: the pilot, strapped into the SCENA airframe.
+const pilot = createHumanoid({ seed: 41, height: 1.76, palette: OUTFITS.guard,
+  accessories: ['cap'] }); // the helmet
+pilot.object.scale.setScalar(0.72);
+// The tolerance numbers are deliberately intolerant, and it is worth
+// knowing why: GAMA's arcade model clamps bank, so its SUSTAINED load
+// tops out near 2.5g (level-turn load is 1/cos(bank)) and a realistic
+// five-g-for-several-seconds threshold would never once bite. Every g
+// worth watching here is a transient — the break. Tune these to the
+// flight model you actually fly.
+const seat = new Cockpit(pilot, {
+  gLimit: 8, greyAt: 2.4, greyIn: 1.6, greyOut: 3.5,
+  onGLOC: () => hud.banner('G-LOC'),
+  onRecover: () => hud.caption('…back'),
+});
+// The canopy on SCENA's delta sits just forward of the wing root. The
+// harness does the rest: after this the body has no world transform of
+// its own — the aircraft's attitude IS the pilot's attitude.
+seat.seat(jet.object, { y: 1.24, z: 2.3 });
+const mixer = new AnimationMixer(pilot.mesh);
+mixer.clipAction(createPoseClip(pilot, 'pilot')).play();
+seat.watch(bandit.object);
+
+// ---- ANIMA: the ground crew, watching the fight go over.
+const crew = [-3.5, -1, 1.5].map((x, i) => {
+  const rig = createHumanoid({ seed: 60 + i, palette: OUTFITS.villager });
+  rig.object.position.set(-14 + x, 0, -32 + (i % 2) * 1.4);
+  scene.add(rig.object);
+  const loco = new Locomotion(rig);
+  const gaze = new LookAt(rig);
+  gaze.target = jet.object; // heads follow the jets, not the camera
+  return { rig, loco, gaze };
+});
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const forward = (f) => new Vector3(
+  Math.sin(f.heading) * Math.cos(f.pitch),
+  Math.sin(f.pitch),
+  Math.cos(f.heading) * Math.cos(f.pitch)
+);
+
+/**
+ * Fly at a point. Two rules, and the second one cost a whole test flight.
+ *
+ * THE STICK IS A RATE: chase the target ATTITUDE proportionally and never
+ * command a raw rate, or the roll integrates into a saturated bank and the
+ * aircraft orbits its waypoint forever.
+ *
+ * AND THE TURN LIVES IN THE BANK: in a bank-to-turn model the nose being
+ * off is a ROLL problem. The first version answered it with pitch as well
+ * — hold the nose up whenever the target is wide, the way a hard turn
+ * looks from outside — and the jet simply climbed away from the fight:
+ * 950 metres up, three kilometres out, still dutifully pulling. Pitch
+ * points at the target and no further.
+ */
+const steer = (f, aim, pull) => {
+  const dx = aim.x - f.position.x;
+  const dz = aim.z - f.position.z;
+  const dy = aim.y - f.position.y;
+  const range = Math.hypot(dx, dz);
+  let off = Math.atan2(dx, dz) - f.heading;
+  while (off > Math.PI) off -= Math.PI * 2;
+  while (off < -Math.PI) off += Math.PI * 2;
+  // NEGATIVE off. In this model positive bank is a LEFT turn (heading
+  // integrates -sin(bank)), so getting this backwards does not wobble —
+  // it turns the jet away and parks the bandit at exactly six o'clock
+  // forever, which is a stable equilibrium and looks disconcertingly
+  // like working code.
+  const bank = clamp(-off * 2.2, -1.12, 1.12);
+  // Pitch points at the target — plus whatever break the caller is
+  // pulling. A sustained turn in this model tops out around 2.5g
+  // (bank is clamped, and level-turn load is 1/cos(bank)); everything
+  // above that is a PULL, and pull is a pitch RATE, not a pitch.
+  const climb = clamp(Math.atan2(dy, Math.max(range, 25)) + (pull || 0), -0.32, 0.62);
+  f.control({
+    roll: clamp((bank - f.bank) * 3.2, -1, 1),
+    pitch: clamp((climb - f.pitch) * 3.4, -1, 1),
+  });
+  return Math.abs(off);
+};
+
+// Where the bandit WILL be. Pure pursuit against something that turns is
+// a stern chase you never win; a lead point closes the geometry.
+const lead = new Vector3();
+const leadPoint = (f, foe) => {
+  const range = f.position.distanceTo(foe.position);
+  return lead.copy(foe.velocity).multiplyScalar(Math.min(range / 70, 3)).add(foe.position);
+};
+
+// The bandit runs a wide racetrack and jinks; it is not trying to win,
+// it is trying to make the pursuit expensive.
+// Kept deliberately tight, and over the field: SCENA's 'haze' fog dies
+// at 160 m, so a fight that wanders 300 m out is a fight nobody on the
+// ground can see. The circuit is sized to the visibility, not the map.
+const LEGS = [
+  new Vector3(95, 65, 110), new Vector3(-110, 80, 120),
+  new Vector3(-120, 55, -90), new Vector3(90, 70, -110),
+];
+let leg = 0;
+let view = 'cockpit';
+let clock = 0;
+let flareTimer = 4;
+let reload = 0;   // rails empty faster than a lock decides
+let offNose = 0;  // radians the bandit sits off the nose
+let breaking = 0; // seconds of break turn still to pull
+const aim = new Vector3();
+const toJet = new Vector3();
+const look = new Vector3();
+const CREW_AT = new Vector3(-14, 1.55, -31.3); // where the crew stand
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  clock += dt;
+  const jp = jet.object.position; // read by the crew, the trails and the camera
+  view = ['cockpit', 'chase', 'apron'][Math.floor(clock / 9) % 3];
+
+  // --- The bandit: waypoints, plus a jink that keeps the shot honest.
+  aim.copy(LEGS[leg]);
+  aim.x += Math.sin(clock * 0.7) * 22;
+  aim.y += Math.sin(clock * 0.5) * 12;
+  if (his.position.distanceTo(LEGS[leg]) < 45) leg = (leg + 1) % LEGS.length;
+  steer(his, aim);
+  his.throttle = 0.85;
+  his.update(dt);
+  his.apply(bandit.object);
+  bandit.update(dt, his.aircraftInput);
+
+  // Flares, on a timer — the bandit knows what is behind it.
+  flareTimer -= dt;
+  if (flareTimer <= 0) {
+    flareTimer = 5.5;
+    missiles.flare(his.position);
+    fx.burst('sparks', his.position);
+  }
+
+  // --- The player's jet: pursue, and pull hard doing it.
+  // Inside knife range: break. You do not fly through the bandit, you
+  // haul the nose up and go over the top — and THAT is where the g that
+  // costs the pilot their vision comes from. A break is a MANEUVER, not
+  // a condition: once committed it is held, which is the difference
+  // between a one-second snatch (harmless) and a sustained pull (not).
+  if (mine.position.distanceTo(his.position) < 75) breaking = Math.max(breaking, 3.2);
+  breaking = Math.max(0, breaking - dt);
+  offNose = steer(mine, leadPoint(mine, his), breaking > 0 ? 0.62 : 0);
+  // …and if the pilot is out, nobody is flying it. Stick neutral: the
+  // bank decays, the jet flies itself straight, and the fight waits.
+  if (seat.gloc) mine.control({});
+  mine.throttle = 1;
+  mine.update(dt);
+  mine.apply(jet.object);
+  jet.update(dt, mine.aircraftInput);
+
+  // --- The shot. LockOn wants a seeker pose; the airframe has one.
+  const dir = forward(mine);
+  lock.update(dt, { position: mine.position, direction: dir },
+    { center: his.position, radius: 4 });
+  reload -= dt;
+  // A lock is not a trigger held down: one round, then a pause.
+  if (lock.state === 'locked' && jet.armed > 0 && reload <= 0 && !seat.gloc) {
+    reload = 2.6;
+    // The round leaves the RAIL: SCENA hands back a world-space pose and
+    // GAMA flies exactly that. The missile a game flies is the missile
+    // the wing stops carrying.
+    const launch = jet.launchFrom(jet.armed - 1);
+    if (launch) {
+      missiles.fire(launch.position, launch.direction,
+        { center: his.position, radius: 4 });
+      fx.burst('dust', launch.position);
+      hud.caption('Fox two');
+    }
+  }
+  missiles.update(dt);
+
+  // --- ANIMA. The mixer holds the seated pose; the Cockpit layers the
+  // g on top of it. Order matters: pose first, then what it costs.
+  mixer.update(dt);
+  seat.update(dt, mine);
+  for (const c of crew) {
+    // They turn to follow it. A head alone runs out of neck — LookAt
+    // clamps, correctly — so the body comes round too, the way anybody
+    // watching an aeroplane go over actually does it.
+    let turn = Math.atan2(jp.x - c.rig.object.position.x, jp.z - c.rig.object.position.z)
+      - c.rig.object.rotation.y;
+    while (turn > Math.PI) turn -= Math.PI * 2;
+    while (turn < -Math.PI) turn += Math.PI * 2;
+    c.rig.object.rotation.y += clamp(turn, -1.2 * dt, 1.2 * dt);
+    c.loco.update(dt, { x: 0, y: 0, z: 0 });
+    c.gaze.update(dt);
+  }
+  for (const [i, trail] of trails.entries()) {
+    trail.push((i === 0 ? jet : bandit).object.position);
+    trail.update(dt);
+  }
+
+  // --- Camera. Three ways of telling the same nine seconds.
+  if (view === 'cockpit') {
+    // Right ON the canopy, in the jet's own frame: the pilot is 0.3 m of
+    // a 9 m aeroplane, so any framing that flatters the airframe loses
+    // the person — and the person is the only thing this view is for.
+    const canopy = new Vector3(0, 2.05, 2.5).applyQuaternion(jet.object.quaternion).add(jp);
+    const off = new Vector3(-1.5, 0.55, 1.0).applyQuaternion(jet.object.quaternion);
+    game.camera.position.copy(canopy).add(off);
+    game.camera.lookAt(canopy);
+  } else if (view === 'chase') {
+    const off = new Vector3(0, 4.5, -18).applyQuaternion(jet.object.quaternion);
+    game.camera.position.copy(jp).add(off);
+    game.camera.lookAt(his.position.distanceTo(jp) < 300 ? his.position : jp);
+  } else {
+    // From the apron, and the framing is the whole point: a camera that
+    // simply points at the jet pitches up past the crew and photographs
+    // an empty sky. Stand behind them, and aim HALFWAY UP to the fight —
+    // then the heads and the thing the heads are following are both in
+    // the picture, which is the only reason this view exists.
+    const flat = Math.hypot(jp.x - CREW_AT.x, jp.z - CREW_AT.z);
+    toJet.set(jp.x - CREW_AT.x, 0, jp.z - CREW_AT.z).normalize();
+    game.camera.position.copy(CREW_AT).addScaledVector(toJet, -6).setY(1.95);
+    look.copy(CREW_AT).addScaledVector(toJet, 6);
+    look.y = 1.6 + Math.tan(Math.atan2(jp.y - 1.6, Math.max(flat, 1)) * 0.5) * 6;
+    game.camera.lookAt(look);
+  }
+
+  feel.update(dt);
+  feel.apply(game.camera);
+  hud.update(dt);
+  hud.objective(
+    'G ' + seat.load.toFixed(1) + '   ' +
+    (seat.gloc ? 'UNCONSCIOUS' : 'GREY ' + Math.round(seat.grey * 100) + '%') +
+    '   ' + lock.state.toUpperCase() + '   RAILS ' + jet.armed
+  );
+});
+
+window.sortieDebug = () => ({
+  view,
+  g: Number(seat.load.toFixed(2)),
+  grey: Number(seat.grey.toFixed(2)),
+  gloc: seat.gloc,
+  gazeYaw: Number(seat.gaze.yaw.toFixed(2)),
+  headSag: Number(pilot.bones.Head.rotation.x.toFixed(3)),
+  offNose: Number(offNose.toFixed(2)),
+  crewYaw: Number(crew[0].rig.object.rotation.y.toFixed(2)),
+  jetBearing: Number(Math.atan2(jet.object.position.x - crew[0].rig.object.position.x,
+    jet.object.position.z - crew[0].rig.object.position.z).toFixed(2)),
+  crewHeadY: Number(crew[0].rig.bones.Head.rotation.x.toFixed(2)),
+  lock: lock.state,
+  rails: jet.armed,
+  missiles: missiles.alive,
+  kills,
+  alt: Number(mine.position.y.toFixed(1)),
+  speed: Number(mine.speed.toFixed(1)),
+  range: Number(mine.position.distanceTo(his.position).toFixed(0)),
+});
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {

@@ -26,6 +26,8 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'foot-ik-terrain-planting': 'craft',
   'lookat-gaze-chains': 'craft',
   'overlays-bone-masks': 'craft',
+  'strapped-into-an-aeroplane-cockpit': 'sortie',
+  'what-the-sortie-found-out-about-g': 'sortie',
   sockets: 'sockets',
   'the-crowd': 'crowd',
   'route-following': 'crowd',

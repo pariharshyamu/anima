@@ -374,6 +374,43 @@ Three parts, and the first is not animation at all:
 
 **The bug worth recording:** the first version `premultiply`'d its correction onto the root every frame without removing the previous one. That compounds — a sailor was **five radians** off vertical after two seconds, spinning like a top. It now stores what it added and takes it back before adding the next, which is the same shape as `Prepping`'s feed tweak and leaves the heading to whatever is steering the body.
 
+### Strapped into an aeroplane: `Cockpit`
+
+`SeaLegs` in a mirror, and the difference is the whole idea. A sailor is *carried* by a deck and spends the day standing up out of its frame. A pilot is **bolted into** the frame by a harness, and does not get to stand up out of anything — roll the aircraft inverted and the pilot goes with it. So this controller applies exactly none of `SeaLegs`' uprighting, and `seat()` — plain parenting — does the work `ride` did there.
+
+```js
+const pilot = new Cockpit(rig, { greyAt: 5 });
+pilot.seat(jet.object, { y: 1.24, z: 2.3 });   // SCENA's canopy
+game.onUpdate((t) => {
+  flight.update(t.delta, controls);             // GAMA flies it
+  jet.update(t.delta, flight.aircraftInput);    // SCENA shows it
+  pilot.watch(bandit.object);                   // eyes on the bandit
+  mixer.update(t.delta);                        // the seated pose
+  pilot.update(t.delta, flight);                // …and what it costs
+});
+```
+
+The airframe argument is structural: `{ pitch, bank, speed? }` is exactly what GAMA's `FlightController` already publishes, and `HoverController` fits it too.
+
+What is left, once the body has lost the argument about which way is up, is the four things a pilot still owns:
+
+1. **Weight.** In a level turn the load is `1 / cos(bank)` — 2g at sixty degrees, six at eighty, and it runs away to infinity as the wings come vertical — plus `V·q / g` for the pull. Under load the head sags, the spine compresses into the seat and the arms get heavy; push to zero and the body floats up off the cushion against the straps. One scalar, `load`, animates all of it.
+2. **Gaze.** In a fight the eyes lead the aeroplane. `watch` tracks anything with a world position, clamped to what a helmet in a seat allows; `checkSix` buys a moment past that limit and **cannot be held**, which is why it takes a duration rather than a flag.
+3. **The cost of the first two together.** Gaze authority falls as load rises: at 6g the head weighs six times what it does on the ground. Pull hard enough and the pilot stops being able to look at all — a mechanic, not a detail.
+4. **Losing it.** Sustained g drains the head: `grey` rises, then G-LOC, and the body stays slack for a while *after* the g comes off. You do not wake up the instant the wings unload, so the recovery has hysteresis.
+
+#### The gaze has to be computed in the aircraft's frame
+
+Obvious in hindsight and not before: the pilot is parented to something that spends half a dogfight inverted. A head aimed in world space has him staring at his own boots through the top of the canopy. The target's world position is brought into the body's frame first — and the body's world matrix is refreshed before the read, because the aeroplane moved this frame and a stale matrix aims the head at where the fight *was*.
+
+#### Contribute a term, and be able to give it back
+
+Same lesson as `SeaLegs`, one layer down. A pose clip is normally playing underneath and the mixer rewrites these bones every frame, which **hides** a compounding bug completely — right up until somebody drives a `Cockpit` with no clip running and the pilot winds himself into a spiral. It stores what it added and removes it before adding the next. There is a test that runs eight seconds with no mixer at all and asserts the head has not wound up.
+
+#### What the sortie found out about g
+
+The finale playground flies GAMA's arcade model, which clamps bank — so its **sustained** load tops out near 2.5g and a realistic five-g-for-several-seconds threshold never once bites. Every g worth watching there is a transient: the break at the merge, which spikes past 7g for about a second. Two consequences, both of them honest: the demo tunes `greyAt` down to suit the model it is flying rather than pretending the model is something it isn't, and the break is latched as a **maneuver** rather than a condition — a one-second snatch is harmless, and a held pull is not.
+
 ### Rowing: a body driven by somebody else's clock
 
 Every other controller in this library owns its own timing. `Locomotion` picks a stride from a speed; `Mannerisms` fires when it feels like it. A rower does not get to choose — he is handed a **phase**, one scalar shared by the whole boat, and his entire body is a function of it.

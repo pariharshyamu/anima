@@ -30,7 +30,15 @@ export const GRIPS = {
   guitar: { x: 0.05, y: 0.95, z: 0.18 },
 } as const;
 
-export type PoseName = 'sit' | 'sitLow' | 'straddle' | 'sleep' | 'drive' | 'cycle' | 'operate';
+export type PoseName =
+  | 'sit'
+  | 'sitLow'
+  | 'straddle'
+  | 'sleep'
+  | 'drive'
+  | 'cycle'
+  | 'operate'
+  | 'pilot';
 export type LoopName = 'strum' | 'hammer' | 'knead' | 'chop' | 'mine' | 'saw' | 'stir';
 
 /** Arm bones only — the mask used by interaction loop overlays. */
@@ -125,6 +133,30 @@ export function createPoseClip(rig: HumanoidRig, name: PoseName): AnimationClip 
       pose.rotate('Spine', [X, 0.1]);
       pose.rotate('Chest', [X, 0.06], [Y, 0.03 * sway]);
       pose.rotate('Head', [X, -0.08]);
+    });
+  }
+
+  if (name === 'pilot') {
+    // Strapped into a fighter seat: reclined a little, knees UP on the
+    // pedals rather than down on a floor, right hand on the centre stick
+    // between the knees, left hand out on the throttle quadrant. The
+    // harness is why the breath is so small — there is a strap across the
+    // chest and it does not give.
+    return buildClip(rig, 'pilot', 5.0, 30, (p, pose) => {
+      const breath = Math.sin(TAU * p);
+      // Thighs nearly level, shins forward and slightly up to the pedals.
+      seatedLegs(pose, 1.42, 1.06, 0.16);
+      // Right hand: in to the centreline, forward and low — the stick.
+      pose.rotate('RightArm', [X, -0.62], [Z, HANG - 0.26]);
+      pose.rotate('RightForeArm', [Y, 0.66], [X, -0.28]);
+      // Left hand: out and forward at hip height — the throttle.
+      pose.rotate('LeftArm', [X, -0.78], [Z, -(HANG - 0.42)]);
+      pose.rotate('LeftForeArm', [Y, -0.5], [X, -0.2]);
+      pose.hipsY = seatDrop(0.5);
+      pose.rotate('Spine', [X, 0.04 + 0.006 * breath]);
+      pose.rotate('Chest', [X, 0.02 + 0.008 * breath]);
+      // Chin up: the horizon lives above the coaming.
+      pose.rotate('Head', [X, -0.12]);
     });
   }
 

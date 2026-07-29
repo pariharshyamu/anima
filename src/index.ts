@@ -194,6 +194,7 @@ export {
   type PreppingOptions,
 } from './prep';
 export { SeaLegs, type SeaLegsOptions, type Deck } from './sealegs';
+export { Cockpit, type CockpitOptions, type Airframe } from './cockpit';
 export {
   Rowing,
   rowGripAt,
