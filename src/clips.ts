@@ -51,6 +51,16 @@ export class Pose {
     }
     this.rotations.set(bone, q);
   }
+
+  /**
+   * Set a bone from a quaternion computed elsewhere — for poses that are
+   * SOLVED rather than authored, where the answer is not a rotation anyone
+   * wrote down as an axis and an angle. `climb` places hands on rungs by
+   * two-link IK and lands here.
+   */
+  set(bone: BoneName, q: Quaternion): void {
+    this.rotations.set(bone, q.clone());
+  }
 }
 
 /** Sample a pose function into a loop-seamless clip. Internal export. */

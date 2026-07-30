@@ -20,6 +20,82 @@ release found.
 
 ## Releases
 
+## [0.39.0] — 2026-07-30
+
+### Fixed — the ladder climb, which was not a climb
+
+The loop shipped in 0.24.0 claimed contralateral movement and three points of
+contact in its own doc comment, and did neither. Every number below is
+measured, before and after.
+
+| | before | after |
+|---|---|---|
+| grip slip, per cycle | 0.367 m | 0.0015 m |
+| cycle with more than one limb moving | 0.604 | 0 |
+| left/right leg pose difference | 0.0025 m — both legs together | alternating |
+| peak hand height vs the head bone | 0.014 m **below** | 0.14 m above |
+| worst limb extension | 0.999 — locked straight, silently clamped | 0.94 |
+
+Five separate defects:
+
+- **A modulo cancelled the alternation.** `reach()` took `q % 0.5` while the
+  two sides were offset by exactly 0.5, making `reach(p) ≡ reach(p+0.5)`. Both
+  hands reached together and both feet stepped together — a bunny-hop up a
+  ladder, with the doc describing a cross-body pattern the arithmetic had
+  removed.
+- **The arms never went overhead.** The rig rests in a T-pose, so a raised arm
+  is a `Z` rotation of one sign; the clip used the other, holding the arms out
+  sideways between 20° below and 4° above horizontal. The `[X, …]` term on the
+  upper arm rotated the bone about its own axis — a pure twist that moved the
+  hand nowhere.
+- **The hands did not hold the rungs.** The body rose 0.60 m per cycle while a
+  hand travelled 0.153 m relative to it. The module's own comment warned that
+  decoupling these "slides the hands through the ladder", as if it had not.
+- **The clip/translation sync was off by the clip's duration.** `timeScale =
+  speed / 2` looks like a rate and is not one, so at the default the body rose
+  at 1.6 rungs/s while the arms delivered 1.0.
+- **A 35% single-frame discontinuity**, where the arm snapped back in one frame.
+
+### Added
+
+- **`measureClimbContact` and `npm run climb`** — the hand-and-rung sibling of
+  `npm run skate`, swept over ten seeded bodies × four rung spacings. Reports
+  peak grip slip, limb-movement overlap, worst extension and overhead reach.
+  `stretch` earns its own place: a limb at full extension is not on its rung
+  and does not slip either — it just hangs short, and nothing else can see it.
+- `createClimbClip` now takes `ClimbClipOptions` (`rungSpacing`, `standoff`,
+  `spread`, `duration`); a bare `duration` number still works as before.
+- `Pose.set`, for poses that are solved rather than authored.
+- [docs/climbing.md](docs/climbing.md), and the first tests this module has
+  ever had — it shipped with none.
+
+### Changed
+
+- The loop is four beats and **one rung per cycle** (was two), with limbs
+  solved onto rungs by two-link IK against the rig's own segment lengths
+  rather than posed by angle. Angles that put a 1.9 m character's hands on the
+  rungs put a 1.5 m character's through them.
+- `Climb`'s default `standoff` is 0.2 m (was 0.3). It is not cosmetic: an arm
+  is a fixed length, so every centimetre spent standing back from the ladder
+  comes off the vertical reach.
+
+### Learned
+
+Three of these were found by writing the measurement, not by looking. The
+screenshot of the broken climb looks like a person on a ladder — the arms are
+in roughly the right place, the legs bend, the body rises. What a still frame
+cannot show is that both legs move together, that the hands slide 37 cm a
+cycle, or that a limb is locked straight because the solver quietly gave up.
+
+The two metric mistakes are worth keeping too. Calling the quietest 70% of
+frames "holding" flattered two opposite errors at once — it swallowed the
+easing tail of a limb's own beat, and on a clip where everything slid gently
+it would have found no holding frames and reported nothing wrong. And summing
+path length cannot tell a limb that wobbles 0.08 mm between keyframes from one
+that slides away; that is a peak, not a sum, and it is the same lesson the
+foot-skate gate had to learn about stride deviation.
+
+
 ### 2026-07-30
 
 - **0.38.0** — `measureFootSkate` and the `npm run skate` gate: foot skate as a
