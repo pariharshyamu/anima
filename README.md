@@ -1,5 +1,8 @@
 # ANIMA — humanoid characters & animation for three.js
 
+[![CI](https://github.com/pariharshyamu/anima/actions/workflows/ci.yml/badge.svg)](https://github.com/pariharshyamu/anima/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/anima3d.svg)](https://www.npmjs.com/package/anima3d)
+
 **ANIMA** gives three.js games *people*: seeded rigged humanoid bodies, procedurally-synthesized locomotion clips, and a blending locomotion controller — no model files, no animation files, no dependencies beyond three.js.
 
 three.js renders. [GAMA](https://github.com/pariharshyamu/gama) makes it a game. [SCENA](https://github.com/pariharshyamu/scena) gives it a world. **ANIMA gives it people.**
@@ -88,13 +91,24 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 
 ```bash
 npm install
-npm test          # 62 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
+npm test          # 424 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo
 npm run dev:portrait  # the character gallery (?seed=N · ?wardrobe=1 · ?view=face)
 npm run dev:hoops     # MEADOW HOOPS — a complete single-file basketball game (all three libraries)
 ```
+
+And the part a unit test cannot do — a clip's numbers can be right while the
+knee bends backwards:
+
+```bash
+npm run verify:playgrounds   # every example, headless, measured by pixels
+```
+
+Both run in CI on every push
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Release notes live in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

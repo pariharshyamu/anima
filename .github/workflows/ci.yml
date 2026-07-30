@@ -1,0 +1,76 @@
+# The gates, on every push.
+#
+# ANIMA animates bodies, and a unit test can only ever check the numbers a
+# clip produces. It cannot see that the knee bends backwards, that the foot
+# skates, that the horse's footfall order is wrong, or that a skinned mesh
+# clone is still bound to the original's bones and every copy walks in
+# lockstep. Every one of those was a real bug here and every one was found by
+# rendering it. Hence the second job.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  check:
+    name: typecheck, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  browser:
+    name: every example renders
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Chromium only — nothing here touches Firefox or WebKit, and
+      # --with-deps supplies the system libraries a bare runner lacks.
+      - run: npx playwright install --with-deps chromium
+      # The playground examples ARE the docs site.
+      - run: npm run site:build
+      # A canvas existing and `gl.getError()` returning zero are both true of a
+      # completely blank frame. This measures pixels.
+      - run: node site/verify-playgrounds.mjs
+
+      # `include-hidden-files` is not optional: the shot directory is
+      # `.playground-shots`, and upload-artifact excludes dotfiles by default —
+      # it uploads nothing while reporting success. Measured on GAMA's first CI
+      # run, which is the only way anybody finds this out.
+      - name: upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: .playground-shots/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
