@@ -5,6 +5,7 @@ import {
   createQuadruped,
   GAITS,
   LEGS,
+  measureFootSkate,
   QuadrupedLocomotion,
   type GaitName,
   type LegName,
@@ -277,37 +278,30 @@ describe('gaits: footfall', () => {
 
   it('ground speed matches the limb sweep — the horse must not skate', () => {
     // THE regression that made the first release slide: the gait declared a
-    // stride its legs could not deliver, so the body covered twice the
-    // ground the hooves did. Measure the hoof's actual travel through
-    // stance and check the declared speed carries the body exactly that
-    // far in exactly that time.
+    // stride its legs could not deliver, so the body covered twice the ground
+    // the hooves did.
+    //
+    // This used to roll its own hoof tracking and allow 15% of error, and 15%
+    // is how `gaitSpeed` came to predict a sweep of `2·R·sin(reach)` while
+    // `poseLeg` swung the hind limb through `0.95·reach`: 8.5% of permanent
+    // forward slide, waved straight through by the test written to catch
+    // exactly it. `measureFootSkate` is the shared metric now, and the bound
+    // is the real one. See `bench/skate.mjs` for the per-gait budgets.
     const rig = horse();
     const clips = createGaitClips(rig);
     for (const gait of ['walk', 'trot', 'canter', 'gallop'] as const) {
       const spec = GAITS[gait];
-      const samples = 240;
-      const mixer = new AnimationMixer(rig.mesh);
-      mixer.clipAction(clips[gait]).play();
-      // Follow one leg's hoof in Z through its stance window.
-      const zs: number[] = [];
-      let last = 0;
-      for (let i = 0; i < samples; i++) {
-        const t = (i / samples) * clips[gait].duration;
-        mixer.update(t - last);
-        last = t;
-        rig.mesh.updateMatrixWorld(true);
-        const phase = (i / samples - spec.contact.LH + 1) % 1;
-        if (phase < spec.duty) {
-          zs.push(rig.bones.LHHoof.getWorldPosition(new Vector3()).z);
-        }
-      }
-      const sweep = Math.max(...zs) - Math.min(...zs);
-      const stanceTime = spec.duty * clips[gait].duration;
-      const impliedSpeed = sweep / stanceTime;
-      const declared = clips.speeds[gait];
-      // Within 15%: the hoof must travel back under the horse at very close
-      // to the speed the horse travels forward.
-      expect(Math.abs(impliedSpeed - declared) / declared, `${gait} skate`).toBeLessThan(0.15);
+      const report = measureFootSkate(rig, clips[gait], {
+        speed: clips.speeds[gait],
+        feet: LEGS.map((leg) => `${leg}Hoof`),
+        // The hoof reaches past its landing point in late swing, so the
+        // stride has to be read across the contact window, not peak to peak.
+        contact: Object.fromEntries(
+          Object.entries(spec.contact).map(([leg, phase]) => [`${leg}Hoof`, phase])
+        ),
+        duty: spec.duty,
+      });
+      expect(Math.abs(report.mismatch), `${gait} skate`).toBeLessThan(0.05);
     }
   });
 

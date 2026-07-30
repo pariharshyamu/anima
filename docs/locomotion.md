@@ -7,6 +7,13 @@ const clips = createLocomotionClips(rig, { walkDuration: 1.0, runHipSwing: 0.9 }
 clips.walkSpeed; // the ground speed the walk cycle is stride-matched to
 ```
 
+Those reference speeds are the whole game: `Locomotion` divides by them to get
+its playback rate, so a speed that overstates its clip's real stride slides the
+foot by exactly that much, every step. One of them did — the run's, by 18.4% —
+and nothing short of measuring the bones could see it. [`measureFootSkate` and
+the `npm run skate` gate](skate.md) is that measurement, and it is now what
+stands between these constants and a character on ice.
+
 ## The Locomotion controller
 
 ```js

@@ -22,6 +22,17 @@ release found.
 
 ### 2026-07-30
 
+- **0.38.0** — `measureFootSkate` and the `npm run skate` gate: foot skate as a
+  number, measured off the bones and checked against the speed each clip
+  declares. It found three shipped defects, none of them visible to a unit test
+  or a still frame — the run's stride factor was an unmeasured 1.6 against the
+  walk's 1.35 (**18.4%** of slide, ~15 cm a step); `gaitSpeed` predicted a hoof
+  sweep of `2·R·sin(reach)` while `poseLeg` drove the hind limb through
+  `0.95·reach` (**8.5%**); and `createGaitClips` baked keyframes at a fixed
+  *output* fps, so 1.4× tempo bought 13 of them instead of 19 and doubled the
+  canter's skate to **7.5%**. **Behaviour change:** `runSpeed` drops (2.859 →
+  2.412 on seed 7) and every horse gait speed drops ~5%, which moves where
+  `Locomotion` and `QuadrupedLocomotion` change gait
 - **0.37.1** — CI on every push, this changelog, and `playwright` as a
   devDependency so `verify:playgrounds` runs on a fresh clone
 

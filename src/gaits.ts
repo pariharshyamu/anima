@@ -205,6 +205,19 @@ interface LimbState {
 const FRONT_REACH = 0.62;
 const HIND_REACH = 0.68;
 
+/**
+ * The hind limb swings a shade less than its nominal arc: the drive comes
+ * from the hip and the stifle absorbs part of it — see `poseLeg`.
+ *
+ * It lives up here, and is read by BOTH the poser and `gaitSpeed`, because it
+ * used to live only inside `poseLeg`. The speed formula predicted a sweep of
+ * `2·R·sin(reach)` while the bones delivered `2·R·sin(0.95·reach)`, so the
+ * horse was declared to cover up to 8.5% more ground than its hooves did and
+ * slid forward by that much. `npm run skate` measures the bones, and would
+ * fail again the moment these two drift apart.
+ */
+const HIND_DRIVE = 0.95;
+
 /** Where a limb is in its own cycle at stride phase `p`. */
 function limbState(leg: LegName, p: number, spec: GaitSpec): LimbState {
   const front = isFront(leg);
@@ -215,6 +228,15 @@ function limbState(leg: LegName, p: number, spec: GaitSpec): LimbState {
   // and geometrically it has to: one body cannot travel at two speeds. The
   // foreleg is shorter, so it swings through a wider angle to cover the
   // same ground.
+  //
+  // It compensates against the NOMINAL hind arc, not the slightly smaller one
+  // `HIND_DRIVE` actually delivers, and measurement says leave it that way.
+  // Compensating against the driven arc is the tidier claim and makes the two
+  // formulas agree exactly — and it moved the cantering forefoot from 3.0% to
+  // 8.2% skate, because a rigid pendulum is a poor model of a foreleg on a
+  // horse whose spine is flexing through the stride. `npm run skate` reports
+  // fore and hind separately; the split it shows is real and is not something
+  // to tune a constant against.
   const A = front ? Math.asin(Math.min(1, (HIND_REACH / FRONT_REACH) * Math.sin(spec.reach))) : spec.reach;
   const reach = front ? FRONT_REACH : HIND_REACH; // shoulder→hoof / hip→hoof
   if (t < D) {
@@ -284,7 +306,7 @@ function poseLeg(pose: QuadPose, leg: LegName, p: number, spec: GaitSpec): void 
   } else {
     // Hind leg folds at hock and stifle together, and drives from the
     // hip — the propulsion comes from behind.
-    pose.rotate(upper, [X, -swing * 0.95], [Z, s * 0.01]);
+    pose.rotate(upper, [X, -swing * HIND_DRIVE], [Z, s * 0.01]);
     pose.rotate(lower, [X, fold * (0.55 - 0.18 * Math.max(0, swing))]);
     pose.rotate(cannon, [X, -1.15 * fold]);
     pose.rotate(hoof, [X, 0.6 * fold + 0.3 * swing * fold]);
@@ -344,19 +366,26 @@ export interface GaitOptions {
  * The ground speed a gait actually carries the body at.
  *
  * This is not a style choice, it is arithmetic. While a hoof is planted it
- * sweeps a fixed arc under the body — `2·R·sin(reach)` for a limb of
- * length R — and the body must cover exactly that distance in exactly the
- * time the hoof is down (`duty × duration`). Move faster and the hoof
- * skates; slower and the horse moonwalks.
+ * sweeps a fixed arc under the body — `2·R·sin(A)` for a limb of length R
+ * swinging through ±A — and the body must cover exactly that distance in
+ * exactly the time the hoof is down (`duty × duration`). Move faster and the
+ * hoof skates; slower and the horse moonwalks.
  *
  * Declaring a stride length by hand instead is the classic way to get this
  * wrong: the number looks plausible, the legs cannot deliver it, and the
  * animal slides along the ground with its legs cycling uselessly.
+ *
+ * It stays arithmetic on purpose. `measureFootSkate` can read the real sweep
+ * off the real bones, and computing this from that would be strictly more
+ * accurate — and would also make `npm run skate` compare the measurement to
+ * itself and pass forever. The formula has to be an independent claim for the
+ * gate to have anything to check.
  */
 export function gaitSpeed(rig: QuadrupedRig, spec: GaitSpec): number {
-  // Fore and hind are matched to sweep the same distance (see `limbState`),
-  // so either one gives the answer.
-  const sweep = 2 * HIND_REACH * Math.sin(spec.reach) * rig.height;
+  // Fore and hind are matched to sweep the same distance (see `limbState`) —
+  // measured, within 3% on the walk — so either one gives the answer. This
+  // takes the hind, and so must use the hind's drive factor.
+  const sweep = 2 * HIND_REACH * Math.sin(HIND_DRIVE * spec.reach) * rig.height;
   return sweep / (spec.duty * spec.duration);
 }
 
@@ -365,8 +394,14 @@ export function gaitSpeed(rig: QuadrupedRig, spec: GaitSpec): number {
  * no animation files, deterministic, loop-seamless, and in place.
  */
 export function createGaitClips(rig: QuadrupedRig, options: GaitOptions = {}): QuadrupedClips {
-  const fps = options.fps ?? 30;
   const tempo = options.tempo ?? 1;
+  // Keyframe density belongs to the SHAPE of the motion, not to how fast it is
+  // played back. `tempo` compresses the same stride into a shorter clip, so
+  // sampling at a fixed output fps quietly gave a 1.4× canter 13 keyframes
+  // where a 1× canter got 19 — the coarser bake rounded the hoof's arc off and
+  // pushed foot skate from 3.6% to 7.5%. Scaling with tempo keeps the source
+  // resolution fixed and the clip's cost proportional to its content.
+  const fps = (options.fps ?? 30) * tempo;
   const H = rig.height;
   const restY = rig.bones.Hips.position.y;
 

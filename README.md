@@ -32,6 +32,8 @@ Feed `update()` any velocity — a plain speed, or GAMA's `agent.velocity` direc
 - **`createHumanoid({ seed, height, build, palette })`** — a seeded, stylized low-poly humanoid: 19-bone animation-ready skeleton (identity rest rotations, T-pose bind, feet on y = 0), one vertex-colored `SkinnedMesh` (a single draw call), seeded proportions and outfit colors. Same seed, same person; a crowd is a `for` loop.
 - **`createLocomotionClips(rig, gait?)`** — idle, walk and run `AnimationClip`s synthesized from gait parameters: hip swing, knee flexion timed to the swing phase, ankle leveling, arm counter-swing with elbow bend, pelvis/chest counter-twist, hip bob, run lean. Loop-seamless, in-place, deterministic; reference ground speeds are derived from the rig's leg length for stride matching.
 - **`Locomotion`** — the 1D blend controller: smoothed speed in, weighted actions out, with phase sync across the walk↔run blend and stride-matched `timeScale`. Exposes `weights` and `speed` for debugging.
+- **`measureFootSkate(rig, clip, { speed })`** — foot skate as a number. Drives a real `AnimationMixer` over the real bones, reads world positions, and reports the stride the clip *actually* delivers against the speed it claims: `mismatch` is the gate, `slipPerStep` is the same fact in centimetres, `spread` catches feet that disagree with each other. Structural in its rig argument, so it measures a GLB's skeleton as happily as ANIMA's own. `npm run skate` is the gate built on it, and it is deliberately independent of the closed-form geometry that declares the speeds — a metric derived from the formula it checks proves only that two copies agree.
+
 - **`OUTFITS`** — palette pools (villager, guard, winter) the generator picks from per seed, so a crowd looks like inhabitants of the same place while every individual differs.
 - **`FootIK`** — closed-form two-bone leg IK that plants each foot on the actual ground under it (SCENA's `terrain.heightAt` drops straight in), eases the pelvis toward the lower foot on slopes, preserves the clip's swing lift, and ignores sub-perceptual ripples (deadzone) so straight legs don't over-bend.
 - **`LookAt`** — a clamped, smoothed gaze chain distributing yaw/pitch across chest → neck → head on top of the animation; targets behind the back are ignored.
@@ -91,7 +93,7 @@ Run the trio demo: `npm run dev` — seeded villagers strolling a SCENA road on 
 
 ```bash
 npm install
-npm test          # 424 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
+npm test          # 439 vitest unit tests (skeleton, skinning, clips, blending, IK, gaze, overlays, events, retargeting, sockets, gear, VAT, crowds)
 npm run typecheck
 npm run build     # tsup → dist (ESM + CJS + d.ts)
 npm run dev       # the ANIMA × GAMA × SCENA parade demo
@@ -99,14 +101,26 @@ npm run dev:portrait  # the character gallery (?seed=N · ?wardrobe=1 · ?view=f
 npm run dev:hoops     # MEADOW HOOPS — a complete single-file basketball game (all three libraries)
 ```
 
-And the part a unit test cannot do — a clip's numbers can be right while the
-knee bends backwards:
+And the two parts a unit test cannot do. A clip's numbers can be right while
+the knee bends backwards:
 
 ```bash
 npm run verify:playgrounds   # every example, headless, measured by pixels
 ```
 
-Both run in CI on every push
+…and a clip can look perfect in every still frame while the feet slide along
+the ground, which is the loudest thing a procedural character does wrong:
+
+```bash
+npm run skate     # foot skate, measured from the bones, against declared speed
+```
+
+It has found three shipped defects — a run stride factor nobody had measured
+(18.4% of slide), a constant the horse's poser and speed formula disagreed
+about (8.5%), and keyframe density that quietly followed the playback rate
+(skate doubled at 1.4× tempo). See [docs/skate.md](docs/skate.md).
+
+All three run in CI on every push
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Release notes live in
 [CHANGELOG.md](CHANGELOG.md).
 

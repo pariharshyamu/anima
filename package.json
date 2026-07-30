@@ -1,7 +1,7 @@
 {
   "name": "anima3d",
-  "version": "0.37.1",
-  "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
+  "version": "0.38.0",
+  "description": "ANIMA \u2014 professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -25,7 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "skate": "node bench/skate.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate",
     "dev:portrait": "vite examples/portrait",
     "dev:hoops": "vite examples/basketball",
     "dev:village": "vite examples/village",
@@ -73,6 +74,7 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/three": "^0.185.1",
+    "@vitest/coverage-v8": "^1.6.1",
     "gama3d": "^0.34.0",
     "playwright": "^1.56.1",
     "scena3d": "^0.102.0",

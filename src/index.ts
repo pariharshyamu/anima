@@ -29,6 +29,14 @@ export {
   type GaitOptions,
   type LocomotionClips,
 } from './clips';
+// Foot skate as a NUMBER. Sliding feet are the loudest tell of a procedural
+// character and the one thing no screenshot or unit test can see.
+export {
+  measureFootSkate,
+  type FootSkateOptions,
+  type FootSkateReport,
+  type SkateRig,
+} from './skate';
 export {
   Locomotion,
   type LocomotionOptions,

@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build
+    name: typecheck, tests, build, skate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -39,6 +39,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Foot skate, measured off the built bundle's own bone transforms and
+      # compared against the speeds its closed-form geometry declares. Three
+      # shipped defects came out of this: a stride factor nobody had measured,
+      # a constant the poser and the speed formula disagreed about, and
+      # keyframe density that quietly followed the playback rate. Not one of
+      # them could fail a unit test or show up in a still frame.
+      - run: npm run skate
 
   browser:
     name: every example renders

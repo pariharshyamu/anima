@@ -166,10 +166,24 @@ export function createLocomotionClips(
     pose.rotate('Head', [Y, 0.05 * Math.sin(TAU * p + 2)], [X, -0.01 * breath]);
   });
 
-  // Stride-matched reference speeds: 2 steps per cycle, step length from
-  // leg geometry and swing amplitude (empirical ground-contact factor).
-  const walkSpeed = (2 * 1.35 * rig.legLength * Math.sin(walkHipSwing)) / walkDuration;
-  const runSpeed = (2 * 1.6 * rig.legLength * Math.sin(runHipSwing)) / runDuration;
+  // Stride-matched reference speeds: 2 steps per cycle, step length from leg
+  // geometry and swing amplitude.
+  //
+  // ONE factor, shared, because both gaits are the same geometry: how far the
+  // ankle travels for a given hip swing does not depend on whether you call
+  // the motion a walk or a run. The run used to use 1.6 while the walk used
+  // 1.35, and `measureFootSkate` showed what that cost — the run's declared
+  // speed overstated its real stride by 18.4%, on every seed, which made
+  // `Locomotion` play the clip 18% too slowly for the ground covered and slid
+  // the planted foot about 15 cm every step. Solving for the factor that makes
+  // the measured stride agree gives 1.3507, 1.3512, 1.3525, 1.3507 across four
+  // seeds — the walk's number. It was never a run-specific constant; it was an
+  // unmeasured guess.
+  //
+  // `npm run skate` is the gate that keeps them honest.
+  const STRIDE_FACTOR = 1.35;
+  const walkSpeed = (2 * STRIDE_FACTOR * rig.legLength * Math.sin(walkHipSwing)) / walkDuration;
+  const runSpeed = (2 * STRIDE_FACTOR * rig.legLength * Math.sin(runHipSwing)) / runDuration;
 
   return { idle, walk, run, walkSpeed, runSpeed };
 }
