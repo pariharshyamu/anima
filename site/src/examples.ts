@@ -4534,6 +4534,299 @@ window.liftingDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'dining',
+    title: 'The table: eight utensils, one body',
+    group: 'Scale',
+    code: `// EIGHT DINERS, EIGHT UTENSILS, ONE BODY.
+//
+// Every character here is the same seed. Nothing below picks a different
+// animation for anybody: they are all running one controller, and the only
+// thing that differs is what is in their hand. If they look like they are
+// eating differently — and they do — that is the utensil doing it.
+//
+// Three of those differences are physics rather than taste:
+//
+//   THE SPOON STAYS LEVEL   soup does not survive a wrist that rotates on the
+//                           way up, which is why the elbow comes up. Measured:
+//                           a spoon holds 0.000 rad off level where a fork
+//                           sits at 0.350 — twenty degrees.
+//   THE GLASS GOES FURTHER  a vessel tips by atan(h(1-fill)/r), so the last
+//                           sip goes half a radian past the first. Watch the
+//                           near-empty cups at the far end of the table.
+//   THE PLATE EMPTIES       food is Countable, so the meal ENDS. The stacks
+//                           in front of each diner are the count, and when
+//                           they are gone the cutlery goes down.
+//
+// The white line under each chin is the plumb from the mouth socket to the
+// business end of the utensil — when a diner is mid-bite it has no length,
+// which is the whole of what \`npm run dining\` measures.
+import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Group,
+         Line, LineBasicMaterial, Mesh, MeshStandardMaterial, PlaneGeometry,
+         Quaternion, SphereGeometry, Vector3 } from 'three';
+import { applyFog, createDiningTable, createLightingRig, createSky,
+         createSurface, PALETTES } from 'scena3d';
+import { createHumanoid, Dining, getSocket, OUTFITS, servings,
+         UTENSILS, UTENSIL_NAMES } from 'anima3d';
+import { Game, Hud } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(120, 120), createSurface('floortile', { seed: 6 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const hud = new Hud();
+
+const TABLE = 0.76;          // metres — where the top of the table is
+const CHAIR = 0.44;          // …and the seat
+
+// ── The room ────────────────────────────────────────────────────────
+// SCENA's table publishes its own seats as \`slots\` — the same
+// \`InteractionSlot\` shape \`Interaction.use()\` takes. So nobody here decides
+// where eight people sit: the furniture already knows, and ANIMA reads it.
+const table = createDiningTable({ seats: 8, style: 'trestle', seed: 3, palette });
+table.object.position.set(0, 0, 3.2);
+scene.add(table.object);
+table.object.updateMatrixWorld(true);
+const seats = table.slots.filter((s) => s.kind === 'seat');
+
+const CROCKERY = new MeshStandardMaterial({ color: 0xece7de, roughness: 0.55 });
+const FOOD = new MeshStandardMaterial({ color: 0xc8763a, roughness: 0.85 });
+const STEEL = new MeshStandardMaterial({ color: 0x9aa1ab, metalness: 0.8, roughness: 0.3 });
+const GLASS = new MeshStandardMaterial({
+  color: 0x8fd0e8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.55,
+});
+
+/** A place setting: something to eat off, and something to eat WITH. */
+function makeSetting(spec) {
+  const g = new Group();
+  if (spec.vessel) {
+    // A glass, and the liquid in it — which is the count, made visible.
+    const cup = new Mesh(
+      new CylinderGeometry(spec.vessel.radius, spec.vessel.radius * 0.85, spec.vessel.height, 14, 1, true),
+      GLASS
+    );
+    cup.position.y = spec.vessel.height / 2;
+    const drink = new Mesh(
+      new CylinderGeometry(spec.vessel.radius * 0.94, spec.vessel.radius * 0.8, spec.vessel.height * 0.9, 14),
+      FOOD
+    );
+    g.add(cup, drink);
+    return { object: g, hold: g, level: drink, height: spec.vessel.height };
+  }
+  const plate = new Mesh(new CylinderGeometry(0.1, 0.085, 0.02, 18), CROCKERY);
+  const stack = new Group();
+  stack.position.y = 0.02;
+  g.add(plate, stack);
+  // A tool, held handle-up so it reads from across the table.
+  const tool = new Group();
+  const handle = new Mesh(new CylinderGeometry(0.005, 0.005, 0.11, 6), STEEL);
+  handle.rotation.z = Math.PI / 2;
+  const head = new Mesh(
+    spec.label === 'Spoon' ? new SphereGeometry(0.018, 10, 6) : new BoxGeometry(0.03, 0.004, 0.022),
+    STEEL
+  );
+  head.position.x = 0.062;
+  if (spec.label === 'Spoon') head.scale.set(1, 0.45, 0.8);
+  tool.add(handle, head);
+  return { object: g, hold: tool, stack };
+}
+
+// ── Eight diners, one seed ──────────────────────────────────────────
+const diners = UTENSIL_NAMES.map((name, i) => {
+  const spec = UTENSILS[name];
+  const anchor = seats[i % seats.length].anchor;
+  const at = anchor.getWorldPosition(new Vector3());
+  const facing = new Vector3(0, 0, 1).applyQuaternion(anchor.getWorldQuaternion(new Quaternion()));
+  const x = at.x;
+  const z = at.z;
+
+  const rig = createHumanoid({ seed: 9, palette: OUTFITS.villager });
+  rig.object.position.set(x, 0, z);
+  rig.object.quaternion.copy(anchor.getWorldQuaternion(new Quaternion()));
+  scene.add(rig.object);
+  seat(rig);
+  rig.object.updateMatrixWorld(true);
+
+  // The place setting goes on the table, in front of THIS diner — which is
+  // the seat's own forward, whichever side of the board they are on.
+  const set = makeSetting(spec);
+  const plate = set.object;
+  plate.position.set(x + facing.x * 0.3, TABLE, z + facing.z * 0.3);
+  scene.add(plate);
+  scene.add(set.hold);
+
+  const helpings = spec.vessel ? 5 : 6;
+  const food = servings(helpings);
+  const crumbs = [];
+  if (set.stack) {
+    for (let k = 0; k < helpings; k++) {
+      const bite = new Mesh(new BoxGeometry(0.035, 0.018, 0.035), FOOD);
+      const a = (k / helpings) * Math.PI * 2;
+      bite.position.set(Math.cos(a) * 0.045, 0.01 + (k % 2) * 0.016, Math.sin(a) * 0.045);
+      set.stack.add(bite);
+      crumbs.push(bite);
+    }
+  }
+
+  const meal = new Dining(rig, {
+    utensil: name,
+    plate,
+    food,
+    held: set.hold,
+    seed: 5 + i * 3,
+    fade: 0.5,
+    tempo: 0.9 + (i % 3) * 0.12,
+  });
+
+  // The plate emptying, made visible: a helping disappears with each mouthful,
+  // and a glass's liquid drops. Everything here READS the meal — nothing
+  // steers it.
+  meal.onBite((e) => {
+    if (crumbs.length) {
+      const gone = crumbs[helpings - 1 - Math.min(helpings - 1, e.index - 1)];
+      if (gone) gone.visible = false;
+    }
+    if (set.level) {
+      set.level.scale.y = Math.max(0.03, e.left);
+      set.level.position.y = (set.height * 0.9 * set.level.scale.y) / 2 + 0.005;
+    }
+  });
+
+  // The plumb: mouth socket to the business end. It has no length at the bite.
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(6), 3));
+  const line = new Line(geo, new LineBasicMaterial({ color: 0xf4f7ff }));
+  line.frustumCulled = false;
+  scene.add(line);
+
+  return { name, spec, rig, meal, food, helpings, crumbs, set, line, geo, x, z, worst: 0 };
+});
+
+/**
+ * A seated pose, by hand.
+ *
+ * \`Dining\` never touches the hips or the legs — that is the whole reason a sit
+ * and a meal can share one body — so the chair is somebody else's problem, and
+ * here "somebody else" is six lines.
+ */
+function seat(rig) {
+  const h = rig.height;
+  rig.bones.Hips.position.y = CHAIR + 0.045 * h;
+  rig.bones.Hips.rotation.x = 0.06;
+  for (const s of ['Left', 'Right']) {
+    const side = s === 'Left' ? 1 : -1;
+    rig.bones[\`\${s}UpLeg\`].rotation.set(-1.44, 0, side * 0.1);
+    rig.bones[\`\${s}Leg\`].rotation.x = 1.42;
+    rig.bones[\`\${s}Foot\`].rotation.x = 0.02;
+  }
+}
+
+const tip = new Vector3();
+const lips = new Vector3();
+let t = 0;
+
+game.onUpdate((tick) => {
+  const dt = tick.delta;
+  t += dt;
+
+  for (const d of diners) {
+    d.meal.update(dt);
+
+    // The plumb, straight off the transforms — the same two points the gate
+    // takes its headline number from.
+    const hand = d.rig.bones.RightHand;
+    tip.set(d.spec.tip[0] * d.rig.height, d.spec.tip[1] * d.rig.height, d.spec.tip[2] * d.rig.height);
+    hand.localToWorld(tip);
+    getSocket(d.rig, 'mouth').getWorldPosition(lips);
+    const a = d.geo.attributes.position;
+    a.setXYZ(0, lips.x, lips.y, lips.z);
+    a.setXYZ(1, tip.x, tip.y, tip.z);
+    a.needsUpdate = true;
+    if (d.meal.phase === 'bite') d.worst = Math.max(d.worst, d.meal.mouthGap);
+
+    // Cleared, and served again — a table where everyone finishes at once and
+    // then sits there forever is not a table.
+    if (d.meal.done && !d.clearing) {
+      d.clearing = t + 3;
+      d.meal.release();
+    }
+    if (d.clearing && t > d.clearing) {
+      d.clearing = 0;
+      d.food.setCount(d.helpings);
+      for (const c of d.crumbs) c.visible = true;
+      if (d.set.level) {
+        d.set.level.scale.y = 1;
+        d.set.level.position.y = (d.set.height * 0.9) / 2 + 0.005;
+      }
+      d.meal = new Dining(d.rig, {
+        utensil: d.name,
+        plate: d.set.object,
+        food: d.food,
+        held: d.set.hold,
+        seed: 5,
+        fade: 0.5,
+      });
+      d.meal.onBite((e) => {
+        const gone = d.crumbs[d.helpings - 1 - Math.min(d.helpings - 1, e.index - 1)];
+        if (gone) gone.visible = false;
+        if (d.set.level) {
+          d.set.level.scale.y = Math.max(0.03, e.left);
+          d.set.level.position.y = (d.set.height * 0.9 * d.set.level.scale.y) / 2 + 0.005;
+        }
+      });
+    }
+  }
+
+  const shown = diners[Math.floor(t / 4) % diners.length];
+  hud.objective(
+    shown.spec.label.toUpperCase() +
+    '   mouthful ' + shown.meal.bites +
+    '   ' + Math.round(shown.meal.left * 100) + '% left' +
+    '   ' + shown.meal.phase
+  );
+  hud.prompt(
+    'to the mouth ' + (shown.worst * 1000).toFixed(1) + ' mm' +
+    '   off level ' + shown.meal.spill.toFixed(3) + ' rad' +
+    '   tilt ' + shown.meal.tilt.toFixed(2) +
+    '   lean ' + shown.meal.lean.toFixed(2) +
+    (shown.meal.canSpeak ? '' : '   — mouth full')
+  );
+  hud.update(dt);
+});
+
+// Down the length of the board, so everybody is in profile: the arm path and
+// the head coming to meet the food both live in the sagittal plane, which is
+// the plane a side view shows and a head-on view hides.
+game.camera.position.set(-3.7, 1.78, 3.2);
+game.camera.lookAt(0.4, 1.02, 3.2);
+
+window.diningDebug = () => ({
+  diners: diners.length,
+  // The scene's OWN clock. Headless SwiftShader runs this at roughly a third
+  // of real time, and a meal that has not started looks exactly like one that
+  // never will.
+  clock: Number(t.toFixed(1)),
+  bites: diners.map((d) => d.meal.bites),
+  left: diners.map((d) => Number(d.meal.left.toFixed(2))),
+  // Millimetres from the utensil to the lips at the closest point of a bite.
+  // Zero is the answer; anything else is the tell this module exists for.
+  mouth: diners.map((d) => ({ name: d.name, mm: Number((d.worst * 1000).toFixed(1)) })),
+  // The claim the scene is named for: one body, eight utensils, and the spoon
+  // holding its load flat while the fork does not.
+  spill: diners.map((d) => ({ name: d.name, rad: Number(d.meal.spill.toFixed(3)) })),
+  tilt: diners.filter((d) => d.spec.vessel).map((d) => ({
+    name: d.name, left: Number(d.meal.left.toFixed(2)), rad: Number(d.meal.tilt.toFixed(2)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

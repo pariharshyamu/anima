@@ -16,6 +16,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'parkour', title: 'Parkour: reach and contact' },
   { id: 'mood', title: 'Mood: the layer, not the pose' },
   { id: 'lifting', title: 'Lifting: the rep that decays' },
+  { id: 'dining', title: 'Dining: the utensil is the mechanism' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

@@ -238,6 +238,24 @@ export {
   type RowStyle,
 } from './rowing';
 
+// Dining — the utensil is the mechanism, not the prop.
+export {
+  Dining,
+  UTENSILS,
+  UTENSIL_NAMES,
+  measureBite,
+  pourAngle,
+  servings,
+  type BiteEvent,
+  type BiteOptions,
+  type BiteReport,
+  type Countable,
+  type DiningOptions,
+  type DiningPhase,
+  type Utensil,
+  type UtensilSpec,
+} from './dining';
+
 // Lifting — gym work. The first motion here that gets WORSE as it goes on.
 export {
   Lifting,

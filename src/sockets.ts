@@ -2,7 +2,14 @@ import { Object3D } from 'three';
 import type { BoneName, HumanoidRig } from './humanoid';
 
 /** Named attachment points that survive animation (they live on bones). */
-export type SocketName = 'handLeft' | 'handRight' | 'back' | 'hipLeft' | 'hipRight' | 'head';
+export type SocketName =
+  | 'handLeft'
+  | 'handRight'
+  | 'back'
+  | 'hipLeft'
+  | 'hipRight'
+  | 'head'
+  | 'mouth';
 
 const SOCKETS: Record<
   SocketName,
@@ -15,6 +22,12 @@ const SOCKETS: Record<
   hipLeft: { bone: 'Hips', offset: [0.095, 0, 0.01] },
   hipRight: { bone: 'Hips', offset: [-0.095, 0, 0.01] },
   head: { bone: 'Head', offset: [0, 0.135, 0] },
+  // Taken from the face layout rather than guessed: the mouth mesh sits at
+  // `0.03 × height` up and `0.0565 × height` forward on the Head bone, so this
+  // IS where the lips are on every seeded face. `Dining` measures its contact
+  // against it, and a fork that stops 40 mm short of this point is the single
+  // most recognisable broken eating animation there is.
+  mouth: { bone: 'Head', offset: [0, 0.03, 0.0565] },
 };
 
 /**

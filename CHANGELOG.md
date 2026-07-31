@@ -20,6 +20,64 @@ release found.
 
 ## Releases
 
+## [0.46.0] — 2026-07-31
+
+### Added
+
+- **`Dining` — where the utensil is the mechanism, not the prop.** Swap a spoon
+  for chopsticks and the *bowl comes to your face*; swap it for a glass and the
+  *wrist tilts further as it empties*; swap it for a knife and fork and there is
+  a whole sawing sub-action before every few bites. Eight of them — `fork`,
+  `spoon`, `knifeAndFork`, `chopsticks`, `hands`, `cup`, `bowl`, `straw` — and
+  83.8 mm of difference in how far the head travels between them.
+- **A spoon has to stay level, and that is measured.** The wrist is corrected
+  toward horizontal and the correction is clamped to a wrist's real range, so
+  when it binds the load tips rather than the shoulder doing something a
+  shoulder cannot. Across plate placements chosen to make a level carry hard, a
+  spoon holds **0.000 rad** off level and a fork sits at **0.350** — twenty
+  degrees, and enough to lose everything on it.
+- **`pourAngle(fill, height, radius)` = `atan(h(1 − f) / r)`.** Geometry, not
+  feel: a full glass needs no tilt and an empty one needs seventy degrees, and
+  a wide soup bowl goes over far less than a narrow highball holding the same.
+  Measured: **+0.55 rad from the first sip to the last.** A straw is the one
+  vessel that never tips, and that is the whole of what a straw is.
+- **The plate empties.** Food is `Countable` — the shape SCENA's counted props
+  publish — so mouthfuls come out of a real number and the meal **ends**.
+- **The reach is a closed loop.** A plate further away than an arm cannot be
+  eaten from, so the body folds until it can: **0.00 rad** under the chin,
+  **0.57** at arm's length, and a published limit of **474 mm** past which this
+  body simply cannot reach.
+- **A `mouth` socket**, taken from the face layout rather than guessed, so it
+  sits between the lips on every seeded character and moves with the head.
+- **`npm run dining` — the sixth gate.** `measureBite` eats a whole plate of all
+  eight utensils on six bodies — 240 mouthfuls — and holds them to eleven
+  budgets. Contact is a **closest-approach** question, not a worst-frame one: a
+  gather is a scoop, and a worst-frame reading called that 40 mm of miss on a
+  plate the hand was holding.
+- **The `dining` playground** — eight diners on SCENA's own table slots, one
+  seed between them, plates visibly emptying, and a plumb line from each mouth
+  to the business end of each utensil.
+- `Dining` takes the arms outright, only ADDS to the spine, chest, neck and
+  head, and never touches the hips or the legs — which is what lets a sit pose
+  and a meal share one body. `chewPhase` and `canSpeak` are published rather
+  than applied, because this rig has no jaw and `Conversation` is the thing
+  that should know nobody talks with their mouth full.
+
+### Fixed
+
+- Found by the new gate: a straw whose glass stayed on the table while the head
+  went down to it, needing 47 cm of neck the rig does not have; an analytic
+  reach solve that reported convergence with the fork 94 mm short of the plate;
+  a knife and fork that cut at the plate and then "reached" for it from a
+  resting pose, teleporting the tines 310 mm on one frame; a meal that ended
+  the instant the plate hit zero, jumping the utensil 272 mm to a pose it had
+  not travelled to; a `meet` routed through the head alone and worth 12 mm; a
+  sip tilt read before the wrist had gone over, reporting 0.00 for every drink;
+  and a spill number reported only for the utensils that correct, so a fork
+  came out as level as a spoon because nobody had asked the fork.
+- `npm run climb`, `parkour`, `mood`, `lifting` and `dining` now all run in CI.
+  A gate CI does not run is not a gate.
+
 ## [0.45.0] — 2026-07-31
 
 ### Added
