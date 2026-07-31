@@ -1,5 +1,6 @@
 import { AnimationAction, AnimationClip, AnimationMixer, Object3D, Quaternion, Vector3 } from 'three';
 import { buildClip, Pose } from './clips';
+import { solveChain, toParentFrame } from './solve';
 import type { BoneName, HumanoidRig } from './humanoid';
 import type { Locomotion } from './locomotion';
 
@@ -24,40 +25,6 @@ export interface Climbable {
 }
 
 export type ClimbState = 'off' | 'mounting' | 'climbing' | 'topping' | 'done';
-
-/** Two-link IK: put the end of a `l1`+`l2` chain at `to`, elbow toward `pole`. */
-function solveChain(
-  from: Vector3,
-  to: Vector3,
-  restDir: Vector3,
-  l1: number,
-  l2: number,
-  pole: Vector3
-): { root: Quaternion; joint: Quaternion } {
-  const delta = to.clone().sub(from);
-  const reach = Math.min(
-    (l1 + l2) * 0.999,
-    Math.max(Math.abs(l1 - l2) * 1.001, delta.length())
-  );
-  const dir = delta.clone().normalize();
-  // Normal of the plane the chain bends in. `pole` decides which way the
-  // elbow or knee points; without it the solve is a cone of valid answers
-  // and the joint wanders.
-  const n = dir.clone().cross(pole);
-  if (n.lengthSq() < 1e-8) n.copy(Z);
-  n.normalize();
-
-  const cosGamma = (l1 * l1 + reach * reach - l2 * l2) / (2 * l1 * reach);
-  const cosBend = (l1 * l1 + l2 * l2 - reach * reach) / (2 * l1 * l2);
-  const gamma = Math.acos(Math.min(1, Math.max(-1, cosGamma)));
-  const bend = Math.PI - Math.acos(Math.min(1, Math.max(-1, cosBend)));
-
-  const upper = dir.clone().applyAxisAngle(n, gamma);
-  const root = new Quaternion().setFromUnitVectors(restDir, upper);
-  const localN = n.clone().applyQuaternion(root.clone().invert());
-  const joint = new Quaternion().setFromAxisAngle(localN, -bend);
-  return { root, joint };
-}
 
 /**
  * The four beats, in order. Which limb moves when, and which rung it holds at
@@ -228,23 +195,6 @@ export function createClimbClip(
   const armPole = new Vector3();
   const kneePole = new Vector3(0, -0.35, 1).normalize();
   const target = new Vector3();
-  const parentQ = new Quaternion();
-  const rigQ = new Quaternion();
-
-  /**
-   * A bone's quaternion is relative to its PARENT; the solve works in the
-   * rig's own space. Skip this conversion and the limb inherits the torso's
-   * rotation a second time — measured as the foot sliding 2.5 mm a frame
-   * along the rung, in x and z, in step with the body's lean.
-   */
-  const toParentFrame = (bone: BoneName, rigSpace: Quaternion): Quaternion => {
-    rig.object.getWorldQuaternion(rigQ).invert();
-    const parent = bones[bone].parent;
-    if (!parent) return rigSpace;
-    parent.getWorldQuaternion(parentQ).premultiply(rigQ).invert();
-    return parentQ.multiply(rigSpace);
-  };
-
   const clip = buildClip(rig, 'climb', duration, 30, (p, pose: Pose) => {
     // 1. The torso, which every limb target is measured from.
     const lean = Math.sin(TAU * p) * 0.035;
@@ -284,14 +234,14 @@ export function createClimbClip(
         // above your head; the alternative is chicken wings.
         armPole.set(s * 1, -0.9, -0.25).normalize();
         const { root, joint } = solveChain(shoulder, target, new Vector3(s, 0, 0), upperArm, foreArm, armPole);
-        pose.set(`${limb.side}Arm`, toParentFrame(`${limb.side}Arm`, root));
+        pose.set(`${limb.side}Arm`, toParentFrame(rig, `${limb.side}Arm`, root));
         pose.set(`${limb.side}ForeArm`, joint);
       } else {
         const hip = rig.object.worldToLocal(
           bones[`${limb.side}UpLeg`].getWorldPosition(new Vector3())
         );
         const { root, joint } = solveChain(hip, target, new Vector3(0, -1, 0), upperLeg, lowerLeg, kneePole);
-        pose.set(`${limb.side}UpLeg`, toParentFrame(`${limb.side}UpLeg`, root));
+        pose.set(`${limb.side}UpLeg`, toParentFrame(rig, `${limb.side}UpLeg`, root));
         pose.set(`${limb.side}Leg`, joint);
         // Ball of the foot on the rung, heel low — a climber does not point
         // their toes at a ladder.
