@@ -14,7 +14,7 @@ import { createHumanoid, chooseMove, measureParkourContact, reachOf } from '../d
 
 const SEEDS = [1, 5, 12, 21, 33, 47, 58, 74];
 // Ceilings, not targets.
-const BUDGET = { slip: 0.02, penetration: 0.02, stretch: 0.99, coverage: 1.0 };
+const BUDGET = { slip: 0.02, penetration: 0.02, stretch: 0.99, coverage: 1.0, snap: 10 };
 
 const why = process.argv.includes('--why');
 const rows = [];
@@ -48,7 +48,11 @@ for (const seed of SEEDS) {
 }
 
 const fails = rows.filter(
-  (r) => r.contactSlip > BUDGET.slip || r.penetration > BUDGET.penetration || r.stretch > BUDGET.stretch
+  (r) =>
+    r.contactSlip > BUDGET.slip ||
+    r.penetration > BUDGET.penetration ||
+    r.stretch > BUDGET.stretch ||
+    r.snap > BUDGET.snap
 );
 const worstBy = (key) => [...rows].sort((a, b) => b[key] - a[key])[0];
 
@@ -80,6 +84,8 @@ console.log(`parkour: ${rows.length} moves measured across ${SEEDS.length} bodie
 console.log(`  worst contact slip  ${(slip.contactSlip * 1000).toFixed(2)} mm   (${slip.name}, ${slip.height.toFixed(2)} m wall)   budget ${BUDGET.slip * 1000} mm`);
 console.log(`  worst penetration   ${(pen.penetration * 1000).toFixed(2)} mm   (${pen.name})   budget ${BUDGET.penetration * 1000} mm`);
 console.log(`  worst extension     ${str.stretch.toFixed(3)}    (${str.name}, ${str.height.toFixed(2)} m wall)   budget ${BUDGET.stretch}`);
+const snp = worstBy('snap');
+console.log(`  worst limb snap     ${snp.snap.toFixed(2)}x its own median step   (${snp.name})   budget ${BUDGET.snap}x`);
 console.log(`  coverage            ${(coverage * 100).toFixed(1)}% of reachable obstacles got a move   budget ${BUDGET.coverage * 100}%`);
 console.log(`  refusals            ${refusedHigh} above what the body can do, ${acceptedHigh} wrongly accepted`);
 

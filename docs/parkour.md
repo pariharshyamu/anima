@@ -94,6 +94,7 @@ ground) and [`npm run climb`](climbing.md) (hands on rungs).
 | `contactSlip` | peak wander of a planted limb from its hold |
 | `penetration` | how far any planted limb sinks *below* the top surface |
 | `stretch` | worst limb extension; 1.0 is the solver clamping rather than reaching |
+| `snap` | biggest single-frame move of a limb across its ease ramps, as a ratio to its own median — a teleport is a discontinuity, not a distance |
 | coverage | fraction of *reachable* obstacles that got a move |
 
 Swept over eight bodies × the whole height band each move is chosen for ×
@@ -112,15 +113,30 @@ there is the right answer rather than a gap. A selector that says "no" too
 readily is caught by no contact number at all — it just leaves characters
 standing at knee-high walls.
 
-**Not gated:** the ease at the edges of a contact window. Limbs blend on and
-off their holds over ~0.08 of a move so they do not teleport onto the wall,
-but the gate skips a keyframe either side of each plant — which is exactly
-where a snap would show. Removing the ease entirely leaves every number in
-this table unchanged. It is a real hole and it is stated rather than papered
-over.
+## The ease, and why it took two tries to measure
+
+Limbs blend on and off their holds over ~0.08 of a move so they do not
+teleport onto the wall. That used to be ungated — the slip and penetration
+numbers only look at frames where a limb is already *planted*, and a limb
+that snaps into place arrives correct.
+
+The first attempt measured the biggest single-frame move in metres. That
+reads **186 mm/frame for a step-up that is perfectly smooth**, because a limb
+swinging onto a hold legitimately moves fast. A teleport is not a distance,
+it is a **discontinuity** — so `snap` is a ratio against the limb's own median
+step.
+
+The second attempt measured that ratio across the whole contact window and
+got **4210×**, because the window includes the long planted stretch where the
+limb is deliberately motionless and the median is therefore zero. Measured
+across the ease *ramps* only: **5.88× with the ease, 138.90× without it.**
 
 ## What is not here yet
 
 Drop landings and rolls, gap jumps, cat leaps onto a hanging lip, wall runs,
 slides, balance. `reachOf` already publishes `catch` and `gapAt` for the first
-two. And no playground example yet — this release is the library slice.
+two.
+
+The [`parkour` playground](?example=parkour) runs two bodies down one course:
+they agree about the curb, split at the rail — one vaults, one mantles — and
+split again at the wall, which the taller clears and the shorter refuses.

@@ -689,6 +689,23 @@ export interface ParkourContactReport {
   penetration: number;
   /** Worst limb extension. 1.0 is the solve clamping rather than reaching. */
   stretch: number;
+  /**
+   * How much the biggest single-frame move of a contact limb stands out from
+   * its typical one, across the limb's whole approach — the ease, measured.
+   *
+   * A RATIO, not a distance, because a limb swinging onto a hold legitimately
+   * moves fast: the raw peak reads 186 mm a frame for a step-up that is
+   * perfectly smooth. What a teleport looks like is a DISCONTINUITY — one
+   * frame far out of line with its neighbours — and that is what a ratio
+   * against the median sees.
+   *
+   * Limbs blend on and off their holds so they do not teleport onto the wall.
+   * Nothing else in this report can see whether they do: the slip and
+   * penetration numbers only look at frames where a limb is already PLANTED,
+   * and a limb that snaps into place arrives correct. Removing the ease
+   * entirely used to leave every other number unchanged.
+   */
+  snap: number;
   /** Contacts that were actually planted at some point in the move. */
   planted: number;
   samples: number;
@@ -717,6 +734,7 @@ export function measureParkourContact(
   const restPos = rig.object.position.clone();
   const restQuat = rig.object.quaternion.clone();
   const seen = new Map<Contact, Vector3[]>();
+  const approach = new Map<Contact, Vector3[]>();
   let stretch = 0;
   let penetration = 0;
   const here = new Vector3();
@@ -735,6 +753,16 @@ export function measureParkourContact(
         .getWorldPosition(new Vector3())
         .distanceTo(rig.bones[contact.bone].getWorldPosition(here));
       const edge = 1 / (30 * move.duration);
+      // Only the two ease RAMPS, not the plant between them. Include the
+      // planted stretch and the median step is zero — the limb is holding
+      // still, which is the point — and every ratio against it explodes.
+      const ease = contact.ease ?? 0.08;
+      const easingIn = p >= contact.from - ease && p <= contact.from;
+      const easingOut = p >= contact.to && p <= contact.to + ease;
+      if (easingIn || easingOut) {
+        if (!approach.has(contact)) approach.set(contact, []);
+        approach.get(contact)!.push(rig.bones[contact.bone].getWorldPosition(new Vector3()));
+      }
       if (p >= contact.from + edge && p <= contact.to - edge) {
         stretch = Math.max(stretch, d / (l1 + l2));
         const w = rig.bones[contact.bone].getWorldPosition(new Vector3());
@@ -757,7 +785,17 @@ export function measureParkourContact(
   for (const [contact, track] of seen) {
     for (const w of track) contactSlip = Math.max(contactSlip, w.distanceTo(contact.at));
   }
-  return { contactSlip, penetration, stretch, planted: seen.size, samples };
+  let snap = 0;
+  for (const track of approach.values()) {
+    const steps: number[] = [];
+    for (let i = 1; i < track.length; i++) steps.push(track[i].distanceTo(track[i - 1]));
+    if (steps.length < 4) continue;
+    const sorted = [...steps].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (median < 1e-6) continue;
+    snap = Math.max(snap, Math.max(...steps) / median);
+  }
+  return { contactSlip, penetration, stretch, snap, planted: seen.size, samples };
 }
 
 export type ParkourPhase = 'idle' | 'moving' | 'done';

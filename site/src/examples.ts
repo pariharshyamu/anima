@@ -3299,6 +3299,205 @@ window.sortieDebug = () => ({
 
 game.start();`,
   },
+  {
+    id: 'parkour',
+    title: 'Parkour: two bodies, one course',
+    group: 'Scale',
+    code: `// TWO BODIES, ONE COURSE — and they do not agree about it.
+//
+// Every parkour system in every engine warps authored mocap toward the
+// obstacle. ANIMA has no mocap: its clips are functions of the rig. So the
+// move set is derived from REACH, and the same wall is a different problem
+// for a different body.
+//
+// Both runners take the identical course. Watch the middle rail: the tall
+// one vaults it, the short one has to mantle. Watch the last wall: the tall
+// one gets up it and the short one CANNOT, and says so rather than
+// pretending. That refusal is the feature.
+import { Mesh, BoxGeometry, PlaneGeometry, Object3D, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         createTree, PALETTES } from 'scena3d';
+import { createHumanoid, chooseMove, Locomotion, OUTFITS, Parkour,
+         reachOf } from 'anima3d';
+import { Game, Hud } from 'gama3d';
+
+const palette = PALETTES.urban ?? PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const hud = new Hud();
+
+const ground = new Mesh(new PlaneGeometry(300, 300), createSurface('concrete', { seed: 3 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+for (const [x, z, s] of [[-16, 8, 2], [15, 20, 5], [-15, 30, 9], [16, -4, 12]]) {
+  const t = createTree({ species: 'oak', seed: s, height: 6, palette });
+  t.object.position.set(x, 0, z);
+  scene.add(t.object);
+}
+
+// ── The course ──────────────────────────────────────────────────────
+// Heights chosen to STRADDLE the two bodies' bands, because the whole
+// point is that a band is a property of a person.
+const COURSE = [
+  { z: 7,  height: 0.30, depth: 0.9,  label: 'CURB'  },
+  { z: 16, height: 0.91, depth: 0.28, label: 'RAIL'  },
+  { z: 25, height: 1.40, depth: 0.75, label: 'WALL'  },
+];
+// A different material from the ground on purpose: an obstacle you cannot
+// see the edge of is not an obstacle, it is a trip hazard.
+const stone = createSurface('brick', { seed: 11 });
+for (const o of COURSE) {
+  const slab = new Mesh(new BoxGeometry(9, o.height, o.depth), stone);
+  slab.position.set(0, o.height / 2, o.z + o.depth / 2);
+  scene.add(slab);
+  // The handshake is an ANCHOR on the near top edge, +z facing the runner.
+  // ANIMA never raycasts: finding the obstacle is the game's job.
+  o.edge = new Object3D();
+  o.edge.position.set(0, o.height, o.z);
+  scene.add(o.edge);
+}
+
+// ── The runners ─────────────────────────────────────────────────────
+const makeRunner = (seed, lane, outfit) => {
+  const rig = createHumanoid({ seed, outfit });
+  rig.object.position.set(lane, 0, -3);
+  scene.add(rig.object);
+  const loco = new Locomotion(rig);
+  const parkour = new Parkour(rig, loco);
+  return {
+    rig, loco, parkour, lane,
+    reach: reachOf(rig),
+    at: 0,            // index into COURSE
+    speed: 3.2,
+    moves: [],
+    refused: null,
+    banner: '',
+    bannerFor: 0,
+  };
+};
+const runners = [
+  makeRunner(5, -3.1, OUTFITS.athlete ?? undefined),
+  makeRunner(12, 3.1, OUTFITS.worker ?? undefined),
+];
+// Tallest first, so the readout reads top to bottom like the lanes do.
+runners.sort((a, b) => b.rig.height - a.rig.height);
+
+const RESET_AFTER = 2.5;
+const velocity = new Vector3();
+
+const restart = (r) => {
+  r.rig.object.position.set(r.lane, 0, -3);
+  r.rig.object.rotation.set(0, 0, 0);
+  r.at = 0;
+  r.refused = null;
+  r.moves = [];
+  r.parkour.reset();
+};
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  for (const r of runners) {
+    if (r.bannerFor > 0) r.bannerFor -= dt;
+
+    // Mid-move: the controller owns the body and nothing else may steer it.
+    // 'busy' is the whole handshake, exactly as Climb does it.
+    if (r.parkour.busy) {
+      r.parkour.update(dt);
+      r.loco.update(dt, 0);
+      continue;
+    }
+    if (r.parkour.state === 'done') {
+      r.parkour.reset();
+      r.at++;
+    }
+
+    // Stopped at something it cannot do: wait, then walk the course again.
+    if (r.refused !== null) {
+      r.refused -= dt;
+      r.loco.update(dt, 0);
+      if (r.refused <= 0) restart(r);
+      continue;
+    }
+
+    const next = COURSE[r.at];
+    if (!next) {
+      // Course complete — jog on, then start over.
+      r.rig.object.position.z += r.speed * dt;
+      r.loco.update(dt, velocity.set(0, 0, r.speed));
+      if (r.rig.object.position.z > 34) restart(r);
+      continue;
+    }
+
+    const gap = next.z - r.rig.object.position.z;
+    if (gap > 1.15) {
+      r.rig.object.position.z += r.speed * dt;
+      r.loco.update(dt, velocity.set(0, 0, r.speed));
+      continue;
+    }
+
+    // At the obstacle. Ask THIS body what it can do about it.
+    const move = r.parkour.attempt(next, r.speed);
+    if (move) {
+      r.moves.push(next.label + ':' + move);
+      r.banner = next.label + ' \\u2192 ' + move.toUpperCase();
+      r.bannerFor = 2.2;
+    } else {
+      // The honest null. A system that always finds a move puts characters
+      // through walls; this one stops and admits the wall won.
+      r.banner = next.label + ' \\u2192 NO WAY UP';
+      r.bannerFor = RESET_AFTER;
+      r.refused = RESET_AFTER;
+      r.loco.update(dt, 0);
+    }
+  }
+
+  const line = (r) => {
+    const k = r.rig.height.toFixed(2) + 'm';
+    return k + '  step\\u2264' + r.reach.step.toFixed(2) +
+      ' vault\\u2264' + r.reach.vault.toFixed(2) +
+      ' mantle\\u2264' + r.reach.mantle.toFixed(2) +
+      (r.bannerFor > 0 ? '   ' + r.banner : '');
+  };
+  hud.objective(line(runners[0]));
+  hud.prompt(line(runners[1]));
+  hud.update(dt);
+});
+
+// Three-quarter from behind, so BOTH lanes are in frame at once. The
+// comparison is the entire point; a view that shows one runner shows nothing.
+game.camera.position.set(6.2, 3.6, 7.4);
+game.camera.lookAt(-0.4, 1.0, 17.5);
+
+window.parkourDebug = () => {
+  const of = (r) => ({
+    height: Number(r.rig.height.toFixed(2)),
+    step: Number(r.reach.step.toFixed(2)),
+    vault: Number(r.reach.vault.toFixed(2)),
+    mantle: Number(r.reach.mantle.toFixed(2)),
+    at: r.at,
+    moves: r.moves.slice(0, 4),
+    stopped: r.refused !== null,
+    z: Number(r.rig.object.position.z.toFixed(2)),
+    y: Number(r.rig.object.position.y.toFixed(2)),
+  });
+  // What each body WOULD do at every obstacle, asked directly. This is the
+  // claim the scene is making, in numbers a gate can read.
+  const verdicts = runners.map((r) =>
+    COURSE.map((o) => String(chooseMove(o, r.reach, { speed: r.speed })))
+  );
+  return {
+    tall: of(runners[0]),
+    short: of(runners[1]),
+    verdicts,
+    disagree: verdicts[0].filter((v, i) => v !== verdicts[1][i]).length,
+    draws: game.renderer.info.render.calls,
+  };
+};
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {

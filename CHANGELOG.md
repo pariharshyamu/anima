@@ -20,6 +20,45 @@ release found.
 
 ## Releases
 
+## [0.41.0] — 2026-07-30
+
+### Added
+
+- **The `parkour` playground example — two bodies, one course.** Both runners
+  take the identical obstacle course; they agree about the curb, split at the
+  0.91 m rail (the taller speed-vaults it, the shorter has to mantle) and split
+  again at the 1.40 m wall, which the taller clears and the shorter **refuses**.
+  The refusal is the feature: a system that always finds a move puts characters
+  through walls. Heights were chosen to straddle the two bodies' bands, because
+  the entire claim is that a band is a property of a person.
+- **`snap` in `ParkourContactReport`, and a budget for it in `npm run parkour`**
+  — the contact ease, finally measured. 0.40.0 shipped with this stated as a
+  known hole: four of five injected defects moved the gate and removing the
+  ease entirely moved nothing. It moves now.
+
+### Learned — two wrong ways to measure an ease
+
+Both worth keeping, because both looked reasonable and neither was:
+
+- **In metres.** The largest single-frame move of a contact limb reads
+  **186 mm/frame for a step-up that is perfectly smooth**, because a limb
+  swinging onto a hold legitimately moves fast. A teleport is not a distance.
+- **As a ratio, across the whole contact window.** A discontinuity is an
+  outlier, so `snap` became a ratio against the limb's own median step — and
+  read **4210×**, because the window includes the long planted stretch where
+  the limb is deliberately motionless and the median is therefore zero.
+
+Measured across the ease *ramps* alone it separates cleanly: **5.88× with the
+ease, 138.90× without.** The budget is 10×, which leaves real headroom and
+still catches the defect by 14×.
+
+That is three metrics in this module now that had to be reformulated before
+they measured the thing they were named after — `handSlip` (peak, not sum),
+`stretch` (which sees a clamp that nothing else can), and `snap`. The pattern
+is consistent enough to be worth naming: **a number that never fires is not
+evidence of health until you have watched it fire.**
+
+
 ## [0.40.0] — 2026-07-30
 
 ### Added — the parkour system
