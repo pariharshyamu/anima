@@ -69,7 +69,13 @@ export function buildClip(
   name: string,
   duration: number,
   fps: number,
-  sample: (phase: number, pose: Pose) => void
+  sample: (phase: number, pose: Pose) => void,
+  /**
+   * Make the last frame a repeat of the first, so the clip loops seamlessly.
+   * Default true — but a ONE-SHOT (a vault, a mantle) must end where it ends,
+   * and a looping build snaps it back to its start pose on the final frame.
+   */
+  loop = true
 ): AnimationClip {
   const frames = Math.max(8, Math.round(duration * fps));
   const times = new Float32Array(frames + 1);
@@ -82,7 +88,7 @@ export function buildClip(
   for (let i = 0; i <= frames; i++) {
     times[i] = (i * duration) / frames;
     const pose = new Pose();
-    sample(i === frames ? 0 : i / frames, pose); // last frame = first: seamless loop
+    sample(i === frames && loop ? 0 : i / frames, pose);
     for (const bone of boneNames) {
       const q = pose.rotations.get(bone) ?? new Quaternion();
       const out = rotationValues.get(bone)!;

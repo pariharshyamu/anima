@@ -127,7 +127,16 @@ export function chooseMove(
   return null;
 }
 
-/** A limb pinned to a point on the obstacle for part of the move. */
+/**
+ * A limb pinned to a point on the obstacle for part of the move.
+ *
+ * `at.x` follows the RIG's convention, where **left is +x** — the same
+ * convention `restDirection` encodes. Writing the two hands the other way
+ * round is survivable for a one-handed move, because the body just shifts to
+ * suit; on the two-handed mantle it put the left shoulder over the right
+ * hand's mark and stranded the right arm 0.88 m from a target a 0.50 m arm
+ * was supposed to reach.
+ */
 interface Contact {
   bone: BoneName;
   side: 'Left' | 'Right';
@@ -137,195 +146,330 @@ interface Contact {
   /** Phase window it is planted for. */
   from: number;
   to: number;
+  /**
+   * Phase spent reaching toward the contact before it plants, and leaving it
+   * after. Without this the limb teleports onto the contact in a single
+   * keyframe: measured as 0.19 m of hand error at exactly the frame the plant
+   * begins, while the middle of the same window was exact to 0.03 m.
+   */
+  ease?: number;
+}
+
+/** Body measurements the specs are written in terms of. */
+interface Build {
+  /** Upper arm + forearm. */
+  arm: number;
+  /** Hip to ankle. */
+  leg: number;
+  /** Ankle height above whatever the foot stands on. */
+  lift: number;
+  height: number;
 }
 
 interface MoveSpec {
   duration: number;
-  /** Body root position in the edge frame, as a function of phase. */
-  travel: (p: number, h: number, d: number, land: number, rig: HumanoidRig) => Vector3;
-  /** Body yaw, radians. */
+  contacts: (h: number, d: number, land: number, b: Build) => Contact[];
+  /**
+   * Where a body LANDMARK should be at this phase, in the edge frame.
+   *
+   * This is the whole rewrite. The first version authored the root's path in
+   * absolute metres and then asked whether the contacts were reachable from
+   * it — backwards, because a vaulter's shoulder only gets down to an 0.85 m
+   * wall by folding over the planted arm, so the reachable set depends on the
+   * pose, which depends on the phase, which was the thing being solved for.
+   * Standing upright, a 1.77 m body's shoulder is 0.60 m above that wall and
+   * its arm is 0.50 m long: the hand could not touch the top at all.
+   *
+   * So the landmark is authored RELATIVE TO THE CONTACT, in units of limb
+   * length, and the root falls out of it. A hand contact anchors the chest at
+   * 0.7–0.85 of an arm away; a foot contact anchors the hips at 0.62–0.98 of
+   * a leg. Those fractions ARE the reachability guarantee, and they hold for
+   * any body because they are fractions of that body.
+   */
+  anchor: (p: number, h: number, d: number, land: number, b: Build, c: Contact[]) => AnchorSet;
   turn: (p: number) => number;
-  contacts: (h: number, d: number, land: number, rig: HumanoidRig) => Contact[];
-  /** Everything that is not a contact: the swinging limbs and the torso. */
-  pose: (p: number, pose: Pose, rig: HumanoidRig) => void;
+  pose: (p: number, pose: Pose, b: Build) => void;
 }
+
+interface Anchor {
+  bone: BoneName;
+  at: Vector3;
+}
+
+/**
+ * One anchor, or two being handed over between.
+ *
+ * A mantle changes what is holding the body up halfway through — hands on the
+ * lip, then a foot on the top — and the two are anchored to different
+ * landmarks. Blending the TARGETS would mean converting one landmark's frame
+ * into the other's, and that conversion is a guess: writing "the shoulder is
+ * 0.72 of a leg above the hips" cost 462 mm, because the real offset depends
+ * on how folded the torso is at that instant. Blending the resulting ROOTS
+ * needs no conversion at all — each is measured from the posed body.
+ */
+interface AnchorSet {
+  a: Anchor;
+  b?: Anchor;
+  /** 0 = all `a`, 1 = all `b`. */
+  t?: number;
+}
+
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/**
+ * A landmark swinging around a contact at a FIXED radius.
+ *
+ * The offset is authored as an angle on a circle of `radius`, never as
+ * independent components. Author the vertical and the forward separately and
+ * each looks reasonable while their combination does not: measured, a
+ * shoulder asked to be 0.72 of an arm above the hand and 0.40 m past it ends
+ * up 0.536 m away from a 0.496 m arm, and the solve quietly clamps. A radius
+ * cannot do that.
+ *
+ * `angle` is measured from straight up, positive forwards.
+ */
+function orbit(contact: Vector3, radius: number, angle: number, x = contact.x): Vector3 {
+  return new Vector3(x, contact.y + radius * Math.cos(angle), contact.z + radius * Math.sin(angle));
+}
+
 
 const SPECS: Record<MoveName, MoveSpec> = {
   step: {
     duration: 0.95,
-    travel: (p, h, _d, _land, rig) => {
-      // Ends ABOVE the planted foot: you rise over the step, you do not walk
-      // past it. Carrying the body 0.4 m beyond left the leg reaching down and
-      // BACKWARDS at 106% of its length — measured as 72 mm of contact error.
-      const forward = -0.44 + ramp(p, 0.1, 0.95) * 0.62;
-      const up = -h + ramp(p, 0.36, 0.9) * h;
-      // Riding up over the planted foot: the hips lift a touch past the step.
-      return new Vector3(0, up + arch(ramp(p, 0.4, 1)) * 0.03 * rig.height, forward);
-    },
-    turn: () => 0,
-    contacts: (h, _d, _land, rig) => [
-      // The leading foot arrives on the top and does not move again.
+    contacts: (_h, _d, _land, b) => [
       {
         bone: 'RightFoot',
         side: 'Right',
         arm: false,
-        at: new Vector3(0.09 * rig.height, 0, 0.15),
-        from: 0.3,
-        to: 0.93,
+        at: new Vector3(-0.09 * b.height, b.lift, 0.15),
+        from: 0.26,
+        to: 0.96,
       },
     ],
-    pose: (p, pose, rig) => {
-      const rise = ramp(p, 0.4, 0.95);
-      pose.rotate('Hips', [X, 0.16 - 0.12 * rise]);
-      pose.rotate('Spine', [X, 0.1 - 0.08 * rise]);
-      pose.rotate('Chest', [X, 0.06]);
-      pose.rotate('Head', [X, -0.1 + 0.08 * rise]);
-      // Arms counterswing; a step up is not a hands-on move.
+    // The hips ride up and over the planted foot: from behind and low, to
+    // directly above it and nearly straight. 0.62 → 0.98 of a leg.
+    anchor: (p, _h, _d, _land, b, c) => {
+      const foot = c[0].at;
+      const u = ramp(p, 0.08, 0.95);
+      // The hips ride up and over the planted foot on a radius that grows from
+      // a bent leg to a straight one — 0.74 to 0.97 of a leg.
+      return {
+        a: {
+          bone: 'Hips',
+          at: orbit(foot, b.leg * lerp(0.74, 0.97, u), lerp(-0.66, 0.0, u), foot.x * 0.38),
+        },
+      };
+    },
+    turn: () => 0,
+    pose: (p, pose, b) => {
+      const rise = ramp(p, 0.3, 0.95);
+      pose.rotate('Hips', [X, 0.24 - 0.2 * rise]);
+      pose.rotate('Spine', [X, 0.12 - 0.1 * rise]);
+      pose.rotate('Chest', [X, 0.07 - 0.05 * rise]);
+      pose.rotate('Head', [X, -0.12 + 0.1 * rise]);
       const swing = arch(p);
-      pose.rotate('LeftArm', [Z, 1.25 - 0.5 * swing], [Y, -0.35 * swing]);
-      pose.rotate('LeftForeArm', [Z, 0.35 + 0.5 * swing]);
-      pose.rotate('RightArm', [Z, -1.25 + 0.35 * swing], [Y, 0.25 * swing]);
-      pose.rotate('RightForeArm', [Z, -0.3 - 0.35 * swing]);
-      void rig;
+      pose.rotate('LeftArm', [Z, 1.2 - 0.55 * swing], [Y, -0.4 * swing]);
+      pose.rotate('LeftForeArm', [Z, 0.4 + 0.5 * swing]);
+      pose.rotate('RightArm', [Z, -1.2 + 0.4 * swing], [Y, 0.3 * swing]);
+      pose.rotate('RightForeArm', [Z, -0.35 - 0.4 * swing]);
+      // The trailing leg swings through and plants on top at the end.
+      const trail = ramp(p, 0.55, 1);
+      pose.rotate('LeftUpLeg', [X, -0.25 - 0.75 * arch(trail)], [Z, 0.08]);
+      pose.rotate('LeftLeg', [X, 0.4 + 1.1 * arch(trail)]);
+      pose.rotate('LeftFoot', [X, -0.15]);
+      void b;
     },
   },
 
   'safety-vault': {
     duration: 0.85,
-    travel: (p, h, d, land, rig) => {
-      const forward = -0.72 + ramp(p, 0, 1) * (d + 1.2);
-      const over = arch(ramp(p, 0.05, 0.95));
-      // Clear the top by a hip's worth, then drop to the far side.
-      const up = -h + over * (h - 0.24 * rig.height) - ramp(p, 0.62, 1) * land;
-      return new Vector3(0, up, forward);
-    },
-    turn: (p) => -0.5 * arch(ramp(p, 0.1, 0.9)),
-    contacts: (h, _d, _land, rig) => [
-      // One hand takes the weight; one foot brushes the top going over. That
-      // is what makes it the SAFE vault rather than the showy one.
+    contacts: (_h, _d, _land, b) => [
       {
         bone: 'LeftHand',
         side: 'Left',
         arm: true,
-        at: new Vector3(-0.13 * rig.height, 0, 0.05),
-        from: 0.2,
-        to: 0.66,
+        at: new Vector3(0.12 * b.height, 0.015, 0.06),
+        from: 0.22,
+        to: 0.64,
       },
       {
         bone: 'RightFoot',
         side: 'Right',
         arm: false,
-        at: new Vector3(0.1 * rig.height, 0, 0.16),
-        from: 0.4,
-        to: 0.58,
+        at: new Vector3(-0.11 * b.height, b.lift, 0.17),
+        from: 0.42,
+        to: 0.56,
       },
     ],
-    pose: (p, pose, rig) => {
+    // The chest passes over the planted hand: in from behind, up across it,
+    // out the far side, never further than 0.86 of an arm from it.
+    anchor: (p, _h, d, _land, b, c) => {
+      const hand = c[0].at;
+      const R = b.arm * 0.78;
+      const swing = (u: number): number => lerp(-1.0, 1.0, u);
+      const from = c[0].from;
+      const to = c[0].to;
+      if (p < from) {
+        // Running in: continue back along the approach from where the orbit
+        // begins, so the body arrives already in the right place.
+        const start = orbit(hand, R, swing(0));
+        return { a: { bone: 'LeftArm', at: start.setZ(start.z - (1 - p / from) * 0.85) } };
+      }
+      if (p > to) {
+        const end = orbit(hand, R, swing(1));
+        const out = (p - to) / (1 - to);
+        return {
+          a: {
+            bone: 'LeftArm',
+            at: end.setZ(end.z + out * (d + 0.75)).setY(end.y - out * b.arm * 0.35),
+          },
+        };
+      }
+      return { a: { bone: 'LeftArm', at: orbit(hand, R, swing((p - from) / (to - from))) } };
+    },
+    turn: (p) => -0.5 * arch(ramp(p, 0.1, 0.9)),
+    pose: (p, pose, b) => {
       const over = arch(ramp(p, 0.05, 0.95));
       const land = ramp(p, 0.7, 1);
-      // Folded hard over the planted hand. Standing upright, a 1.77 m body's
-      // shoulder is 0.6 m above an 0.85 m wall and the arm is 0.50 m long —
-      // the hand simply cannot reach the top until the torso comes down.
-      pose.rotate('Hips', [X, 0.95 * over + 0.25 * land]);
-      pose.rotate('Spine', [X, 0.45 * over]);
-      pose.rotate('Chest', [X, 0.28 * over], [Y, 0.2 * over]);
-      pose.rotate('Head', [X, -0.16 - 0.1 * over]);
-      // The free arm swings across the body as the hips pass over.
-      pose.rotate('RightArm', [Z, -0.9 + 0.6 * over], [Y, 0.7 * over]);
-      pose.rotate('RightForeArm', [Z, -0.5 - 0.3 * over]);
-      void rig;
+      pose.rotate('Hips', [X, 0.75 * over + 0.3 * land]);
+      pose.rotate('Spine', [X, 0.4 * over]);
+      pose.rotate('Chest', [X, 0.24 * over], [Y, 0.2 * over]);
+      pose.rotate('Head', [X, -0.3 - 0.12 * over]);
+      pose.rotate('RightArm', [Z, -1.0 + 0.7 * over], [Y, 0.75 * over]);
+      pose.rotate('RightForeArm', [Z, -0.5 - 0.35 * over]);
+      // The trailing leg tucks up over the top after the lead foot leaves it.
+      const tuck = arch(ramp(p, 0.3, 0.95));
+      pose.rotate('LeftUpLeg', [X, -1.0 * tuck], [Z, 0.14]);
+      pose.rotate('LeftLeg', [X, 1.35 * tuck]);
+      pose.rotate('LeftFoot', [X, -0.2 * tuck]);
+      void b;
     },
   },
 
   'speed-vault': {
-    duration: 0.66,
-    travel: (p, h, d, land, rig) => {
-      const forward = -0.9 + ramp(p, 0, 1) * (d + 1.9);
-      const over = arch(ramp(p, 0.05, 0.95));
-      const up = -h + over * (h - 0.22 * rig.height) - ramp(p, 0.6, 1) * land;
-      return new Vector3(0, up, forward);
-    },
-    // Side-on: both legs go through together past the planted hand.
-    turn: (p) => -1.0 * arch(ramp(p, 0.05, 0.95)),
-    contacts: (h, _d, _land, rig) => [
+    duration: 0.68,
+    contacts: (_h, _d, _land, b) => [
       {
         bone: 'LeftHand',
         side: 'Left',
         arm: true,
-        at: new Vector3(-0.12 * rig.height, 0, 0.04),
-        from: 0.16,
-        to: 0.6,
+        at: new Vector3(0.11 * b.height, 0.015, 0.05),
+        from: 0.18,
+        to: 0.62,
       },
     ],
-    pose: (p, pose, rig) => {
+    anchor: (p, _h, d, _land, b, c) => {
+      const hand = c[0].at;
+      const R = b.arm * 0.8;
+      const swing = (u: number): number => lerp(-1.15, 1.15, u);
+      const from = c[0].from;
+      const to = c[0].to;
+      if (p < from) {
+        const start = orbit(hand, R, swing(0));
+        return { a: { bone: 'LeftArm', at: start.setZ(start.z - (1 - p / from) * 1.15) } };
+      }
+      if (p > to) {
+        const end = orbit(hand, R, swing(1));
+        const out = (p - to) / (1 - to);
+        return {
+          a: {
+            bone: 'LeftArm',
+            at: end.setZ(end.z + out * (d + 1.25)).setY(end.y - out * b.arm * 0.4),
+          },
+        };
+      }
+      return { a: { bone: 'LeftArm', at: orbit(hand, R, swing((p - from) / (to - from))) } };
+    },
+    // Side-on: both legs go through together past the planted hand.
+    turn: (p) => -1.05 * arch(ramp(p, 0.05, 0.95)),
+    pose: (p, pose, b) => {
       const over = arch(ramp(p, 0.05, 0.95));
       const land = ramp(p, 0.68, 1);
-      pose.rotate('Hips', [X, 1.0 * over + 0.3 * land], [Y, -0.25 * over]);
-      pose.rotate('Spine', [X, 0.5 * over]);
-      pose.rotate('Chest', [X, 0.3 * over], [Y, 0.28 * over]);
-      pose.rotate('Head', [X, -0.2]);
-      pose.rotate('RightArm', [Z, -1.0 + 0.75 * over], [Y, 0.9 * over]);
-      pose.rotate('RightForeArm', [Z, -0.4 - 0.4 * over]);
-      // Both legs tuck through together — the tell of a speed vault.
-      const tuck = arch(ramp(p, 0.15, 0.85));
+      pose.rotate('Hips', [X, 0.8 * over + 0.35 * land], [Y, -0.3 * over]);
+      pose.rotate('Spine', [X, 0.42 * over]);
+      pose.rotate('Chest', [X, 0.25 * over], [Y, 0.3 * over]);
+      pose.rotate('Head', [X, -0.3]);
+      pose.rotate('RightArm', [Z, -1.05 + 0.8 * over], [Y, 0.95 * over]);
+      pose.rotate('RightForeArm', [Z, -0.45 - 0.45 * over]);
+      const tuck = arch(ramp(p, 0.12, 0.9));
       for (const side of ['Left', 'Right'] as const) {
-        pose.rotate(`${side}UpLeg`, [X, -1.15 * tuck], [Z, (side === 'Left' ? 1 : -1) * 0.12]);
-        pose.rotate(`${side}Leg`, [X, 1.5 * tuck]);
-        pose.rotate(`${side}Foot`, [X, -0.25 * tuck]);
+        pose.rotate(`${side}UpLeg`, [X, -1.25 * tuck], [Z, (side === 'Left' ? 1 : -1) * 0.12]);
+        pose.rotate(`${side}Leg`, [X, 1.6 * tuck]);
+        pose.rotate(`${side}Foot`, [X, -0.28 * tuck]);
       }
-      void rig;
+      void b;
     },
   },
 
   mantle: {
-    duration: 1.35,
-    travel: (p, h, _d, _land, rig) => {
-      // The hands can only hold through about an arm's worth of rise; the
-      // rest comes from the leg that gets onto the top. Pressing down and
-      // hopping IS the move on anything below shoulder height.
-      const forward = -0.34 + ramp(p, 0.05, 0.5) * 0.3 + ramp(p, 0.55, 1) * 0.42;
-      const up = -h + ramp(p, 0.12, 0.5) * (h * 0.35) + ramp(p, 0.45, 0.95) * (h * 0.65);
-      void rig;
-      return new Vector3(0, up, forward);
-    },
-    turn: () => 0,
-    contacts: (h, _d, _land, rig) => [
-      // Both hands on the lip, the body hauled up between them, then a knee
-      // over and the hands released. Skip the release and the arms end up
-      // behind the character like a marionette's strings.
+    duration: 1.4,
+    contacts: (_h, _d, _land, b) => [
       {
         bone: 'LeftHand',
         side: 'Left',
         arm: true,
-        at: new Vector3(-0.13 * rig.height, 0.01, 0.04),
-        from: 0.08,
-        to: 0.5,
+        at: new Vector3(0.12 * b.height, 0.015, 0.05),
+        from: 0.1,
+        to: 0.4,
       },
       {
         bone: 'RightHand',
         side: 'Right',
         arm: true,
-        at: new Vector3(0.13 * rig.height, 0.01, 0.04),
-        from: 0.08,
-        to: 0.44,
+        at: new Vector3(-0.12 * b.height, 0.015, 0.05),
+        from: 0.1,
+        to: 0.36,
       },
       {
         bone: 'RightFoot',
         side: 'Right',
         arm: false,
-        at: new Vector3(0.1 * rig.height, 0, 0.22),
-        from: 0.4,
-        to: 0.95,
+        at: new Vector3(-0.1 * b.height, b.lift, 0.24),
+        from: 0.46,
+        to: 0.96,
       },
     ],
-    pose: (p, pose, rig) => {
-      const pull = ramp(p, 0.08, 0.5);
+    /**
+     * Two anchors, handed over in the middle.
+     *
+     * The hands can only hold through about an arm's worth of rise — press
+     * down and the elbows straighten and that is all you get. Everything above
+     * that comes from the leg that gets onto the top, so the chest is anchored
+     * to the hands first and the hips to the foot after, blended across the
+     * handover so the body does not jump.
+     */
+    anchor: (p, _h, _d, _land, b, c) => {
+      const hand = c[0].at;
+      const foot = c[2].at;
+      // The hands only buy about an arm's worth of rise: press down, the
+      // elbows straighten, and that is all there is. The shoulder swings from
+      // below-and-behind the lip to above it, and no further.
+      const pull = ramp(p, 0.04, 0.42);
+      const byHands = orbit(hand, b.arm * 0.8, lerp(-1.25, -0.12, pull));
+      const stand = ramp(p, 0.46, 0.96);
+      const byFoot = orbit(foot, b.leg * lerp(0.78, 0.98, stand), lerp(-0.62, 0.0, stand), foot.x * 0.4);
+      // The chest sits a fixed way above the hips; converting between the two
+      // anchors through that offset is what makes the handover seamless.
+      return {
+        a: { bone: 'LeftArm', at: byHands },
+        b: { bone: 'Hips', at: byFoot },
+        t: ramp(p, 0.4, 0.68),
+      };
+    },
+    turn: () => 0,
+    pose: (p, pose, b) => {
+      const pull = ramp(p, 0.06, 0.52);
       const stand = ramp(p, 0.5, 1);
-      pose.rotate('Hips', [X, 0.85 * pull - 0.9 * stand]);
-      pose.rotate('Spine', [X, 0.4 * pull - 0.42 * stand]);
-      pose.rotate('Chest', [X, 0.25 * pull - 0.26 * stand]);
-      pose.rotate('Head', [X, -0.28 + 0.2 * stand]);
-      void rig;
+      pose.rotate('Hips', [X, 0.9 * pull - 0.95 * stand]);
+      pose.rotate('Spine', [X, 0.42 * pull - 0.45 * stand]);
+      pose.rotate('Chest', [X, 0.26 * pull - 0.28 * stand]);
+      pose.rotate('Head', [X, -0.32 + 0.24 * stand]);
+      // The trailing leg hangs, then swings up beside the planted one.
+      const trail = ramp(p, 0.6, 1);
+      pose.rotate('LeftUpLeg', [X, -0.1 - 0.9 * arch(trail)], [Z, 0.1]);
+      pose.rotate('LeftLeg', [X, 0.2 + 1.2 * arch(trail)]);
+      pose.rotate('LeftFoot', [X, -0.12]);
+      void b;
     },
   },
 };
@@ -343,7 +487,9 @@ export interface MoveOptions {
  * `clip` poses the limbs and `travel`/`turn` move the root, and the two are
  * one thing: the clip was solved against that exact trajectory, so a caller
  * who plays the clip and drives the root differently gets hands that pass
- * through the wall. `Parkour` drives both from here; so does the gate.
+ * through the wall. The trajectory is BAKED at build time for that reason —
+ * it is a consequence of the poses, so recomputing it at runtime would be
+ * both wasteful and a chance to disagree.
  */
 export interface ParkourMove {
   name: MoveName;
@@ -357,14 +503,42 @@ export interface ParkourMove {
   end: Vector3;
 }
 
+function buildOf(rig: HumanoidRig): Build {
+  rig.object.updateWorldMatrix(true, true);
+  const ankle = rig.bones.LeftFoot.getWorldPosition(new Vector3());
+  return {
+    arm: rig.bones.LeftForeArm.position.length() + rig.bones.LeftHand.position.length(),
+    leg: rig.bones.LeftLeg.position.length() + rig.bones.LeftFoot.position.length(),
+    // Where the ANKLE sits above the surface the foot stands on. Aim a foot
+    // contact at the surface itself and the solve tries to push the ankle
+    // through it, or gives up and clamps.
+    lift: ankle.y,
+    height: rig.height,
+  };
+}
+
+function contactsFor(
+  rig: HumanoidRig,
+  name: MoveName,
+  obstacle: Pick<Obstacle, 'height' | 'depth' | 'landing'>
+): Contact[] {
+  const b = buildOf(rig);
+  return SPECS[name].contacts(
+    obstacle.height,
+    obstacle.depth,
+    (obstacle.landing ?? obstacle.height) - obstacle.height,
+    b
+  );
+}
+
 /**
  * Build a move for this body and this obstacle.
  *
  * Contacts are SOLVED, not posed. While a hand is on the wall its target in
- * the edge frame is fixed, so the arm is solved to `contact − travel(p)` every
- * frame and the hand does not move in the world at all — the same trick the
- * ladder climb uses on rungs, and the reason `measureParkourContact` reads
- * millimetres rather than centimetres.
+ * the edge frame is fixed, so the arm is solved to it every frame and the hand
+ * does not move in the world at all — the same trick the ladder climb uses on
+ * rungs. What makes the solve possible in the first place is that the body was
+ * placed from the contact rather than the other way round.
  */
 export function createMove(
   rig: HumanoidRig,
@@ -374,18 +548,12 @@ export function createMove(
 ): ParkourMove {
   const spec = SPECS[name];
   const duration = options.duration ?? spec.duration;
+  const fps = options.fps ?? 30;
   const h = obstacle.height;
   const d = obstacle.depth;
   const land = (obstacle.landing ?? obstacle.height) - obstacle.height;
-  // The bone a foot contact drives is the ANKLE, which stands an ankle's
-  // height above the surface. Aim at the surface itself and the solve tries to
-  // push the foot through it, or gives up and clamps — measured as every move
-  // reporting a stretch of exactly 1.000.
-  const contacts = contactsFor(rig, name, { height: h, depth: d, landing: obstacle.landing });
-
-  const travelAt = (p: number, out = new Vector3()): Vector3 =>
-    out.copy(spec.travel(p, h, d, land, rig));
-  const turnAt = (p: number): number => spec.turn(p);
+  const b = buildOf(rig);
+  const contacts = spec.contacts(h, d, land, b);
 
   const rest = new Map<BoneName, Quaternion>();
   for (const key of Object.keys(rig.bones) as BoneName[]) {
@@ -395,57 +563,90 @@ export function createMove(
   const restPos = rig.object.position.clone();
   const restQuat = rig.object.quaternion.clone();
 
-  const root = new Vector3();
+  const frames = Math.max(8, Math.round(duration * fps));
+  const baked: Vector3[] = [];
+  const scratch = new Vector3();
   const target = new Vector3();
   const pole = new Vector3();
 
-  const clip = buildClip(rig, `parkour-${name}`, duration, options.fps ?? 30, (p, pose: Pose) => {
+  const clip = buildClip(
+    rig,
+    `parkour-${name}`,
+    duration,
+    fps,
+    (p, pose: Pose) => {
     pose.hipsY = restHipsY;
-    // Every limb gets a baseline pose FIRST, before the move styles it and
-    // before contacts override it. `buildClip` discovers which bones the clip
-    // animates from frame 0 alone, so a bone that is only posed once a contact
-    // becomes active never gets a track — the solve is computed and thrown
-    // away, which is exactly what happened here: 1.8 m of "slip" from a hand
-    // that was never being driven at all.
+    // Every limb gets a baseline pose FIRST. `buildClip` discovers which bones
+    // the clip animates from frame 0 alone, so a bone only posed once its
+    // contact goes live never gets a track — the solve is computed and thrown
+    // away, which cost 1.8 m of apparent "slip" from a hand nothing drove.
     for (const side of ['Left', 'Right'] as const) {
       const s = side === 'Left' ? 1 : -1;
-      pose.rotate(`${side}Arm`, [Z, s * 1.25], [Y, -s * 0.1]);
-      pose.rotate(`${side}ForeArm`, [Z, s * 0.3]);
-      pose.rotate(`${side}UpLeg`, [X, -0.08], [Z, s * 0.05]);
-      pose.rotate(`${side}Leg`, [X, 0.16]);
-      pose.rotate(`${side}Foot`, [X, -0.08]);
+      pose.rotate(`${side}Arm`, [Z, s * 1.2], [Y, -s * 0.12]);
+      pose.rotate(`${side}ForeArm`, [Z, s * 0.35]);
+      pose.rotate(`${side}UpLeg`, [X, -0.1], [Z, s * 0.05]);
+      pose.rotate(`${side}Leg`, [X, 0.2]);
+      pose.rotate(`${side}Foot`, [X, -0.1]);
     }
-    spec.pose(p, pose, rig);
+    spec.pose(p, pose, b);
 
-    // Stand the rig exactly where the controller will, THEN solve. Contacts
-    // are world points; without this the solve is against a body that is not
-    // where the body is.
-    travelAt(p, root);
-    rig.object.position.copy(root);
-    rig.object.quaternion.setFromAxisAngle(Y, turnAt(p));
+    // 1. Pose the body at the origin and MEASURE where the landmark lands.
+    //    The torso fold is what brings a shoulder down to a wall, so the
+    //    offset has to be read from the posed body, not assumed.
+    rig.object.position.set(0, 0, 0);
+    rig.object.quaternion.setFromAxisAngle(Y, spec.turn(p));
     for (const [key, q] of rest) rig.bones[key].quaternion.copy(q);
     for (const [key, q] of pose.rotations) rig.bones[key].quaternion.copy(q);
     rig.bones.Hips.position.y = pose.hipsY;
     rig.object.updateWorldMatrix(true, true);
 
+    const set = spec.anchor(p, h, d, land, b, contacts);
+    const rootFor = (anchor: Anchor): Vector3 =>
+      anchor.at.clone().sub(rig.bones[anchor.bone].getWorldPosition(scratch));
+    const root = rootFor(set.a);
+    if (set.b && set.t !== undefined) root.lerp(rootFor(set.b), set.t);
+    baked.push(root);
+
+    // 2. Stand the body there and solve the contacts against it.
+    rig.object.position.copy(root);
+    rig.object.updateWorldMatrix(true, true);
+
     for (const contact of contacts) {
-      if (p < contact.from || p > contact.to) continue;
+      const ease = contact.ease ?? 0.08;
+      if (p < contact.from - ease || p > contact.to + ease) continue;
+      // 1 while planted, easing to 0 either side.
+      const weight =
+        p < contact.from
+          ? smooth((p - (contact.from - ease)) / ease)
+          : p > contact.to
+            ? 1 - smooth((p - contact.to) / ease)
+            : 1;
       const s = contact.side === 'Left' ? 1 : -1;
       const rootBone: BoneName = contact.arm ? `${contact.side}Arm` : `${contact.side}UpLeg`;
       const midBone: BoneName = contact.arm ? `${contact.side}ForeArm` : `${contact.side}Leg`;
-      const from = rig.bones[rootBone].getWorldPosition(new Vector3());
-      target.copy(contact.at);
-      // Elbows out and down; knees forward. Without a pole the solve is a
-      // cone of valid answers and the joint wanders between frames.
+      // Solve in the RIG'S OWN SPACE, not the world. `toParentFrame` divides
+      // out the rig object's rotation, so it expects a rig-space rotation
+      // back; hand it a world one and the whole limb is off by the body's
+      // yaw. Invisible in `climb`, where a ladder-climbing rig is never
+      // turned — and worth 350 mm on a vault, which turns by a radian.
+      const from = rig.object.worldToLocal(rig.bones[rootBone].getWorldPosition(new Vector3()));
+      target.copy(rig.object.worldToLocal(contact.at.clone()));
+      // Elbows out and down; knees forward. Without a pole the solve is a cone
+      // of valid answers and the joint wanders between frames.
       if (contact.arm) pole.set(s, -0.9, -0.25).normalize();
       else pole.set(0, -0.35, 1).normalize();
       const [l1, l2] = chainLengths(rig, contact.side, contact.arm);
       const solved = solveChain(from, target, restDirection(contact.side, contact.arm), l1, l2, pole);
-      pose.set(rootBone, toParentFrame(rig, rootBone, solved.root));
-      pose.set(midBone, solved.joint);
-      if (!contact.arm) pose.rotate(`${contact.side}Foot`, [X, -0.2]);
-    }
-  });
+      const rootQ = toParentFrame(rig, rootBone, solved.root);
+      const baseRoot = pose.rotations.get(rootBone) ?? new Quaternion();
+      const baseMid = pose.rotations.get(midBone) ?? new Quaternion();
+      pose.set(rootBone, baseRoot.clone().slerp(rootQ, weight));
+      pose.set(midBone, baseMid.clone().slerp(solved.joint, weight));
+      if (!contact.arm && weight > 0.5) pose.rotate(`${contact.side}Foot`, [X, -0.2]);
+      }
+    },
+    false
+  );
 
   for (const [key, q] of rest) rig.bones[key].quaternion.copy(q);
   rig.bones.Hips.position.y = restHipsY;
@@ -453,35 +654,26 @@ export function createMove(
   rig.object.quaternion.copy(restQuat);
   rig.object.updateWorldMatrix(true, true);
 
+  // `buildClip` probes frame 0 once to discover which bones the clip animates,
+  // THEN samples frames+1 times. The probe is the first entry in `baked` and
+  // is not part of the path; dropping it is the difference between the
+  // trajectory the clip was solved against and one shifted a frame off it.
+  const path = baked.slice(1);
+  void frames;
+  const travel = (t: number, out = new Vector3()): Vector3 => {
+    const x = clamp01(t) * (path.length - 1);
+    const i = Math.min(path.length - 2, Math.floor(x));
+    return out.copy(path[i]).lerp(path[i + 1], x - i);
+  };
+
   return {
     name,
     clip,
     duration,
-    travel: travelAt,
-    turn: turnAt,
-    end: travelAt(1),
+    travel,
+    turn: (p: number) => spec.turn(p),
+    end: travel(1),
   };
-}
-
-/** The contact set a move actually solves against, ankle offset included. */
-function contactsFor(
-  rig: HumanoidRig,
-  name: MoveName,
-  obstacle: Pick<Obstacle, 'height' | 'depth' | 'landing'>
-): Contact[] {
-  rig.object.updateWorldMatrix(true, true);
-  const ankle =
-    rig.bones.LeftUpLeg.getWorldPosition(new Vector3()).y -
-    rig.bones.LeftFoot.getWorldPosition(new Vector3()).y;
-  const ankleLift = rig.bones.LeftUpLeg.position.y + rig.bones.Hips.position.y - ankle;
-  return SPECS[name]
-    .contacts(
-      obstacle.height,
-      obstacle.depth,
-      (obstacle.landing ?? obstacle.height) - obstacle.height,
-      rig
-    )
-    .map((c) => (c.arm ? c : { ...c, at: c.at.clone().setY(c.at.y + ankleLift) }));
 }
 
 export interface ParkourContactReport {
@@ -542,7 +734,8 @@ export function measureParkourContact(
       const d = rig.bones[rootBone]
         .getWorldPosition(new Vector3())
         .distanceTo(rig.bones[contact.bone].getWorldPosition(here));
-      if (p >= contact.from && p <= contact.to) {
+      const edge = 1 / (30 * move.duration);
+      if (p >= contact.from + edge && p <= contact.to - edge) {
         stretch = Math.max(stretch, d / (l1 + l2));
         const w = rig.bones[contact.bone].getWorldPosition(new Vector3());
         if (!seen.has(contact)) seen.set(contact, []);

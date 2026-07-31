@@ -164,6 +164,26 @@ export {
   measureClimbContact,
   type ClimbClipOptions,
   type ClimbContactReport,
+} from './climb';
+export {
+  Parkour,
+  chooseMove,
+  createMove,
+  gapAt,
+  measureParkourContact,
+  reachOf,
+  type ChooseOptions,
+  type MoveName,
+  type MoveOptions,
+  type Obstacle,
+  type ParkourContactReport,
+  type ParkourListener,
+  type ParkourMove,
+  type ParkourOptions,
+  type ParkourPhase,
+  type Reach,
+} from './parkour';
+export {
   type Climbable,
   type ClimbState,
   type ClimbOptions,

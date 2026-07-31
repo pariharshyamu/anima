@@ -20,6 +20,93 @@ release found.
 
 ## Releases
 
+## [0.40.0] — 2026-07-30
+
+### Added — the parkour system
+
+`reachOf`, `chooseMove`, `createMove`, `Parkour`, `measureParkourContact`,
+`npm run parkour`, [docs/parkour.md](docs/parkour.md), and an `Obstacle`
+handshake that SCENA's props satisfy structurally. Four moves: step-up, safety
+vault, speed vault, mantle.
+
+The move set is derived from the BODY. `reachOf(rig)` returns knee, hip,
+shoulder and overhead bands from the rig's own leg length and stature, so a
+1.67 m and a 1.77 m character make different choices at the same wall — one
+vaults it, the other mantles — from one code path. Warping authored mocap
+cannot do that; ANIMA has no mocap to warp.
+
+`chooseMove` returns `null` and means it. Measured over eight bodies and 790
+obstacles: 100% of reachable obstacles get a move, 120 unreachable ones are
+refused, none is wrongly accepted.
+
+### The rewrite
+
+The first attempt authored each body path in absolute metres and then asked
+whether the contacts were reachable from it. That is backwards, and it does
+not converge: a vaulter's shoulder only reaches an 0.85 m wall by FOLDING over
+the planted arm, so the reachable set depends on the pose, which depends on
+the phase, which is what is being solved for. Standing upright a 1.77 m body's
+shoulder is 0.60 m above that wall and its arm is 0.50 m long — the hand could
+not touch the top at all.
+
+Moves now author where a body LANDMARK belongs relative to the contact, in
+units of limb length, and the root falls out of it — measured from the posed
+body each frame, so the fold is accounted for rather than assumed.
+
+| move | before | after |
+|---|---|---|
+| step | 271 mm | **0.22 mm** |
+| safety-vault | 1086 mm | **3.76 mm** |
+| speed-vault | 1105 mm | **8.65 mm** |
+| mantle | 789 mm | **8.25 mm** |
+
+Penetration went from up to 692 mm to **0**, and no limb is left clamped.
+
+### Six defects, each found by measurement
+
+- **`solveChain` returns a WORLD rotation; `toParentFrame` expects one in RIG
+  space.** Invisible in `climb`, where a ladder-climbing rig is never turned.
+  Worth 350 mm on a vault, which turns by a radian — and the tell was that the
+  step, the one move with no yaw, was already exact to 0.2 mm.
+- **Left and right were swapped.** In this rig left is +x; the two hand
+  contacts were written the other way round. Survivable for a one-handed move
+  because the body just shifts to suit — but on the two-handed mantle it put
+  the left shoulder over the right hand's mark and stranded the right arm
+  0.88 m from a target a 0.50 m arm was meant to reach.
+- **Authoring an offset as components instead of a radius.** A shoulder asked
+  for 0.72 of an arm above the hand and 0.40 m past it is 0.536 m from a
+  0.496 m arm. Each component looked fine; their combination did not.
+- **A handover that converted between landmark frames.** "The shoulder is 0.72
+  of a leg above the hips" is a guess whose true value depends on how folded
+  the torso is. Blending the resulting ROOTS needs no conversion; the guess
+  cost 462 mm.
+- **`buildClip` discovers its track list from frame 0 alone**, so a bone only
+  posed once its contact goes live never got a track at all — the solve was
+  computed and thrown away. 1.8 m of apparent slip from a hand nothing drove.
+- **`buildClip` made the last frame a repeat of the first.** Correct for a
+  loop, wrong for a one-shot: a vault that rewinds itself in its final frame.
+  It now takes a `loop` flag.
+
+### Changed
+
+- `buildClip` takes an optional `loop` argument (default `true`, unchanged for
+  every existing caller).
+- The two-link solver the ladder climb earned now lives in `src/solve.ts` and
+  is shared: `solveChain`, `toParentFrame`, `restDirection`, `chainLengths`.
+
+### Known gaps, stated rather than papered over
+
+- **The contact ease is not gated.** Limbs blend on and off their holds so
+  they do not teleport onto the wall, but the gate skips a keyframe either
+  side of each plant — exactly where a snap would show. Removing the ease
+  entirely leaves every number in the table above unchanged. Four of five
+  injected defects move the gate; this is the fifth, and it does not.
+- **No playground example yet.** This release is the library slice; the
+  two-bodies-one-course demo is the next piece of work.
+- No drop landings, gap jumps, cat leaps, wall runs, slides or balance.
+  `reachOf` already publishes `catch` and `gapAt` toward the first two.
+
+
 ## [0.39.0] — 2026-07-30
 
 ### Fixed — the ladder climb, which was not a climb
