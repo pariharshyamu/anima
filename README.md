@@ -113,14 +113,18 @@ the ground, which is the loudest thing a procedural character does wrong:
 
 ```bash
 npm run skate     # foot skate, measured from the bones, against declared speed
+npm run climb     # hands on rungs
+npm run parkour   # hands and feet on the wall, and the landing on the floor
+npm run mood      # a layer that is monotone, bounded, and given back
+npm run lifting   # a bar over mid-foot, a rep that is not a sine, a set that decays
 ```
 
-It has found three shipped defects — a run stride factor nobody had measured
+`skate` has found three shipped defects — a run stride factor nobody had measured
 (18.4% of slide), a constant the horse's poser and speed formula disagreed
 about (8.5%), and keyframe density that quietly followed the playback rate
 (skate doubled at 1.4× tempo). See [docs/skate.md](docs/skate.md).
 
-All three run in CI on every push
+All of them run in CI on every push
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Release notes live in
 [CHANGELOG.md](CHANGELOG.md).
 

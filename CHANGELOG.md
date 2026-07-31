@@ -20,6 +20,62 @@ release found.
 
 ## Releases
 
+## [0.45.0] — 2026-07-31
+
+### Added
+
+- **`Lifting` — gym work, and the first motion here that gets WORSE as it goes
+  on.** Everything rhythmic before this is a loop, so rep forty is bit-for-bit
+  rep one; lifting is defined by the two properties that kills. The rep is
+  **asymmetric** (you lower a bar in two seconds and drive it up in one — a
+  symmetric rep is what a sine gives you free, and it is the instant tell), and
+  the rep **decays** (rep eight is slower, shallower and shakier, the sticking
+  point deepens, and eventually there are no more reps left in the weight).
+  Twelve movements: `squat`, `frontSquat`, `deadlift`, `romanianDeadlift`,
+  `overheadPress`, `benchPress`, `row`, `curl`, `lateralRaise`, `lunge`,
+  `kettlebellSwing`, `pullUp`.
+- **The decay is Epley's formula, not a curve someone liked.** `repsInReserve`
+  is `30 × (1RM / load − 1)`, the arithmetic every strength coach uses; at 75%
+  of a maximum it predicts ten reps, at 85% five. Everything that decays is a
+  function of how far through that budget the set has got — which means the set
+  can be **lost**: twelve reps at 93% of a maximum ends at rep three, twelve at
+  40% finishes all twelve. `onFailure` is the difference between a set and a
+  loop with a counter on it.
+- **The torso angle is solved, not authored.** A loaded bar has to stay over
+  mid-foot or the lifter falls over, so `Lifting` solves the pitch that puts it
+  there against the rig's real three-joint spine (four Newton steps). A front
+  squat comes out at 0.60 rad and a back squat at 1.08 rad **from identical
+  legs** — the load moved 9 cm forward and the torso came up to meet it — and a
+  long-femured character leans further than a short-femured one. The ankles are
+  IK'd onto fixed targets for the whole set, so planted feet are true by
+  construction.
+- **`npm run lifting` — the fifth gate.** `measureBarPath` drives a real set
+  through the skinned rig and reports bar-path deviation from the plumb line,
+  tempo from the load's own vertical velocity, depth and duration decay, foot
+  slip, grip gap, per-frame pop and rep range. Nine budgets over twelve
+  movements and six bodies. The bar-path budget is **two-sided**: the upper
+  bound keeps the form inside coaching tolerance, the lower proves the fatigue
+  model reached the bar at all.
+- **`createLiftClip`** — one clean rep, loopable, for background crowds.
+  Explicitly rep one forever, and cross-checked against the live controller by
+  the gate (they agree to 3.6 mm).
+- **The `gym` playground** — twelve lifters in profile with an amber bar-path
+  trace behind each bar and a post at each lifter's mid-foot. Station 1 is at
+  93% of a maximum and does not finish.
+
+### Fixed
+
+- Found by the new gate, none of them visible in a screenshot: a set that reset
+  to lockout when it ended (441 mm of bar teleport on one frame); a bent-over
+  row whose bar rose on the way down (an arm counter-rotation with the wrong
+  sign — tempo 0.59× instead of 1.61×); a lunge whose split stance was wider
+  than the legs could reach, floating both feet 70 mm off the floor; a
+  single-hinge balance model 65 mm off mid-foot, then a three-segment one that
+  double-counted the torso and was worse; a fade-out that stopped one frame
+  early, leaving 0.011 rad of hip rotation on a body it had handed back; a
+  bench press whose bar was further from the shoulder than the arm is long; and
+  a shape reading its own hips height back out of the rig it was posing.
+
 ## [0.44.0] — 2026-07-31
 
 ### Added

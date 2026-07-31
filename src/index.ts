@@ -238,6 +238,24 @@ export {
   type RowStyle,
 } from './rowing';
 
+// Lifting — gym work. The first motion here that gets WORSE as it goes on.
+export {
+  Lifting,
+  LIFTS,
+  LIFT_NAMES,
+  createLiftClip,
+  measureBarPath,
+  repsInReserve,
+  type BarPathOptions,
+  type BarPathReport,
+  type LiftName,
+  type LiftPhase,
+  type LiftPlumb,
+  type LiftSpec,
+  type LiftingOptions,
+  type RepReport,
+} from './lifting';
+
 // Mood — how a body carries whatever it is already doing. A layer, not a pose.
 export {
   Mood,

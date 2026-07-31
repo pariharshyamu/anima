@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, skate
+    name: typecheck, tests, build, five gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -46,6 +46,16 @@ jobs:
       # keyframe density that quietly followed the playback rate. Not one of
       # them could fail a unit test or show up in a still frame.
       - run: npm run skate
+      # The other four measure the same kind of thing one movement over: hands
+      # on rungs, hands and feet on a wall and the landing on the floor, a
+      # modulation layer that stays monotone and gives the body back, and a bar
+      # that stays over mid-foot through a set that visibly decays. Every one
+      # of them has been watched failing; a gate nobody has watched fail is a
+      # decoration, and a gate CI does not run is not a gate.
+      - run: npm run climb
+      - run: npm run parkour
+      - run: npm run mood
+      - run: npm run lifting
 
   browser:
     name: every example renders

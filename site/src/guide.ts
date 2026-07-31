@@ -14,6 +14,8 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'skate', title: 'Foot skate: the gate' },
   { id: 'climbing', title: 'Climbing: the contact gate' },
   { id: 'parkour', title: 'Parkour: reach and contact' },
+  { id: 'mood', title: 'Mood: the layer, not the pose' },
+  { id: 'lifting', title: 'Lifting: the rep that decays' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

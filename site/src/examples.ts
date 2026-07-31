@@ -4227,6 +4227,313 @@ window.moodDebug = () => ({
 
 game.start();`,
   },
+  {
+    id: 'gym',
+    title: 'The gym: eight reps, and the eighth is not the first',
+    group: 'Scale',
+    code: `// TWELVE LIFTERS, TWELVE MOVEMENTS, AND A LINE BEHIND EVERY BAR.
+//
+// Everything rhythmic in this library before now is a LOOP: a clip goes to the
+// mixer and rep forty is bit-for-bit rep one. That is exactly wrong for
+// lifting, and it is why a gym built out of looped clips reads as a
+// screensaver. Two properties are doing all the work here and neither survives
+// being baked:
+//
+//   THE REP IS ASYMMETRIC   you lower a bar in two seconds and drive it up in
+//                           one. A symmetric rep is what a sine gives you free,
+//                           and it is the instant tell of a fake gym animation.
+//   THE REP DECAYS          rep eight is slower, shallower and shakier than rep
+//                           one, and eventually the bar stops moving.
+//
+// Neither is visible in a still frame, so this scene draws the thing that IS:
+// the white line trailing each bar is where it has actually been, and the thin
+// grey post beside it is the middle of that lifter's foot. A loaded bar has to
+// stay over that post or the lifter falls over — which is why the torso angle
+// is SOLVED here rather than authored, and why the back squat and the front
+// squat come out at different angles from identical legs.
+//
+// Watch the traces thicken outward as the sets go on. That is the form drift:
+// rep one is over mid-foot to the micron, and by rep eight it is 20 mm out.
+//
+// Station 1 is loaded to 93% of a maximum. It will not finish.
+import { BoxGeometry, BufferGeometry, BufferAttribute, CylinderGeometry, Group, Line,
+         LineBasicMaterial, Mesh, MeshStandardMaterial, PlaneGeometry,
+         SphereGeometry, TorusGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, LIFTS, LIFT_NAMES, Lifting, OUTFITS } from 'anima3d';
+import { Game, Hud } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 9 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const hud = new Hud();
+
+// ── The iron ────────────────────────────────────────────────────────
+// A \`Holdable\` is a SHAPE, not a package: \`{ object }\` and nothing else, which
+// is all \`Lifting.hold\` ever looks at. A SCENA barbell would drop in here
+// unchanged; these are three primitives so the example imports nothing extra.
+const STEEL = new MeshStandardMaterial({ color: 0x4a4f57, metalness: 0.85, roughness: 0.35 });
+const RUBBER = new MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.9 });
+
+function makeIron(kind, half) {
+  const g = new Group();
+  if (kind === 'kettlebell') {
+    const bell = new Mesh(new SphereGeometry(0.085, 14, 10), RUBBER);
+    bell.position.y = -0.09;
+    const handle = new Mesh(new TorusGeometry(0.055, 0.012, 8, 16), STEEL);
+    g.add(bell, handle);
+    return g;
+  }
+  if (kind === 'dumbbells') {
+    for (const s of [-1, 1]) {
+      const shaft = new Mesh(new CylinderGeometry(0.014, 0.014, 0.15, 8), STEEL);
+      shaft.rotation.z = Math.PI / 2;
+      shaft.position.x = s * half;
+      g.add(shaft);
+      for (const e of [-0.07, 0.07]) {
+        const head = new Mesh(new CylinderGeometry(0.055, 0.055, 0.05, 12), RUBBER);
+        head.rotation.z = Math.PI / 2;
+        head.position.set(s * half + e, 0, 0);
+        g.add(head);
+      }
+    }
+    return g;
+  }
+  // A barbell: the origin is the middle of the bar and the length runs along X,
+  // which is the contract \`Lifting.hold\` documents.
+  const bar = new Mesh(new CylinderGeometry(0.014, 0.014, half * 2.5, 10), STEEL);
+  bar.rotation.z = Math.PI / 2;
+  g.add(bar);
+  for (const s of [-1, 1]) {
+    for (let p = 0; p < 3; p++) {
+      const plate = new Mesh(new CylinderGeometry(0.22, 0.22, 0.035, 18), RUBBER);
+      plate.rotation.z = Math.PI / 2;
+      plate.position.x = s * (half * 1.06 + p * 0.04);
+      g.add(plate);
+    }
+  }
+  return g;
+}
+
+// ── Twelve stations, all in PROFILE ─────────────────────────────────
+// A bar path lives in the sagittal plane, which is why every video a lifter
+// ever films of themselves is shot from the side. So every rig here is turned
+// side-on to the camera: the trace behind each bar is then a real bar-path
+// diagram rather than a line seen end-on.
+const FADE = 0.4;      // seconds to walk into the lift
+const REST = 2.4;      // seconds of breather between sets
+const COLS = 4;
+const PITCH = 2.1;
+const ROW = 2.5;
+const TRACE = 1400;
+
+const stations = LIFT_NAMES.map((name, i) => {
+  const spec = LIFTS[name];
+  const rig = createHumanoid({ seed: 3 + i, palette: OUTFITS.villager });
+  const col = i % COLS;
+  const row = Math.floor(i / COLS);
+  const x = (col - (COLS - 1) / 2) * PITCH;
+  const z = row * ROW;
+  rig.object.position.set(x, 0, z);
+  rig.object.rotation.y = Math.PI / 2;   // side-on: the lean and the bar read
+  scene.add(rig.object);
+  rig.object.updateMatrixWorld(true);
+
+  // Station 1 is loaded to 93% of a maximum and given twelve reps to do.
+  // Epley never offered twelve at that weight, so it will stall — the whole
+  // difference between a set and a loop.
+  const heavy = i === 0;
+  const set = new Lifting(rig, name, {
+    load: spec.oneRepMax * (heavy ? 0.93 : 0.72),
+    reps: heavy ? 12 : 8,
+    seed: 4 + i * 3,
+    fade: FADE,
+  });
+  const half = rig.height * spec.grip;
+  const iron = makeIron(spec.implement, half);
+  if (spec.implement !== 'bodyweight') set.hold({ object: iron });
+
+  // One frame before anything reads a position. \`loadPoint\` maps out of the
+  // rig's world matrix, and a rig that has never been posed has neither a pose
+  // nor a matrix — the first version hung every bar path off the world origin
+  // and drew twelve white spokes across the floor.
+  set.update(1e-3);
+
+  // A pull-up bar is not held — it holds YOU. Bolted to the world, and the
+  // gate's job is proving the hands never leave it.
+  if (spec.base === 'bar') {
+    const fixed = new Mesh(new CylinderGeometry(0.022, 0.022, half * 2.6, 10), STEEL);
+    fixed.rotation.z = Math.PI / 2;
+    fixed.position.copy(set.loadPoint(new Vector3()));
+    scene.add(fixed);
+  }
+
+  // A bench press needs a bench. That is a SCENA-shaped problem — furniture,
+  // not motion — but a lifter lying flat in mid-air reads as a bug, so the
+  // example supplies one the same way a game would.
+  if (name === 'benchPress') {
+    const pad = new Mesh(new BoxGeometry(0.32, 0.09, 1.25),
+                         new MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8 }));
+    pad.position.set(x - 0.06, 0.26 * rig.height - 0.1, z);
+    pad.rotation.y = Math.PI / 2;
+    const leg = new Mesh(new BoxGeometry(0.1, 0.26 * rig.height - 0.15, 0.9), STEEL);
+    leg.position.set(x, (0.26 * rig.height - 0.15) / 2, z);
+    leg.rotation.y = Math.PI / 2;
+    scene.add(pad, leg);
+  }
+
+  // The plumb post: the middle of this lifter's foot, straight up. The bar is
+  // supposed to stay on it. Placed along the rig's OWN forward, because these
+  // are turned side-on and "forward" is not the world's +Z any more.
+  const fwd = new Vector3(0, 0, 1).applyQuaternion(rig.object.quaternion);
+  const post = new Mesh(new CylinderGeometry(0.005, 0.005, 1.9, 5),
+                        new MeshStandardMaterial({ color: 0x39424f, roughness: 1 }));
+  post.position.set(x + fwd.x * 0.026 * rig.height, 0.95, z + fwd.z * 0.026 * rig.height);
+  scene.add(post);
+
+  // The bar path itself, as a line that grows behind the load.
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(TRACE * 3), 3));
+  geo.setDrawRange(0, 0);
+  // Amber, not white: a bar path drawn in white over grey concrete under a
+  // blue sky is a line nobody can see, which for the one thing this scene
+  // exists to show is not a small problem.
+  const line = new Line(geo, new LineBasicMaterial({ color: 0xffb020 }));
+  line.frustumCulled = false;
+  scene.add(line);
+
+  return { name, spec, rig, set, iron, line, geo, i, n: 0, x, z, half, heavy, fwd, worst: 0, since: 0, resting: 0 };
+});
+
+const here = new Vector3();
+const plumb = new Vector3();
+const other = new Vector3();
+let t = 0;
+let done = 0;
+
+/** Put a station back under the bar for another set. */
+function reset(s) {
+  s.set = new Lifting(s.rig, s.name, {
+    load: LIFTS[s.name].oneRepMax * (s.heavy ? 0.93 : 0.72),
+    reps: s.heavy ? 12 : 8,
+    seed: 4 + s.i * 3,
+    fade: FADE,
+  });
+  if (s.spec.implement !== 'bodyweight') s.set.hold({ object: s.iron });
+  s.n = 0;
+  s.geo.setDrawRange(0, 0);
+  s.worst = 0;
+  s.since = 0;
+}
+
+game.onUpdate((tick) => {
+  const dt = tick.delta;
+  t += dt;
+
+  for (const s of stations) {
+    s.set.update(dt);
+    s.since += dt;
+    s.set.loadPoint(here);
+
+    // Nothing is measured or traced until the lifter is actually under the
+    // bar. During the fade the pose is part lift and part whatever the body
+    // was doing before, and the bar is 60 mm off a plumb line it has not
+    // reached yet — a number about the blend, not about the lift.
+    const under = s.since > FADE * 1.6;
+
+    // Everything below is READING the controller, never steering it. The trace
+    // is the load's own world position out of the transform hierarchy — the
+    // same place \`measureBarPath\` takes its numbers from.
+    if (under && s.n < TRACE) {
+      const a = s.geo.attributes.position;
+      a.setXYZ(s.n, here.x, here.y, here.z);
+      s.n++;
+      a.needsUpdate = true;
+      s.geo.setDrawRange(0, s.n);
+    }
+    if (under && s.spec.plumb === 'midfoot') {
+      // Both feet, so the stance width cancels, and PROJECTED onto the rig's
+      // own forward — the deviation that matters is fore-and-aft, and reading
+      // it off the world's Z axis reports the row number for anyone not stood
+      // at the origin facing north.
+      s.rig.bones.LeftFoot.getWorldPosition(plumb);
+      s.rig.bones.RightFoot.getWorldPosition(other);
+      plumb.add(other).multiplyScalar(0.5).addScaledVector(s.fwd, 0.026 * s.rig.height);
+      s.worst = Math.max(s.worst, Math.abs(here.clone().sub(plumb).dot(s.fwd)));
+    }
+    // Bodyweight movements have nothing in the hands; everything else has its
+    // iron parented to the rig by \`hold\`, so it is already where it should be.
+    if (s.spec.implement !== 'bodyweight' && !s.iron.parent) scene.add(s.iron);
+
+    // A finished set racks the bar, hands the body back, and after a breather
+    // the lifter goes again — a gym is a place where people do more than one
+    // set, and \`release()\` is what makes the body available in between.
+    if (s.set.done) {
+      if (s.resting === 0) {
+        s.set.release();
+        done++;
+      }
+      s.resting += dt;
+      if (s.resting > REST) {
+        s.resting = 0;
+        reset(s);
+      }
+    }
+  }
+
+  const shown = stations[Math.floor(t / 4) % stations.length];
+  hud.objective(
+    shown.spec.label.toUpperCase() +
+    '   rep ' + shown.set.reps +
+    '   fatigue ' + (shown.set.fatigue * 100).toFixed(0) + '%' +
+    '   ' + shown.set.repsLeft.toFixed(1) + ' left' +
+    (shown.set.failed ? '   — FAILED' : '')
+  );
+  hud.prompt(
+    'bar off mid-foot ' + (shown.worst * 1000).toFixed(1) + ' mm' +
+    '   grind ' + shown.set.grind.toFixed(2) +
+    '   tempo ' + LIFTS[shown.name].eccentric.toFixed(1) + 's down / ' +
+    LIFTS[shown.name].concentric.toFixed(1) + 's up' +
+    '   — station 1 is at 93% of a max'
+  );
+  hud.update(dt);
+});
+
+game.camera.position.set(0, 2.9, -7.3);
+game.camera.lookAt(0, 1.0, 1.9);
+
+window.liftingDebug = () => ({
+  stations: stations.length,
+  // The scene's OWN clock. A probe that checks rep counts against wall time is
+  // guessing — headless SwiftShader runs this at roughly a third of real time,
+  // and a set that never started looks exactly like one read too early.
+  clock: Number(t.toFixed(1)),
+  reps: stations.map((s) => s.set.reps),
+  failed: stations.filter((s) => s.set.failed).map((s) => s.name),
+  // Millimetres off the plumb line, live. Rep one is zero by construction; a
+  // number growing here IS the fatigue reaching the bar.
+  plumb: stations
+    .filter((s) => s.spec.plumb === 'midfoot')
+    .map((s) => ({ name: s.name, mm: Number((s.worst * 1000).toFixed(1)) })),
+  // Where the bar path actually starts, so a trace hung off the world origin
+  // shows up as a number rather than as twelve white spokes in a screenshot.
+  origin: stations.map((s) => Number(
+    Math.hypot(s.geo.attributes.position.getX(0) - s.x,
+               s.geo.attributes.position.getZ(0) - s.z).toFixed(3))),
+  traced: stations.map((s) => s.n),
+  sets: done,
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
