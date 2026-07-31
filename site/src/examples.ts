@@ -3578,6 +3578,487 @@ window.parkourDebug = () => {
 
 game.start();`,
   },
+  {
+    id: 'dogfight',
+    title: 'Dogfight: fly it, and count the rounds',
+    group: 'Scale',
+    code: `// A DOGFIGHT YOU FLY, and the whole trilogy under it.
+//
+// SCENA builds the deltas and the ammunition; GAMA flies them, tracks the
+// lock, throws the shells and the missiles; ANIMA puts a pilot in the seat
+// who WEARS the g you are pulling. Nothing imports anything else.
+//
+// The point of the scene is the AMMUNITION HANDSHAKE. The 30 mm the guns
+// fire is not a number typed into a projectile system — it is
+// ballisticsOf('autocannon'), the same table entry that decides how long
+// the cartridge model is. Muzzle velocity, drop, tracer size and colour all
+// come out of it, so the round you see on the belt and the round that flies
+// CANNOT disagree. The belt drains as you shoot, and it drains because
+// consume() was called, not because a counter went down beside it.
+//
+//   ARROWS / WASD  pitch + roll     SHIFT / CTRL  throttle
+//   SPACE  guns                     F  missile (needs a LOCK)
+//   X  flares                       C  camera        R  rearm
+//   Touch: drag to fly, tap right half for guns, left half for missile.
+import { AnimationMixer, Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, ballisticsOf, createBelt, createEffects,
+         createFighterJet, createLightingRig, createRack, createSky,
+         createSurface, createTrail, PALETTES } from 'scena3d';
+import { Cockpit, createHumanoid, createPoseClip, OUTFITS } from 'anima3d';
+import { FlightController, Game, GameFeel, Health, Hud, LockOn, Missiles,
+         Projectiles } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const ground = new Mesh(new PlaneGeometry(4000, 4000), createSurface('moss', { seed: 5 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const fx = createEffects({ seed: 8, capacity: 420 });
+scene.add(fx.group);
+const feel = new GameFeel({ seed: 3 });
+const hud = new Hud();
+
+// ── The armament, from SCENA's ammunition table ──────────────────────
+// One lookup, and it decides everything downstream: how fast the shell
+// leaves, how hard it drops, how big and what colour the tracer is, and
+// how many are in a belt. Change 'autocannon' to 'heavy-mg' and the whole
+// weapon changes character without another line moving.
+const GUN = ballisticsOf('autocannon');
+const AAM = ballisticsOf('missile');
+
+const belt = createBelt('autocannon', { capacity: 60, drape: false });
+belt.object.scale.setScalar(1.6);
+const rack = createRack('missile', { capacity: 4 });
+rack.object.scale.setScalar(0.6);
+
+const guns = new Projectiles({
+  capacity: 96,
+  // Straight off the table. A 30 mm shell leaves at 1080 m/s and falls at
+  // 9.81 like everything else unpowered — what makes it flat is the SPEED,
+  // not a special gravity, and that is the table's opinion and not mine.
+  gravity: GUN.gravity,
+  size: GUN.size * 1.8,
+  color: GUN.color,
+  floor: 0,
+  onHit: ({ target, at }) => {
+    const foe = foes.find((f) => f.target === target);
+    if (!foe || !foe.alive) return;
+    fx.burst('sparks', at);
+    foe.health.damage({ amount: 1, from: at }, foe.flight.position);
+  },
+  onExpire: (at) => { if (at.y < 1.5) fx.burst('dust', new Vector3(at.x, 0.2, at.z)); },
+});
+scene.add(guns.mesh);
+
+const missiles = new Missiles({
+  seed: 5, speed: AAM.speed || 120, turnRate: 2.6, motorTime: 7, capacity: 8,
+  onHit: (hit) => {
+    const foe = foes.find((f) => f.target === hit.target);
+    if (foe) kill(foe, foe.flight.position);
+    else boom(hit.at ?? hit.position ?? new Vector3());
+  },
+  onMiss: () => hud.caption('Missile timed out'),
+});
+scene.add(missiles.group);
+// A 29-degree seeker is realistic and miserable to fly against with a
+// keyboard: flown headlessly the bandit sat at 33 degrees off the nose for
+// most of a pass and never once tripped the lock. 46 degrees is an arcade
+// cone, and it is the difference between a weapon and an ornament.
+const lock = new LockOn({ halfAngle: 0.8, range: 260, lockTime: 0.9 });
+
+// ── The player's jet, and the pilot in it ───────────────────────────
+const jet = createFighterJet({ seed: 7, color: 0x5d6a78 });
+scene.add(jet.object);
+// The belt rides on the airframe's flank and the rack under the wing, so
+// what the HUD says and what the aircraft is CARRYING are the same fact.
+belt.object.position.set(0.9, 0.2, -0.6);
+rack.object.position.set(0, -0.55, 0.4);
+jet.object.add(belt.object, rack.object);
+
+const flight = new FlightController({
+  maxSpeed: 78, stallSpeed: 20, rotateSpeed: 22,
+  pitchRate: 1.15, rollRate: 2.6, turnCoupling: 1.2,
+});
+flight.position.set(0, 220, -260);
+flight.speed = 60;
+flight.throttle = 0.85;
+flight.grounded = false;
+
+const pilot = createHumanoid({ seed: 41, height: 1.76, palette: OUTFITS.guard,
+  accessories: ['cap'] });
+pilot.object.scale.setScalar(0.72);
+const seat = new Cockpit(pilot, {
+  gLimit: 9, greyAt: 2.6, greyIn: 1.8, greyOut: 3.2,
+  onGLOC: () => { hud.banner('G-LOC'); feel.shake(0.5); },
+  onRecover: () => hud.caption('…back'),
+});
+seat.seat(jet.object, { y: 1.24, z: 2.3 });
+const mixer = new AnimationMixer(pilot.mesh);
+mixer.clipAction(createPoseClip(pilot, 'pilot')).play();
+
+const myTrail = createTrail({ length: 70, width: 0.55, life: 2.6, opacity: 0.45 });
+scene.add(myTrail.mesh);
+
+// ── The bandits ─────────────────────────────────────────────────────
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const forward = (f) => new Vector3(
+  Math.sin(f.heading) * Math.cos(f.pitch), Math.sin(f.pitch),
+  Math.cos(f.heading) * Math.cos(f.pitch)
+);
+
+const boom = (at) => {
+  // Three bursts, not one. An explosion that is a single puff reads as a
+  // sprite; debris out, sparks up the middle and dust settling under it
+  // reads as something coming apart.
+  fx.burst('debris', at);
+  fx.burst('sparks', at);
+  fx.burst('dust', new Vector3(at.x, at.y - 2, at.z));
+};
+
+let kills = 0;
+let lost = 0;
+const makeFoe = (i) => {
+  const body = createFighterJet({ seed: 11 + i * 7, color: [0x6e5a48, 0x4a5a48, 0x6a4a52][i % 3] });
+  scene.add(body.object);
+  const f = new FlightController({
+    maxSpeed: 58 + i * 3, stallSpeed: 18, rotateSpeed: 22,
+    pitchRate: 0.95, rollRate: 2.1, turnCoupling: 1.1,
+  });
+  f.grounded = false;
+  const trail = createTrail({ length: 40, width: 0.4, life: 1.8, opacity: 0.3 });
+  scene.add(trail.mesh);
+  const foe = {
+    body, flight: f, trail, alive: true, respawn: 0,
+    target: { center: f.position, radius: 11, team: 'foes' },
+    health: null,
+  };
+  foe.health = new Health({
+    max: 5, invulnerable: 0.05,
+    onDamage: () => fx.burst('sparks', f.position),
+    onDeath: () => kill(foe, f.position),
+  });
+  guns.addTarget(foe.target);
+  return foe;
+};
+const foes = [0, 1, 2].map(makeFoe);
+
+const place = (foe, i) => {
+  const a = Math.random() * Math.PI * 2;
+  foe.flight.position.set(
+    flight.position.x + Math.sin(a) * 320,
+    140 + i * 40,
+    flight.position.z + Math.cos(a) * 320
+  );
+  foe.flight.heading = a + Math.PI;
+  foe.flight.speed = 52;
+  foe.flight.throttle = 0.9;
+  foe.alive = true;
+  foe.respawn = 0;
+  foe.health.revive();
+  foe.body.object.visible = true;
+};
+foes.forEach(place);
+
+function kill(foe, at) {
+  if (!foe.alive) return;
+  foe.alive = false;
+  foe.respawn = 2.6;
+  foe.body.object.visible = false;
+  boom(at.clone ? at.clone() : new Vector3(at.x, at.y, at.z));
+  feel.shake(0.85);
+  kills++;
+  hud.banner('SPLASH — ' + kills);
+}
+
+// ── Input: keyboard and touch, because a playground is both ─────────
+const keys = new Set();
+// Discrete actions are LATCHED, not sampled. Firing a missile, popping
+// flares and cutting the camera all happen once per press, and asking
+// "is F down right now?" inside the frame loop misses a quick tap
+// entirely — the key goes down and up between two rAFs and the frame
+// never sees it. Flown headlessly the lock went solid, the trigger was
+// tapped, and the rack stayed full at four: the weapon was fine and the
+// INPUT dropped it. Continuous controls (stick, throttle, guns) still
+// sample held state, because that is what they are.
+const tapped = new Set();
+addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (!keys.has(k)) tapped.add(k);
+  keys.add(k);
+  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+    e.preventDefault();
+  }
+});
+addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+const held = (...names) => names.some((n) => keys.has(n));
+/** True once per press. Reading it consumes it. */
+const tap = (...names) => {
+  let hit = false;
+  for (const n of names) if (tapped.delete(n)) hit = true;
+  return hit;
+};
+
+let touch = null;
+let touchFire = 0;
+let touchMissile = false;
+const onDown = (e) => {
+  const t = e.touches ? e.touches[0] : e;
+  touch = { x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY };
+  if (t.clientX > innerWidth * 0.5) touchFire = 1;
+  else touchMissile = true;
+};
+const onMove = (e) => {
+  if (!touch) return;
+  const t = e.touches ? e.touches[0] : e;
+  touch.x = t.clientX;
+  touch.y = t.clientY;
+};
+const onUp = () => { touch = null; touchFire = 0; };
+addEventListener('touchstart', onDown, { passive: true });
+addEventListener('touchmove', onMove, { passive: true });
+addEventListener('touchend', onUp);
+addEventListener('pointerdown', onDown);
+addEventListener('pointermove', onMove);
+addEventListener('pointerup', onUp);
+
+// ── The fight ───────────────────────────────────────────────────────
+const RELOAD = 3.2;
+let heat = 0;          // seconds of fire left before the barrels need a rest
+let reloading = 0;
+let gunTimer = 0;
+let view = 0;
+let viewCool = 0;
+let flareCool = 0;
+const GUN_RPS = 12;    // rounds per second off the belt
+
+const steer = (f, aim, pull) => {
+  const dx = aim.x - f.position.x;
+  const dz = aim.z - f.position.z;
+  const dy = aim.y - f.position.y;
+  const range = Math.hypot(dx, dz);
+  let off = Math.atan2(dx, dz) - f.heading;
+  while (off > Math.PI) off -= Math.PI * 2;
+  while (off < -Math.PI) off += Math.PI * 2;
+  // Positive bank is a LEFT turn in this model, so the sign here is not
+  // cosmetic: get it wrong and the bandit parks at six o'clock forever,
+  // which is a stable equilibrium and looks disconcertingly like working.
+  const bank = clamp(-off * 2.2, -1.1, 1.1);
+  const climb = clamp(Math.atan2(dy, Math.max(range, 30)) + (pull || 0), -0.3, 0.6);
+  f.control({
+    roll: clamp((bank - f.bank) * 3.2, -1, 1),
+    pitch: clamp((climb - f.pitch) * 3.4, -1, 1),
+  });
+  return Math.abs(off);
+};
+
+const nose = new Vector3();
+const muzzle = new Vector3();
+const aim = new Vector3();
+let bogey = null;
+
+game.onUpdate((t) => {
+  const dt = t.delta;
+  viewCool -= dt;
+  flareCool -= dt;
+
+  // ---- the stick
+  let pitch = 0;
+  let roll = 0;
+  if (held('arrowup', 'w')) pitch += 1;
+  if (held('arrowdown', 's')) pitch -= 1;
+  if (held('arrowleft', 'a')) roll += 1;
+  if (held('arrowright', 'd')) roll -= 1;
+  if (touch) {
+    roll += clamp(-(touch.x - touch.x0) / 120, -1, 1);
+    pitch += clamp(-(touch.y - touch.y0) / 120, -1, 1);
+  }
+  if (held('shift')) flight.throttle = Math.min(1, flight.throttle + dt * 0.7);
+  if (held('control')) flight.throttle = Math.max(0.15, flight.throttle - dt * 0.7);
+  flight.control({ pitch, roll });
+  flight.update(dt);
+  for (const f of foes) if (f.alive) f.flight.update(dt);
+
+  // ---- the bandits fly at me, and break when I am close behind them
+  for (let i = 0; i < foes.length; i++) {
+    const foe = foes[i];
+    if (!foe.alive) {
+      foe.respawn -= dt;
+      if (foe.respawn <= 0) place(foe, i);
+      continue;
+    }
+    // ARCADE, and deliberately so — this is the one place the scene is not
+    // trying to be a simulation. Told to chase a lead point ahead of the
+    // player, all three bandits did exactly that and parked permanently on
+    // his six: flown headlessly it was sixty rounds fired, a bandit closing
+    // to thirteen metres, and zero hits, because the target was never once
+    // in front. That is not a dogfight, it is being hunted with no counter.
+    //
+    // So each bandit orbits a station AHEAD of the player and weaves on its
+    // own phase. They cross the nose, they are shootable, and the fight is
+    // winnable — which for a playground is the property that matters more
+    // than a faithful pursuit curve.
+    const ahead = flight.position.clone().add(forward(flight).multiplyScalar(230));
+    const phase = t.elapsed * 0.35 + (i * Math.PI * 2) / foes.length;
+    const aimAt = ahead.add(new Vector3(
+      Math.cos(phase) * 110,
+      20 + Math.sin(phase * 1.7) * 30,
+      Math.sin(phase) * 110
+    ));
+    steer(foe.flight, aimAt, 0.05);
+    foe.body.object.position.copy(foe.flight.position);
+    foe.body.object.rotation.set(-foe.flight.pitch, foe.flight.heading, foe.flight.bank, 'YXZ');
+    foe.body.update(dt, { throttle: foe.flight.throttle, speed: foe.flight.speed });
+    foe.trail.push(foe.flight.position);
+    foe.trail.update(dt);
+    foe.health.update(dt);
+    // Fly into the ground and it counts as a kill nobody scored.
+    if (foe.flight.position.y < 6) kill(foe, foe.flight.position);
+  }
+
+  // ---- the airframe follows the flight model
+  jet.object.position.copy(flight.position);
+  jet.object.rotation.set(-flight.pitch, flight.heading, flight.bank, 'YXZ');
+  jet.update(dt, { throttle: flight.throttle, speed: flight.speed });
+  myTrail.push(flight.position);
+  myTrail.update(dt);
+
+  // ---- lock: nearest bandit in the seeker cone
+  nose.copy(forward(flight)).normalize();
+  bogey = null;
+  let best = Infinity;
+  for (const foe of foes) {
+    if (!foe.alive) continue;
+    const d = foe.flight.position.distanceTo(flight.position);
+    if (d < best) { best = d; bogey = foe; }
+  }
+  lock.update(dt, { position: flight.position, direction: nose }, bogey ? bogey.target : null);
+  seat.watch(bogey ? bogey.body.object : null);
+
+  // ---- guns. The belt is the magazine: consume() or do not fire.
+  if (reloading > 0) {
+    reloading -= dt;
+    if (reloading <= 0) { belt.setCount(belt.capacity); hud.caption('Belt reloaded'); }
+  }
+  const firing = (held(' ') || touchFire > 0) && reloading <= 0;
+  gunTimer -= dt;
+  if (firing && gunTimer <= 0) {
+    if (belt.consume()) {
+      gunTimer = 1 / GUN_RPS;
+      muzzle.copy(flight.position).add(nose.clone().multiplyScalar(3.2));
+      // The table's own muzzle velocity, plus the aircraft's — a shell fired
+      // forward from something doing 78 m/s is not doing 1080, it is doing
+      // 1158. This was scaled down by 0.16 at first, to "make the tracers
+      // visible", and that fudge was the single worst thing in the scene:
+      // at 173 m/s a shell takes 0.37 s to reach a bandit 64 m away and the
+      // lead you have to pull is enormous. Flown headlessly it fired sixty
+      // rounds at a target closing to THIRTEEN METRES and hit nothing. A
+      // 30 mm really does arrive almost instantly, and using the number the
+      // table already published is both more honest and better to play.
+      aim.copy(nose).multiplyScalar(GUN.speed + flight.speed);
+      guns.fire(muzzle, aim, { team: 'player' });
+      fx.burst('sparks', muzzle);
+      feel.shake(0.06);
+      heat += 1;
+    } else {
+      reloading = RELOAD;
+      hud.banner('BELT DRY — reloading');
+    }
+  }
+  if (tap('r') && belt.count < belt.capacity && reloading <= 0) reloading = RELOAD;
+
+  // ---- missiles. The rack is the magazine, and it EMPTIES on the model.
+  if ((tap('f') || touchMissile) && lock.state === 'locked' && rack.count > 0) {
+    if (rack.consume()) {
+      const hp = jet.launchFrom(rack.capacity - rack.count - 1);
+      const from = hp ? new Vector3(hp.position.x, hp.position.y, hp.position.z) : flight.position;
+      missiles.fire(from, nose, bogey.target);
+      feel.shake(0.3);
+      hud.banner('FOX TWO');
+    }
+  }
+  touchMissile = false;
+  if (tap('x') && flareCool <= 0) {
+    missiles.flare(flight.position);
+    fx.burst('sparks', flight.position);
+    flareCool = 0.35;
+  }
+
+  guns.update(dt);
+  missiles.update(dt);
+  fx.update(dt);
+  mixer.update(dt);
+  // The pilot wears the turn: g comes from the flight model, not from a
+  // guess about how hard the scene looks like it is pulling.
+  seat.update(dt, flight);
+  feel.update(dt);
+
+  // ---- camera
+  if (tap('c')) view = (view + 1) % 3;
+  const back = nose.clone().multiplyScalar(-1);
+  if (view === 0) {
+    game.camera.position.copy(flight.position).add(back.multiplyScalar(26)).add(new Vector3(0, 7, 0));
+    game.camera.lookAt(flight.position.clone().add(nose.clone().multiplyScalar(60)));
+  } else if (view === 1) {
+    game.camera.position.copy(flight.position).add(nose.clone().multiplyScalar(2.4)).add(new Vector3(0, 1.5, 0));
+    game.camera.lookAt(flight.position.clone().add(nose.clone().multiplyScalar(90)));
+  } else {
+    game.camera.position.copy(flight.position).add(new Vector3(52, 22, 0));
+    game.camera.lookAt(flight.position);
+  }
+  feel.apply(game.camera);
+
+  // ---- readouts
+  const bar = (n, of) => '\\u2588'.repeat(Math.round((n / of) * 12)).padEnd(12, '\\u2591');
+  hud.objective(
+    'GUN ' + bar(belt.count, belt.capacity) + ' ' + String(belt.count).padStart(3) +
+    '   AAM ' + '\\u25c6'.repeat(rack.count).padEnd(rack.capacity, '\\u25c7') +
+    '   KILLS ' + kills
+  );
+  hud.prompt(
+    (reloading > 0 ? 'RELOADING ' + reloading.toFixed(1) + 's' :
+     lock.state === 'locked' ? 'LOCK \\u2014 FOX TWO READY' :
+     lock.state === 'locking' ? 'LOCKING ' + Math.round(lock.progress * 100) + '%' : 'SEEKING') +
+    '   ' + Math.round(flight.speed) + ' m/s   ' + Math.round(flight.position.y) + ' m' +
+    '   ' + Math.round(seat.load * 10) / 10 + 'g'
+  );
+  hud.update(dt);
+  tapped.clear();
+});
+
+window.dogfightDebug = () => ({
+  // The claim: the shells flying are the shells the table describes.
+  gun: { speed: GUN.speed, gravity: GUN.gravity, color: GUN.color, size: Number(GUN.size.toFixed(3)) },
+  belt: belt.count,
+  beltCapacity: belt.capacity,
+  rack: rack.count,
+  shotsInFlight: guns.active,
+  missilesInFlight: missiles.alive,
+  kills,
+  lock: lock.state,
+  alt: Number(flight.position.y.toFixed(1)),
+  speed: Number(flight.speed.toFixed(1)),
+  g: Number(seat.load.toFixed(2)),
+  foesAlive: foes.filter((f) => f.alive).length,
+  nearest: Number(Math.min(...foes.filter((f) => f.alive)
+    .map((f) => f.flight.position.distanceTo(flight.position))).toFixed(0)),
+  foeAlt: foes.map((f) => Number(f.flight.position.y.toFixed(0))),
+  offBore: Number((() => {
+    let b = null; let best = Infinity;
+    for (const f of foes) { if (!f.alive) continue;
+      const d = f.flight.position.distanceTo(flight.position);
+      if (d < best) { best = d; b = f; } }
+    if (!b) return 9;
+    const to = b.flight.position.clone().sub(flight.position).normalize();
+    return Math.acos(Math.max(-1, Math.min(1, to.dot(nose))));
+  })().toFixed(2)),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {

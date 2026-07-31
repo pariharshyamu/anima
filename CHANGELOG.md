@@ -20,6 +20,36 @@ release found.
 
 ## Releases
 
+## [0.43.0] — 2026-07-31
+
+### Added
+
+- **The `dogfight` playground — a jet fight you actually fly.** SCENA builds
+  the deltas and the ammunition, GAMA flies them and throws the shells and
+  missiles, ANIMA puts a pilot in the seat who wears the g. Keyboard and touch.
+- **The ammunition handshake, used in anger.** The guns are
+  `ballisticsOf('autocannon')` — the same table entry that shapes the cartridge
+  model decides muzzle velocity, drop, tracer size and colour. The 60-round
+  belt and the four-round missile rack are SCENA `Countable`s mounted on the
+  airframe: firing calls `consume()`, so what the HUD says and what the
+  aircraft is carrying are one fact. Explosions are three `createEffects`
+  bursts plus a `GameFeel` shake.
+
+### Changed
+
+- Bumped to `scena3d@0.107.0` and `gama3d@0.45.0`.
+
+### Fixed
+
+- Four bugs, all found by flying it headlessly rather than screenshotting it:
+  a scaled-down muzzle velocity (0.16×) that made the gun unhittable — sixty
+  rounds at a bandit closing to thirteen metres, zero hits; bandit AI that
+  chased a lead point and so parked all three permanently on the player's six;
+  a 29° seeker cone that never tripped a lock from a keyboard; and discrete
+  actions (missile, flares, camera, rearm) sampled as held state, so a quick
+  tap of F landed and cleared between two frames and the rack stayed full at
+  four with the lock solid. Discrete inputs are latched now.
+
 ## [0.42.0] — 2026-07-31
 
 ### Added
