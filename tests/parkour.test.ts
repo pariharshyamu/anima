@@ -4,9 +4,11 @@ import type { BoneName } from '../src/humanoid';
 import { createHumanoid } from '../src/humanoid';
 import {
   Parkour,
+  canClear,
   chooseMove,
   createMove,
   gapAt,
+  landingFor,
   measureParkourContact,
   reachOf,
   type MoveName,
@@ -18,7 +20,11 @@ const CASES: Array<[MoveName, number, number]> = [
   ['safety-vault', 0.85, 0.3],
   ['speed-vault', 0.85, 0.3],
   ['mantle', 1.25, 0.8],
+  ['drop', 1.1, 0.5],
+  ['gap-jump', 0, 1.4],
 ];
+/** Hip-to-ankle, recovered from the published knee band. */
+const legOf = (reach: { step: number }): number => reach.step / 0.52;
 
 describe('reach', () => {
   it('comes from the body, not from a constant', () => {
@@ -78,6 +84,70 @@ describe('choosing a move', () => {
     const wall = { height: (short.vault + tall.vault) / 2, depth: 0.3 };
     expect(chooseMove(wall, tall, { speed: 4 })).toBe('speed-vault');
     expect(chooseMove(wall, short, { speed: 4 })).toBe('mantle');
+  });
+});
+
+describe('landing from a fall', () => {
+  it('bands the fall by technique, in that order', () => {
+    for (const seed of SEEDS) {
+      const reach = reachOf(createHumanoid({ seed }));
+      const leg = legOf(reach);
+      expect(landingFor(leg * 0.4, reach)).toBe('absorb');
+      expect(landingFor(leg * 2.0, reach)).toBe('roll');
+      expect(landingFor(leg * 4.0, reach)).toBe('hurt');
+    }
+  });
+
+  it('never reports a taller fall as an easier landing', () => {
+    const reach = reachOf(createHumanoid({ seed: 5 }));
+    const rank = { absorb: 0, roll: 1, hurt: 2 };
+    let last = -1;
+    for (let fall = 0.05; fall < 6; fall += 0.05) {
+      const here = rank[landingFor(fall, reach)];
+      expect(here).toBeGreaterThanOrEqual(last);
+      last = here;
+    }
+  });
+
+  it('a longer-legged body takes more of the drop standing', () => {
+    // The thresholds are leg lengths, not constants: there is further to
+    // travel absorbing the same fall.
+    const short = reachOf(createHumanoid({ seed: 12 }));
+    const tall = reachOf(createHumanoid({ seed: 5 }));
+    expect(legOf(tall)).toBeGreaterThan(legOf(short));
+    // A fall between the two bodies' absorb ceilings.
+    const fall = (legOf(short) * 1.15 + legOf(tall) * 1.15) / 2;
+    expect(landingFor(fall, short)).toBe('roll');
+    expect(landingFor(fall, tall)).toBe('absorb');
+  });
+
+  it('says hurt rather than clamping it away', () => {
+    // A character who walks off a roof falls whether or not there is a
+    // technique for it, and what that costs is the game's business.
+    const reach = reachOf(createHumanoid({ seed: 5 }));
+    expect(landingFor(40, reach)).toBe('hurt');
+  });
+});
+
+describe('crossing a gap', () => {
+  const reach = reachOf(createHumanoid({ seed: 5 }));
+
+  it('is a question about speed, not about height', () => {
+    const wide = gapAt(reach, 0) + 0.4;
+    expect(canClear(wide, reach, 0)).toBe(false);
+    expect(canClear(wide, reach, 5)).toBe(true);
+  });
+
+  it('refuses nothing and refuses too far', () => {
+    expect(canClear(0, reach, 5)).toBe(false);
+    expect(canClear(-1, reach, 5)).toBe(false);
+    expect(canClear(gapAt(reach, 5) + 0.01, reach, 5)).toBe(false);
+    expect(canClear(gapAt(reach, 5), reach, 5)).toBe(true);
+  });
+
+  it('a bigger body clears more at the same speed', () => {
+    const short = reachOf(createHumanoid({ seed: 12 }));
+    expect(gapAt(reach, 3)).toBeGreaterThan(gapAt(short, 3));
   });
 });
 
@@ -142,13 +212,37 @@ describe('the move', () => {
     expect(vault.end.z).toBeGreaterThan(0.3);
   });
 
-  it('a step and a mantle finish standing on top', () => {
+  it('every move finishes standing on the surface it is meant to', () => {
+    // This test used to cover the step and the mantle and skip the vaults —
+    // which is precisely where the bug was. Both vaults ended 410 mm BELOW
+    // THE ROAD, because the exit kept the shoulder anchored near the wall
+    // top and a standing body's shoulder is a metre and a half up. Nothing
+    // else saw it: the contact gate stops looking when the hand lets go.
     const rig = createHumanoid({ seed: 5 });
-    for (const [name, height] of [['step', 0.35], ['mantle', 1.25]] as const) {
-      const move = createMove(rig, name, { height, depth: 0.8 });
-      // The root ends at the top surface, which is y = 0 in the edge frame.
-      expect(Math.abs(move.end.y), name).toBeLessThan(0.12);
+    // The edge frame's origin is the TOP, so a move that ends ON the
+    // obstacle ends at 0 and one that ends BESIDE it ends a height down.
+    const cases: Array<[MoveName, number, number, number]> = [
+      ['step', 0.35, 0.8, 0],
+      ['mantle', 1.25, 0.8, 0],
+      ['safety-vault', 0.85, 0.3, -0.85],
+      ['speed-vault', 0.85, 0.3, -0.85],
+      ['drop', 1.2, 0.5, -1.2],
+      ['gap-jump', 0, 1.4, 0],
+    ];
+    for (const [name, height, depth, rests] of cases) {
+      const move = createMove(rig, name, { height, depth });
+      expect(Math.abs(move.end.y - rests), name).toBeLessThan(0.12);
       expect(move.end.z, name).toBeGreaterThan(0);
+    }
+  });
+
+  it('a deeper far side is a longer way down, not a shorter one', () => {
+    // `landing` deepens the drop, so it subtracts. Getting that sign wrong
+    // puts a vault 1.77 m out and shows up nowhere else.
+    const rig = createHumanoid({ seed: 5 });
+    for (const name of ['speed-vault', 'safety-vault', 'drop'] as const) {
+      const move = createMove(rig, name, { height: 0.9, depth: 0.3, landing: 1.8 });
+      expect(Math.abs(move.end.y + 1.8), name).toBeLessThan(0.12);
     }
   });
 
@@ -169,6 +263,47 @@ describe('the move', () => {
       expect(rig.bones[name as BoneName].quaternion.angleTo(q), name).toBeLessThan(1e-6);
     }
     expect(rig.object.position.distanceTo(pos)).toBeLessThan(1e-9);
+  });
+
+  it('a drop ends on the ground it fell to', () => {
+    // The contact numbers cannot see this: a move can hold its feet perfectly
+    // on holds that are in the wrong place.
+    const rig = createHumanoid({ seed: 5 });
+    for (const fall of [0.4, 1.2, 2.4, 3.4]) {
+      const move = createMove(rig, 'drop', { height: fall, depth: 0.5 });
+      expect(move.end.y + fall, `${fall} m`).toBeLessThan(0.15);
+      expect(move.end.y + fall, `${fall} m`).toBeGreaterThan(-0.15);
+    }
+  });
+
+  it('a drop falls to the LANDING, not to the height', () => {
+    // `Obstacle.landing` exists so a wall can be taller on the far side, and
+    // the drop is the only move for which that difference is the whole story.
+    const rig = createHumanoid({ seed: 5 });
+    const even = createMove(rig, 'drop', { height: 1.3, depth: 0.5 });
+    const uneven = createMove(rig, 'drop', { height: 1.3, depth: 0.5, landing: 2.6 });
+    expect(uneven.end.y).toBeLessThan(even.end.y - 1.1);
+    expect(Math.abs(uneven.end.y + 2.6)).toBeLessThan(0.15);
+  });
+
+  it('a gap jump ends past the far lip', () => {
+    // Landing short is the character in the hole, and nothing else measures it.
+    const rig = createHumanoid({ seed: 5 });
+    for (const width of [0.4, 1.0, 2.0]) {
+      const move = createMove(rig, 'gap-jump', { height: 0, depth: width });
+      expect(move.end.z, `${width} m`).toBeGreaterThan(width);
+    }
+  });
+
+  it('holds its limbs on smoothly rather than snapping them into place', () => {
+    // The ease, measured. Nothing else in the report can see it: slip and
+    // penetration only look at frames where a limb is already PLANTED, and a
+    // limb that teleports onto a hold arrives correct.
+    const rig = createHumanoid({ seed: 5 });
+    for (const [name, height, depth] of CASES) {
+      const r = measureParkourContact(rig, name, { height, depth });
+      expect(r.snap, name).toBeLessThan(2.5);
+    }
   });
 
   it('scales to the body it is given', () => {
@@ -222,5 +357,64 @@ describe('the controller', () => {
     const edge = new Object3D();
     pk.attempt({ edge, height: 0.35, depth: 0.6 }, 1);
     expect(pk.attempt({ edge, height: 0.35, depth: 0.6 }, 1)).toBeNull();
+  });
+
+  it('drops off a wall it would never get over', () => {
+    // Going up is a choice between techniques; going down is not a choice at
+    // all. A wall this body cannot mantle is still one it can step off.
+    const rig = createHumanoid({ seed: 5 });
+    const pk = new Parkour(rig, loco());
+    const edge = new Object3D();
+    // Above the mantle band (1.45 m) and inside the roll band (2.12 m).
+    const wall = { edge, height: 1.9, depth: 0.5 };
+    expect(pk.attempt(wall, 5)).toBeNull();
+    expect(pk.descend(wall)).toBe('roll');
+    expect(pk.busy).toBe(true);
+  });
+
+  it('reports the landing without taking it', () => {
+    const rig = createHumanoid({ seed: 5 });
+    const pk = new Parkour(rig, loco());
+    const leg = legOf(reachOf(rig));
+    expect(pk.landing({ height: leg * 0.5 })).toBe('absorb');
+    expect(pk.landing({ height: leg * 2 })).toBe('roll');
+    expect(pk.landing({ height: leg * 4 })).toBe('hurt');
+    // The FAR side, when the two differ.
+    expect(pk.landing({ height: 0.3, landing: leg * 2 })).toBe('roll');
+    expect(pk.busy).toBe(false);
+  });
+
+  it('has nothing to descend when there is no drop', () => {
+    const rig = createHumanoid({ seed: 5 });
+    const pk = new Parkour(rig, loco());
+    expect(pk.descend({ edge: new Object3D(), height: 0, depth: 0.5 })).toBeNull();
+    expect(pk.busy).toBe(false);
+  });
+
+  it('leaps a gap it can reach and refuses one it cannot', () => {
+    const rig = createHumanoid({ seed: 5 });
+    const reach = reachOf(rig);
+    const pk = new Parkour(rig, loco());
+    const edge = new Object3D();
+    const wide = gapAt(reach, 0) + 0.5;
+    // The same ditch, the same body: crossable at a sprint, not from a stand.
+    expect(pk.leap({ edge, width: wide }, 0)).toBeNull();
+    expect(pk.busy).toBe(false);
+    expect(pk.leap({ edge, width: wide }, 5)).toBe('gap-jump');
+    expect(pk.busy).toBe(true);
+  });
+
+  it('hands the body back after a drop, like any other move', () => {
+    const rig = createHumanoid({ seed: 5 });
+    const l = loco() as unknown as { influence: number };
+    const pk = new Parkour(rig, l as never);
+    const finished: string[] = [];
+    pk.onFinish((m: string) => finished.push(m));
+    pk.descend({ edge: new Object3D(), height: 1.1, depth: 0.5 });
+    expect(l.influence).toBe(0);
+    for (let t = 0; t < 2; t += 1 / 60) pk.update(1 / 60);
+    expect(pk.state).toBe('done');
+    expect(l.influence).toBe(1);
+    expect(finished).toEqual(['drop']);
   });
 });

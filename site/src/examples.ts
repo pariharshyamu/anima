@@ -3310,15 +3310,20 @@ game.start();`,
 // move set is derived from REACH, and the same wall is a different problem
 // for a different body.
 //
-// Both runners take the identical course. Watch the middle rail: the tall
-// one vaults it, the short one has to mantle. Watch the last wall: the tall
-// one gets up it and the short one CANNOT, and says so rather than
-// pretending. That refusal is the feature.
-import { Mesh, BoxGeometry, PlaneGeometry, Object3D, Vector3 } from 'three';
+// The course asks all three questions, because they are not the same one.
+// Going OVER something is a choice between techniques. Going DOWN off it is
+// not a choice at all — you fall whether or not you have a technique — so
+// \`descend\` reports what the landing COSTS instead of whether it is allowed.
+// Going ACROSS a hole is a question about speed.
+//
+// Watch the middle rail: the tall one vaults it, the short one has to mantle.
+// Watch the last wall: the tall one gets up it and the short one CANNOT, and
+// says so rather than pretending. That refusal is the feature.
+import { Mesh, BoxGeometry, Object3D, Vector3 } from 'three';
 import { applyFog, createLightingRig, createSky, createSurface,
          createTree, PALETTES } from 'scena3d';
-import { createHumanoid, chooseMove, Locomotion, OUTFITS, Parkour,
-         reachOf } from 'anima3d';
+import { canClear, chooseMove, createHumanoid, landingFor, Locomotion,
+         OUTFITS, Parkour, reachOf } from 'anima3d';
 import { Game, Hud } from 'gama3d';
 
 const palette = PALETTES.urban ?? PALETTES.meadow;
@@ -3328,35 +3333,63 @@ scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
 applyFog(scene, 'haze', palette);
 const hud = new Hud();
 
-const ground = new Mesh(new PlaneGeometry(300, 300), createSurface('concrete', { seed: 3 }));
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-for (const [x, z, s] of [[-16, 8, 2], [15, 20, 5], [-15, 30, 9], [16, -4, 12]]) {
+// ── The course ──────────────────────────────────────────────────────
+// Heights chosen to STRADDLE the two bodies' bands, because the whole
+// point is that a band is a property of a person. Every climb is paid for
+// by a descent: a system that only goes up leaves characters walking on air
+// past the far edge of everything they got onto.
+const COURSE = [
+  { kind: 'over',   label: 'CURB',   z: 4,     height: 0.30, depth: 0.9 },
+  { kind: 'down',   label: 'CURB',   z: 4.9,   height: 0.30, depth: 0.4 },
+  { kind: 'over',   label: 'RAIL',   z: 8,     height: 0.91, depth: 0.28 },
+  { kind: 'down',   label: 'RAIL',   z: 8.28,  height: 0.91, depth: 0.3 },
+  { kind: 'over',   label: 'LEDGE',  z: 12,    height: 1.10, depth: 2.6 },
+  { kind: 'down',   label: 'LEDGE',  z: 14.6,  height: 1.10, depth: 0.4 },
+  { kind: 'across', label: 'GAP',    z: 18,    width: 1.5 },
+  { kind: 'over',   label: 'WALL',   z: 22.5,  height: 1.42, depth: 0.8 },
+  { kind: 'down',   label: 'WALL',   z: 23.3,  height: 1.42, depth: 0.4 },
+];
+// Where a body is standing once an entry is done. THE GAME OWNS THIS, not
+// ANIMA — the same division of labour as "ANIMA does not raycast". A step or
+// a mantle finishes on top of the thing; everything else finishes beside it.
+const groundAfter = (o, move) =>
+  move === 'step' || move === 'mantle' ? o.height : 0;
+const GAP = COURSE.find((o) => o.kind === 'across');
+
+// The ground has a HOLE in it, so the gap is a gap and not a painted line.
+// SLABS, not planes: a plane has no thickness, so a hole cut in one has no
+// walls and the trench renders as a slit of sky.
+const road = createSurface('concrete', { seed: 3 });
+const strip = (from, to) => {
+  const g = new Mesh(new BoxGeometry(220, 2, to - from), road);
+  g.position.set(0, -1, (from + to) / 2);
+  scene.add(g);
+};
+strip(-110, GAP.z);
+strip(GAP.z + GAP.width, 110);
+const pit = new Mesh(new BoxGeometry(24, 0.4, GAP.width), createSurface('concrete', { seed: 21 }));
+pit.position.set(0, -1.9, GAP.z + GAP.width / 2);
+scene.add(pit);
+
+for (const [x, z, s] of [[-11, 6, 2], [10, 26, 5], [-10, 20, 9], [12, -6, 12]]) {
   const t = createTree({ species: 'oak', seed: s, height: 6, palette });
   t.object.position.set(x, 0, z);
   scene.add(t.object);
 }
 
-// ── The course ──────────────────────────────────────────────────────
-// Heights chosen to STRADDLE the two bodies' bands, because the whole
-// point is that a band is a property of a person.
-const COURSE = [
-  { z: 7,  height: 0.30, depth: 0.9,  label: 'CURB'  },
-  { z: 16, height: 0.91, depth: 0.28, label: 'RAIL'  },
-  { z: 25, height: 1.40, depth: 0.75, label: 'WALL'  },
-];
-// A different material from the ground on purpose: an obstacle you cannot
-// see the edge of is not an obstacle, it is a trip hazard.
-const stone = createSurface('brick', { seed: 11 });
+const stone = createSurface('concrete', { seed: 11 });
 for (const o of COURSE) {
-  const slab = new Mesh(new BoxGeometry(9, o.height, o.depth), stone);
+  // The handshake is an ANCHOR on the edge the runner meets, +z facing the
+  // way it is travelling. ANIMA never raycasts: finding the obstacle is the
+  // game's job. A 'down' entry re-anchors the SAME slab at its far edge —
+  // that is all a drop is, geometrically.
+  o.edge = new Object3D();
+  o.edge.position.set(0, o.kind === 'across' ? 0 : o.height, o.z);
+  scene.add(o.edge);
+  if (o.kind !== 'over') continue;
+  const slab = new Mesh(new BoxGeometry(8, o.height, o.depth), stone);
   slab.position.set(0, o.height / 2, o.z + o.depth / 2);
   scene.add(slab);
-  // The handshake is an ANCHOR on the near top edge, +z facing the runner.
-  // ANIMA never raycasts: finding the obstacle is the game's job.
-  o.edge = new Object3D();
-  o.edge.position.set(0, o.height, o.z);
-  scene.add(o.edge);
 }
 
 // ── The runners ─────────────────────────────────────────────────────
@@ -3370,6 +3403,8 @@ const makeRunner = (seed, lane, outfit) => {
     rig, loco, parkour, lane,
     reach: reachOf(rig),
     at: 0,            // index into COURSE
+    ground: 0,        // what this body is standing on, in metres
+    last: null,       // the move it just finished
     speed: 3.2,
     moves: [],
     refused: null,
@@ -3378,9 +3413,15 @@ const makeRunner = (seed, lane, outfit) => {
   };
 };
 const runners = [
-  makeRunner(5, -3.1, OUTFITS.athlete ?? undefined),
-  makeRunner(12, 3.1, OUTFITS.worker ?? undefined),
+  makeRunner(5, -2.6, OUTFITS.athlete ?? undefined),
+  makeRunner(12, 2.6, OUTFITS.worker ?? undefined),
 ];
+// Where the ankle bone rests above the ground when a body is simply standing.
+const LIFT = (() => {
+  const r = runners[0].rig;
+  r.object.updateWorldMatrix(true, true);
+  return r.bones.LeftFoot.getWorldPosition(new Vector3()).y - r.object.position.y;
+})();
 // Tallest first, so the readout reads top to bottom like the lanes do.
 runners.sort((a, b) => b.rig.height - a.rig.height);
 
@@ -3391,10 +3432,15 @@ const restart = (r) => {
   r.rig.object.position.set(r.lane, 0, -3);
   r.rig.object.rotation.set(0, 0, 0);
   r.at = 0;
+  r.ground = 0;
   r.refused = null;
   r.moves = [];
   r.parkour.reset();
 };
+
+// How close to stand before asking. A drop is taken from the very lip; the
+// others start from a run-up behind the obstacle.
+const REACH_AT = { over: 1.15, across: 1.0, down: 0.5 };
 
 game.onUpdate((t) => {
   const dt = t.delta;
@@ -3402,7 +3448,7 @@ game.onUpdate((t) => {
     if (r.bannerFor > 0) r.bannerFor -= dt;
 
     // Mid-move: the controller owns the body and nothing else may steer it.
-    // 'busy' is the whole handshake, exactly as Climb does it.
+    // \`busy\` is the whole handshake, exactly as Climb does it.
     if (r.parkour.busy) {
       r.parkour.update(dt);
       r.loco.update(dt, 0);
@@ -3410,8 +3456,16 @@ game.onUpdate((t) => {
     }
     if (r.parkour.state === 'done') {
       r.parkour.reset();
+      r.ground = groundAfter(COURSE[r.at], r.last);
+      // Put the body ON the surface. The move ends within ~70 mm of it, and
+      // the last 70 mm is the game's to close because the game is the only
+      // one that knows what the surface IS.
+      r.rig.object.position.y = r.ground;
       r.at++;
     }
+    // A descent you are not up for. The tall one VAULTS the rail and is
+    // already on the road; the short one mantles it and has to get down.
+    while (COURSE[r.at] && COURSE[r.at].kind === 'down' && r.ground <= 0.001) r.at++;
 
     // Stopped at something it cannot do: wait, then walk the course again.
     if (r.refused !== null) {
@@ -3425,28 +3479,35 @@ game.onUpdate((t) => {
     if (!next) {
       // Course complete — jog on, then start over.
       r.rig.object.position.z += r.speed * dt;
+      r.rig.object.position.y = r.ground;
       r.loco.update(dt, velocity.set(0, 0, r.speed));
-      if (r.rig.object.position.z > 34) restart(r);
+      if (r.rig.object.position.z > 29) restart(r);
       continue;
     }
 
-    const gap = next.z - r.rig.object.position.z;
-    if (gap > 1.15) {
+    if (next.z - r.rig.object.position.z > REACH_AT[next.kind]) {
       r.rig.object.position.z += r.speed * dt;
+      r.rig.object.position.y = r.ground;
       r.loco.update(dt, velocity.set(0, 0, r.speed));
       continue;
     }
 
-    // At the obstacle. Ask THIS body what it can do about it.
-    const move = r.parkour.attempt(next, r.speed);
-    if (move) {
-      r.moves.push(next.label + ':' + move);
-      r.banner = next.label + ' \\u2192 ' + move.toUpperCase();
+    // At the obstacle. Ask THIS body what it can do about it — a different
+    // question for each of the three, which is why they are three calls.
+    let did = null;
+    if (next.kind === 'over') did = r.parkour.attempt(next, r.speed);
+    else if (next.kind === 'down') did = r.parkour.descend(next);
+    else did = r.parkour.leap(next, r.speed);
+
+    if (did) {
+      r.last = next.kind === 'over' ? did : next.kind === 'down' ? 'drop' : 'gap-jump';
+      r.moves.push(next.label + ':' + did);
+      r.banner = next.label + ' \\u2192 ' + String(did).toUpperCase();
       r.bannerFor = 2.2;
     } else {
       // The honest null. A system that always finds a move puts characters
       // through walls; this one stops and admits the wall won.
-      r.banner = next.label + ' \\u2192 NO WAY UP';
+      r.banner = next.label + ' \\u2192 ' + (next.kind === 'across' ? 'TOO FAR' : 'NO WAY UP');
       r.bannerFor = RESET_AFTER;
       r.refused = RESET_AFTER;
       r.loco.update(dt, 0);
@@ -3455,9 +3516,9 @@ game.onUpdate((t) => {
 
   const line = (r) => {
     const k = r.rig.height.toFixed(2) + 'm';
-    return k + '  step\\u2264' + r.reach.step.toFixed(2) +
-      ' vault\\u2264' + r.reach.vault.toFixed(2) +
+    return k + '  vault\\u2264' + r.reach.vault.toFixed(2) +
       ' mantle\\u2264' + r.reach.mantle.toFixed(2) +
+      ' jump\\u2264' + (r.reach.gap * (0.55 + 0.22 * r.speed)).toFixed(2) +
       (r.bannerFor > 0 ? '   ' + r.banner : '');
   };
   hud.objective(line(runners[0]));
@@ -3465,33 +3526,52 @@ game.onUpdate((t) => {
   hud.update(dt);
 });
 
-// Three-quarter from behind, so BOTH lanes are in frame at once. The
-// comparison is the entire point; a view that shows one runner shows nothing.
-game.camera.position.set(6.2, 3.6, 7.4);
-game.camera.lookAt(-0.4, 1.0, 17.5);
+game.camera.position.set(6.4, 2.7, 0.8);
+game.camera.lookAt(-0.4, 1.0, 13.5);
 
 window.parkourDebug = () => {
+  // The ankle's rest height above whatever it stands on. Read from the rig,
+  // not assumed: it is where the foot bone sits, not where the sole is.
+  const ankle = (r) => {
+    r.rig.object.updateWorldMatrix(true, true);
+    const l = r.rig.bones.LeftFoot.getWorldPosition(new Vector3()).y;
+    const rr = r.rig.bones.RightFoot.getWorldPosition(new Vector3()).y;
+    return Math.min(l, rr);
+  };
   const of = (r) => ({
     height: Number(r.rig.height.toFixed(2)),
-    step: Number(r.reach.step.toFixed(2)),
+    // How far the lower foot is from the surface this body is standing on.
+    // Positive floats, negative sinks. Nothing else in the scene can see it.
+    foot: Number((ankle(r) - r.ground - LIFT).toFixed(3)),
+    phase: r.parkour.state,
     vault: Number(r.reach.vault.toFixed(2)),
     mantle: Number(r.reach.mantle.toFixed(2)),
     at: r.at,
-    moves: r.moves.slice(0, 4),
+    moves: r.moves.slice(0, 8),
     stopped: r.refused !== null,
     z: Number(r.rig.object.position.z.toFixed(2)),
     y: Number(r.rig.object.position.y.toFixed(2)),
   });
-  // What each body WOULD do at every obstacle, asked directly. This is the
-  // claim the scene is making, in numbers a gate can read.
+  // What each body WOULD do at every entry, asked directly. This is the
+  // claim the scene is making, in numbers a gate can read — including the
+  // one nothing else checks: after a drop the body is back on the ground.
   const verdicts = runners.map((r) =>
-    COURSE.map((o) => String(chooseMove(o, r.reach, { speed: r.speed })))
+    COURSE.map((o) =>
+      o.kind === 'over' ? String(chooseMove(o, r.reach, { speed: r.speed }))
+      : o.kind === 'down' ? landingFor(o.landing ?? o.height, r.reach)
+      : canClear(o.width, r.reach, r.speed) ? 'gap-jump' : 'null')
   );
   return {
     tall: of(runners[0]),
     short: of(runners[1]),
     verdicts,
     disagree: verdicts[0].filter((v, i) => v !== verdicts[1][i]).length,
+    // Nobody walks on air and nobody wades through the road. Mid-move the
+    // controller owns the body, so this only judges the frames the SCENE is
+    // responsible for — which are exactly the ones it used to get wrong.
+    offGround: runners.filter(
+      (r) => r.parkour.state === 'idle' && Math.abs(r.rig.object.position.y - r.ground) > 0.02
+    ).length,
     draws: game.renderer.info.render.calls,
   };
 };

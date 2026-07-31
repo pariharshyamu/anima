@@ -90,8 +90,12 @@ const HIND = ['LHHoof', 'RHHoof'];
  * gating symmetry would have bought, without the false claim.
  */
 const BUDGETS = {
-  'humanoid walk': { mismatch: 0.01, spread: 0.02 }, // measured 0.57%, 0.00%
-  'humanoid run': { mismatch: 0.01, spread: 0.02 }, // measured 0.30%, 0.97%
+  // `airborne` is 0 for the bipeds and deliberately so: a walk is DEFINED by
+  // always having a foot down, and ANIMA's run has no suspension phase (see
+  // the stance-flexion note in `clips.ts`). If a real flight phase is ever
+  // authored, this is the number that has to be raised on purpose.
+  'humanoid walk': { mismatch: 0.01, spread: 0.02, airborne: 0 }, // measured 0.57%, 0.00%, 0%
+  'humanoid run': { mismatch: 0.01, spread: 0.02, airborne: 0 }, // measured 0.30%, 0.97%, 0%
   'horse walk': { mismatch: 0.015, spread: null }, // measured 0.82%
   'horse walk fore': { mismatch: 0.015, spread: null }, // measured 0.72%
   'horse walk hind': { mismatch: 0.035, spread: null }, // measured 2.40%
@@ -132,11 +136,14 @@ const samples = [];
 function record(label, where, report) {
   worst.add(label, 'mismatch', report.mismatch, where);
   worst.add(label, 'spread', report.spread, where);
+  worst.add(label, 'airborne', report.airborne, where);
   samples.push({
     label,
     where,
     mismatch: report.mismatch,
     spread: report.spread,
+    airborne: report.airborne,
+    float: report.float,
     stride: report.stride,
     impliedSpeed: report.impliedSpeed,
     speed: report.speed,
@@ -237,6 +244,15 @@ for (const [label, budget] of Object.entries(BUDGETS)) {
   if (budget.spread !== null && Math.abs(s.value) > budget.spread) {
     failures.push(`${label}: spread ${pct(s.value)} exceeds ${pct(budget.spread)} (${s.where})`);
   }
+  // Is a foot ever DOWN? Skate is a horizontal measurement and cannot see
+  // this: ANIMA's own walk had no foot on the ground for 43% of its cycle
+  // while this gate passed, every release, for thirty-odd releases.
+  const a = worst.get(label, 'airborne');
+  if (budget.airborne !== undefined && a.value > budget.airborne) {
+    failures.push(
+      `${label}: airborne ${pct(a.value)} of the cycle, over ${pct(budget.airborne)} (${a.where})`
+    );
+  }
 }
 
 if (!process.argv.includes('--json')) {
@@ -261,6 +277,13 @@ if (!process.argv.includes('--json')) {
     `\n  worst instantaneous deviation ${pct(peak)} (intrinsic to a sine gait, not gated)`
   );
   console.log(`  worst slide per step          ${(slip * 1000).toFixed(1)} mm`);
+  const air = Math.max(...samples.map((s) => s.airborne));
+  const flt = Math.max(...samples.map((s) => s.float));
+  const worstAir = samples.find((s) => s.airborne === air);
+  console.log(
+    `  worst airborne fraction       ${pct(air)} of the cycle  (${worstAir.label}, ${worstAir.where})`
+  );
+  console.log(`  worst lower-foot float        ${(flt * 1000).toFixed(1)} mm`);
   console.log(
     `\n  ${samples.length} measurements — ${SEEDS.length} humanoid seeds, ` +
       `${HORSES.length} horse builds (species × tempo)`

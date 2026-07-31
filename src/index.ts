@@ -167,12 +167,16 @@ export {
 } from './climb';
 export {
   Parkour,
+  canClear,
   chooseMove,
   createMove,
   gapAt,
+  landingFor,
   measureParkourContact,
   reachOf,
   type ChooseOptions,
+  type Gap,
+  type LandingKind,
   type MoveName,
   type MoveOptions,
   type Obstacle,

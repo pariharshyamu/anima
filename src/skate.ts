@@ -87,6 +87,11 @@ export interface FootSkateOptions {
   contact?: Record<string, number>;
   /** Fraction of the clip a foot is planted. Required with `contact`. */
   duty?: number;
+  /**
+   * How close to the lowest point counts as "on the ground", in metres.
+   * Default 0.02 — a shade under a shoe sole.
+   */
+  groundTolerance?: number;
 }
 
 export interface FootSkateReport {
@@ -123,6 +128,33 @@ export interface FootSkateReport {
    * planted. Large for any sinusoidal gait; see the note above.
    */
   peakDeviation: number;
+  /**
+   * How far the LOWER foot rises above its own lowest point over the cycle,
+   * in metres. Zero means some foot is always on the same plane — which is
+   * what "standing on the ground" means.
+   *
+   * Reference-free on purpose: it needs no notion of where the floor is, only
+   * that the body keeps returning to it. A rig posed anywhere, at any scale,
+   * gives the same answer.
+   */
+  float: number;
+  /**
+   * Fraction of the cycle with NO foot within `groundTolerance` of the lowest
+   * point — the airborne fraction.
+   *
+   * This is the number that was missing. Skate is a HORIZONTAL measurement: it
+   * asks how far a planted foot slides and says nothing about whether a foot
+   * is planted at all. ANIMA's own walk cycle had none for 43% of its length,
+   * peaking 79 mm up, through thirty-odd releases and a foot-skate gate that
+   * passed the whole time. A still frame of a floating character is
+   * indistinguishable from a still frame of a walking one.
+   *
+   * Non-zero is not automatically wrong — a gallop has a real suspension
+   * phase, and so does a run. It is wrong when the body does not rise with
+   * the feet, which is what a gait with an authored bob and unplanted feet
+   * always does.
+   */
+  airborne: number;
   samples: number;
 }
 
@@ -164,6 +196,22 @@ export function measureFootSkate(
     rig.bones[name].getWorldPosition(probe);
     return probe.z;
   };
+
+  // Vertical, before anything horizontal: does a foot ever touch down?
+  const tolerance = options.groundTolerance ?? 0.02;
+  const lower: number[] = [];
+  for (let i = 0; i < samples; i++) {
+    mixer.setTime((i / samples) * clip.duration);
+    rig.object.updateMatrixWorld(true);
+    let low = Infinity;
+    for (const name of feet) {
+      low = Math.min(low, rig.object.worldToLocal(rig.bones[name].getWorldPosition(probe)).y);
+    }
+    lower.push(low);
+  }
+  const floor = Math.min(...lower);
+  const float = Math.max(...lower) - floor;
+  const airborne = lower.filter((y) => y > floor + tolerance).length / samples;
 
   const stepDuration = contact ? duty! * clip.duration : clip.duration / stepsPerCycle;
   const strides: number[] = [];
@@ -228,6 +276,8 @@ export function measureFootSkate(
     slipPerStep: mismatch * stride,
     spread: low > 0 ? Math.max(...strides) / low - 1 : 0,
     peakDeviation,
+    float,
+    airborne,
     samples,
   };
 }

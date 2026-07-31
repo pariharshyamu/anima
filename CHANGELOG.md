@@ -20,6 +20,69 @@ release found.
 
 ## Releases
 
+## [0.42.0] — 2026-07-31
+
+### Added
+
+- **Parkour Tier 2 — down and across.** `drop` and `gap-jump` join the four
+  climbing moves, with `landingFor(fall, reach)` → `'absorb' | 'roll' | 'hurt'`
+  and `canClear(gap, reach, speed)`. Three questions, three calls, because they
+  are not the same question: `attempt` chooses between techniques a body may or
+  may not have, `descend` reports what a landing **costs** rather than whether
+  it is allowed (you fall whether or not you have a technique), and `leap` asks
+  about speed. A `Gap { edge, width }` is its own shape — describing a hole in
+  terms of `height` and `depth` would be a lie about what is measured.
+- **`Obstacle.landing` finally means something.** It had been declared and read
+  by nothing. The drop and both vaults now use it: step off a 1.3 m parapet
+  onto ground 1.3 m lower than the near side and you have fallen 2.6 m.
+- **`float` and `airborne` on `FootSkateReport`**, gated at zero for bipeds.
+- **`footing`, `clearance` and drop-technique lines on `npm run parkour`**,
+  which now sweeps three questions over eight bodies — **1189 moves**.
+
+### Fixed
+
+- **The gaits had no foot on the ground.** 43% of the walk cycle and 63% of the
+  run, peaking 79 mm and 222 mm up, since 0.1.0. A sine-driven leg is a
+  pendulum and its foot traces an arc — `leg × (1 − cos θ)`, which is 277 mm at
+  the run's hip swing. `createLocomotionClips` now measures the lower ankle on
+  the posed body and lowers the hips onto it; the authored `bob` sine is gone,
+  because what planting produces is the compass gait and the vertical motion of
+  a gait is a consequence of leg geometry rather than a free parameter. A foot
+  is down 100% of the cycle on every body, float ≤ 1 mm. The fix moves only
+  `Hips.position.y`, so no foot's Z changes and the stride is untouched by
+  construction — `npm run skate` is unmoved, and its worst slide per step
+  improved 121.0 mm → 70.3 mm.
+- **Both vaults ended 410 mm below the road.** The exit kept the shoulder
+  anchored near the wall top, and a standing body's shoulder is a metre and a
+  half up, so the clip finished with the body still folded over the rail. The
+  contact gate stops looking when the hand lets go at 0.62, and the one test
+  that checked where a move ends vertically covered the step and the mantle and
+  skipped the vaults. Vaults now hand over to a hips anchor on the far ground.
+- **The gap jump ended at its deepest crouch**, 250 mm under, because the
+  anchor moves the root: "hips low" reads as "body below the ground" to
+  anything that asks where the move ended. A landing now absorbs *and* recovers.
+- **`measureParkourContact` played one-shot clips on a repeating action.**
+  `clipAction()` defaults to `LoopRepeat`, and a repeating action asked for the
+  time at exactly the clip's duration wraps to zero — so the final sample of
+  every measurement ever taken was the move's **first frame**. It read as a
+  185 mm jump in a foot's last frame on a step-up whose real worst frame was
+  7 mm.
+- **`snap` pooled a contact's two ease ramps into one track**, making the step
+  from the last frame of one to the first frame of the other look consecutive
+  while spanning the entire plant between them — 282 mm reported as a single
+  frame on a gap jump whose worst real frame was 32 mm.
+- **`snap`'s budget was 10 and could not fail.** With both harness bugs gone
+  the worst real case is 1.83×, and over twelve bodies the metric runs p50
+  1.54, p90 1.83, p99 1.83, max 1.83 — a band a third of a unit wide, because
+  the ratio is a property of the ease curve and not of the body. Now 2.5.
+
+### Changed
+
+- The `parkour` playground pays for every climb with a descent, jumps a real
+  trench cut in the road, and reports whether either runner is off its own
+  ground. Its previous course walked both runners through the air past the far
+  edge of everything they got onto.
+
 ## [0.41.0] — 2026-07-30
 
 ### Added

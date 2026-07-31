@@ -31,6 +31,8 @@ wrong and the planted foot slides, every step, the same way.
 
 | | |
 |---|---|
+| `float` | how far the **lower** foot rises above its own lowest point over the cycle |
+| `airborne` | fraction of the cycle with **no** foot within tolerance of that point |
 | `stride` | how far a foot travels while planted, **measured from the bones** |
 | `stepDuration` | how long it's planted: `duration / stepsPerCycle`, or `duty × duration` |
 | `impliedSpeed` | `stride / stepDuration` — the speed at which these feet do not slip |
@@ -169,3 +171,62 @@ all scale together. A row that starts varying by species is a finding.
 has a **lead**: its two hind limbs do different jobs and the leading one sweeps
 40% further. Demanding symmetry there would be demanding the gait be wrong, so
 horse `spread` is reported and each end is instead held to its own ceiling.
+
+
+## The half this gate could not see
+
+Foot skate is a **horizontal** measurement. It asks how far a planted foot
+slides and it is silent on whether a foot is planted at all — and those are not
+the same question.
+
+ANIMA's own gaits had no foot on the ground for **43% of the walk cycle and 63%
+of the run**, peaking 79 mm and 222 mm up, through thirty-odd releases with
+this gate passing on every one of them. A sine-driven leg is a pendulum, and a
+pendulum's foot traces an arc: with a straight knee and the hip swung by θ the
+ankle rides `leg × (1 − cos θ)` above the floor, which at the run's 0.85 rad is
+277 mm. A walk is *defined* by always having a foot down. These did not.
+
+No other check could have caught it either. The clips compile, the poses are
+valid, the unit tests assert bone rotations, and a still frame of a floating
+character is indistinguishable from a still frame of a walking one. It took
+somebody watching the playground and saying the feet were not touching.
+
+So `float` and `airborne` now come out of the same measurement pass, and the
+bipeds are gated at zero:
+
+```
+  worst airborne fraction       0.00% of the cycle
+  worst lower-foot float        1.0 mm
+```
+
+Both are **reference-free** — `float` is the lower foot's excursion about its
+own minimum, so the metric needs no notion of where the floor is, only that the
+body keeps returning to it. A rig posed anywhere, at any scale, answers the
+same.
+
+Non-zero is not automatically wrong: a gallop has a real suspension phase. It
+is wrong when the body does not rise with the feet. The horse gaits are
+reported and not yet gated for exactly that reason — the gallop currently reads
+**92.92% airborne with 780 mm of float**, which is a finding waiting for its
+own release.
+
+### What the fix was, and what it was not
+
+`createLocomotionClips` now measures where the lower ankle actually sits on the
+posed body each frame and lowers the hips onto it. It touches only
+`Hips.position.y`, so every descendant translates straight down and no foot's
+Z moves — the stride, and this whole gate, are untouched by construction.
+
+The authored `bob` sine is gone from the walk and the run. What the planting
+produces is the **compass gait**: the pelvis rides highest at midstance and
+drops as the legs spread, because that is what legs of a fixed length do. The
+vertical motion of a gait is a consequence of the leg geometry, not a free
+parameter, and having both meant the free one was fighting the real one.
+
+What it is *not* is a fix for the run's remaining 214 mm of hip travel per
+stride. That is the **stance** knee — a runner's bends about 25° absorbing the
+rise over a vertical leg, and this one does not. The hook is in `clips.ts` set
+to zero, because a bent stance knee pulls the ankle back: it changes the
+measured stride, and turning it on without re-deriving `STRIDE_FACTOR` put the
+run 17.1% out and this gate said so. That derivation is its own piece of work,
+and the budget was not raised to hide it.

@@ -1,4 +1,11 @@
-import { AnimationAction, AnimationClip, AnimationMixer, Quaternion, Vector3 } from 'three';
+import {
+  AnimationAction,
+  AnimationClip,
+  AnimationMixer,
+  LoopOnce,
+  Quaternion,
+  Vector3,
+} from 'three';
 import { buildClip, Pose } from './clips';
 import type { Object3D } from 'three';
 import type { BoneName, HumanoidRig } from './humanoid';
@@ -85,7 +92,57 @@ export interface Obstacle {
   landing?: number;
 }
 
-export type MoveName = 'step' | 'safety-vault' | 'speed-vault' | 'mantle';
+/**
+ * A hole to cross, rather than a thing to get over.
+ *
+ * Deliberately NOT an `Obstacle`. A gap has no top surface, no depth to swing
+ * your legs across and no height to compare against a band — describing one in
+ * those terms would make `chooseMove` answer a question it was never asked.
+ * The only number that matters is how far it is to the other side.
+ */
+export interface Gap {
+  /** World anchor on the near lip, +z pointing across. */
+  edge: Object3D;
+  /** Distance to the far lip, metres. */
+  width: number;
+}
+
+export type MoveName =
+  | 'step'
+  | 'safety-vault'
+  | 'speed-vault'
+  | 'mantle'
+  | 'drop'
+  | 'gap-jump';
+
+/** What a fall of a given height costs on the way down. */
+export type LandingKind = 'absorb' | 'roll' | 'hurt';
+
+/**
+ * How this body should meet the ground from `fall` metres.
+ *
+ * The thresholds are leg lengths, not constants: a long-legged body has
+ * further to travel absorbing the same drop, so it takes more of it standing.
+ * Past `roll` there is no technique left — which is a fact a game may want to
+ * act on, so it is returned rather than clamped away.
+ */
+export function landingFor(fall: number, reach: Reach): LandingKind {
+  const leg = reach.step / 0.52;
+  if (fall <= leg * 1.15) return 'absorb';
+  if (fall <= leg * 2.6) return 'roll';
+  return 'hurt';
+}
+
+/**
+ * Can this body clear `gap` metres of nothing at this speed?
+ *
+ * Separate from `chooseMove` on purpose: a gap is not an obstacle you go
+ * over, it is an absence you go across, and asking about it in terms of
+ * `height` and `depth` would be a lie about what is being measured.
+ */
+export function canClear(gap: number, reach: Reach, speed: number): boolean {
+  return gap > 0 && gap <= gapAt(reach, speed);
+}
 
 export interface ChooseOptions {
   /** Approach speed, m/s. Default 0 — standing at the obstacle. */
@@ -232,6 +289,60 @@ function orbit(contact: Vector3, radius: number, angle: number, x = contact.x): 
   return new Vector3(x, contact.y + radius * Math.cos(angle), contact.z + radius * Math.sin(angle));
 }
 
+/**
+ * A vault: in from the run-up, over the planted hand, **down onto the far
+ * ground**.
+ *
+ * That last clause is the whole reason this is a function. Both vaults used to
+ * anchor the shoulder to the hand for the entire move, drifting it down a bit
+ * on the way out — which leaves the shoulder at roughly the height of the wall
+ * top at the final frame. A standing body's shoulder is 1.45 m up and a rail is
+ * 0.91 m, so "shoulder at wall height" means the body is still folded over the
+ * rail when the clip ends, and the root that falls out of it is **0.41 m below
+ * the road**. The character finished every vault with their feet in the tarmac.
+ *
+ * Nothing caught it. The contact gate only looks at frames where a limb is
+ * PLANTED, and the vault's hand lets go at 0.62; the one test that checked
+ * where a move ends vertically covered the step and the mantle and skipped the
+ * vaults. So the exit re-anchors to the hips over the far ground — the same
+ * root-blend handover the mantle uses, for the same reason: nothing has to be
+ * converted between the two landmarks' frames.
+ */
+function vaultAnchor(
+  p: number,
+  h: number,
+  d: number,
+  land: number,
+  b: Build,
+  c: Contact[],
+  spec: { radius: number; swing: number; runIn: number; runOut: number }
+): AnchorSet {
+  const hand = c[0].at;
+  const from = c[0].from;
+  const to = c[0].to;
+  const R = b.arm * spec.radius;
+  const angle = (u: number): number => lerp(-spec.swing, spec.swing, u);
+  const overHand = (): Anchor => {
+    if (p < from) {
+      // Running in: continue back along the approach from where the orbit
+      // begins, so the body arrives already in the right place.
+      const start = orbit(hand, R, angle(0));
+      return { bone: 'LeftArm', at: start.setZ(start.z - (1 - p / from) * spec.runIn) };
+    }
+    return { bone: 'LeftArm', at: orbit(hand, R, angle(Math.min(1, (p - from) / (to - from)))) };
+  };
+  if (p <= to) return { a: overHand() };
+  // The edge frame's origin is the TOP of the obstacle, so the ground on the
+  // far side is `-h` below it — and further still by whatever extra drop
+  // `landing` declares, which is why this is a minus and not a plus.
+  const ground = -h - land;
+  return {
+    a: overHand(),
+    b: { bone: 'Hips', at: new Vector3(0, ground + b.lift + b.leg, d + b.leg * spec.runOut) },
+    t: ramp(p, to, 0.99),
+  };
+}
+
 
 const SPECS: Record<MoveName, MoveSpec> = {
   step: {
@@ -302,31 +413,10 @@ const SPECS: Record<MoveName, MoveSpec> = {
       },
     ],
     // The chest passes over the planted hand: in from behind, up across it,
-    // out the far side, never further than 0.86 of an arm from it.
-    anchor: (p, _h, d, _land, b, c) => {
-      const hand = c[0].at;
-      const R = b.arm * 0.78;
-      const swing = (u: number): number => lerp(-1.0, 1.0, u);
-      const from = c[0].from;
-      const to = c[0].to;
-      if (p < from) {
-        // Running in: continue back along the approach from where the orbit
-        // begins, so the body arrives already in the right place.
-        const start = orbit(hand, R, swing(0));
-        return { a: { bone: 'LeftArm', at: start.setZ(start.z - (1 - p / from) * 0.85) } };
-      }
-      if (p > to) {
-        const end = orbit(hand, R, swing(1));
-        const out = (p - to) / (1 - to);
-        return {
-          a: {
-            bone: 'LeftArm',
-            at: end.setZ(end.z + out * (d + 0.75)).setY(end.y - out * b.arm * 0.35),
-          },
-        };
-      }
-      return { a: { bone: 'LeftArm', at: orbit(hand, R, swing((p - from) / (to - from))) } };
-    },
+    // out the far side, never further than 0.86 of an arm from it — then the
+    // hips take over and put the body down on the far ground.
+    anchor: (p, h, d, land, b, c) =>
+      vaultAnchor(p, h, d, land, b, c, { radius: 0.78, swing: 1.0, runIn: 0.85, runOut: 1.15 }),
     turn: (p) => -0.5 * arch(ramp(p, 0.1, 0.9)),
     pose: (p, pose, b) => {
       const over = arch(ramp(p, 0.05, 0.95));
@@ -358,28 +448,8 @@ const SPECS: Record<MoveName, MoveSpec> = {
         to: 0.62,
       },
     ],
-    anchor: (p, _h, d, _land, b, c) => {
-      const hand = c[0].at;
-      const R = b.arm * 0.8;
-      const swing = (u: number): number => lerp(-1.15, 1.15, u);
-      const from = c[0].from;
-      const to = c[0].to;
-      if (p < from) {
-        const start = orbit(hand, R, swing(0));
-        return { a: { bone: 'LeftArm', at: start.setZ(start.z - (1 - p / from) * 1.15) } };
-      }
-      if (p > to) {
-        const end = orbit(hand, R, swing(1));
-        const out = (p - to) / (1 - to);
-        return {
-          a: {
-            bone: 'LeftArm',
-            at: end.setZ(end.z + out * (d + 1.25)).setY(end.y - out * b.arm * 0.4),
-          },
-        };
-      }
-      return { a: { bone: 'LeftArm', at: orbit(hand, R, swing((p - from) / (to - from))) } };
-    },
+    anchor: (p, h, d, land, b, c) =>
+      vaultAnchor(p, h, d, land, b, c, { radius: 0.8, swing: 1.15, runIn: 1.15, runOut: 1.7 }),
     // Side-on: both legs go through together past the planted hand.
     turn: (p) => -1.05 * arch(ramp(p, 0.05, 0.95)),
     pose: (p, pose, b) => {
@@ -469,6 +539,163 @@ const SPECS: Record<MoveName, MoveSpec> = {
       pose.rotate('LeftUpLeg', [X, -0.1 - 0.9 * arch(trail)], [Z, 0.1]);
       pose.rotate('LeftLeg', [X, 0.2 + 1.2 * arch(trail)]);
       pose.rotate('LeftFoot', [X, -0.12]);
+      void b;
+    },
+  },
+
+  drop: {
+    duration: 1.05,
+    contacts: (h, _d, land, b) => {
+      // The FALL, not the height. `Obstacle.landing` exists so a wall can be
+      // taller on the far side than the near one, and a drop is the one move
+      // where that difference is the whole story: step off a 1.2 m parapet
+      // onto ground 0.8 m lower and you have fallen 2 m, not 1.2.
+      const fall = h + land;
+      // Both feet arrive, staggered a little — nobody lands on two feet at
+      // exactly the same instant — and stay put while the legs absorb.
+      return [
+        {
+          bone: 'LeftFoot',
+          side: 'Left',
+          arm: false,
+          at: new Vector3(0.09 * b.height, -fall + b.lift, 0.34),
+          from: 0.44,
+          to: 1,
+          ease: 0.06,
+        },
+        {
+          bone: 'RightFoot',
+          side: 'Right',
+          arm: false,
+          at: new Vector3(-0.09 * b.height, -fall + b.lift, 0.46),
+          from: 0.48,
+          to: 1,
+          ease: 0.06,
+        },
+      ];
+    },
+    /**
+     * Fall, then absorb, then stand.
+     *
+     * The absorb depth is what makes a drop read as a drop: land from a kerb
+     * and you barely bend, land from a wall and you fold to a crouch. It
+     * scales with the fall as a fraction of leg length, and it is capped,
+     * because past a point the answer stops being knees and starts being a
+     * roll — see `landingFor`.
+     */
+    anchor: (p, h, _d, land, b, c) => {
+      const foot = c[0].at;
+      const fall = h + land;
+      const deep = Math.min(0.42, 0.16 + 0.3 * (fall / b.leg));
+      const drop = ramp(p, 0.02, 0.5);
+      const stand = ramp(p, 0.52, 1);
+      // Above and behind the touchdown while airborne, then compressed over
+      // it, then upright on it.
+      const up = lerp(fall / b.leg + 0.95, 0.95 - deep, drop);
+      return {
+        a: {
+          bone: 'Hips',
+          at: new Vector3(
+            foot.x * 0.4,
+            foot.y + b.leg * lerp(up, 0.96, stand),
+            foot.z + b.leg * lerp(lerp(-0.5, -0.14, drop), 0.02, stand)
+          ),
+        },
+      };
+    },
+    turn: () => 0,
+    pose: (p, pose, b) => {
+      const fall = ramp(p, 0.02, 0.5);
+      const stand = ramp(p, 0.52, 1);
+      // Arms come up and out on the way down and settle on landing — the
+      // reach for balance everybody does and nobody notices.
+      const air = 1 - stand;
+      for (const side of ['Left', 'Right'] as const) {
+        const s = side === 'Left' ? 1 : -1;
+        pose.rotate(`${side}Arm`, [Z, s * (1.2 - 0.75 * air)], [Y, -s * 0.3 * air]);
+        pose.rotate(`${side}ForeArm`, [Z, s * (0.3 + 0.35 * air)]);
+      }
+      pose.rotate('Hips', [X, 0.1 + 0.42 * fall - 0.48 * stand]);
+      pose.rotate('Spine', [X, 0.06 + 0.2 * fall - 0.24 * stand]);
+      pose.rotate('Chest', [X, 0.04 + 0.12 * fall - 0.14 * stand]);
+      pose.rotate('Head', [X, -0.2 + 0.16 * stand]);
+      void b;
+    },
+  },
+
+  'gap-jump': {
+    duration: 0.9,
+    contacts: (_h, d, _land, b) => [
+      // Off one foot, onto the other. A two-footed gap jump is a standing
+      // long jump, which is a different move and a much shorter one.
+      {
+        bone: 'RightFoot',
+        side: 'Right',
+        arm: false,
+        at: new Vector3(-0.08 * b.height, b.lift, -0.06),
+        from: 0.06,
+        to: 0.24,
+        ease: 0.06,
+      },
+      {
+        bone: 'LeftFoot',
+        side: 'Left',
+        arm: false,
+        at: new Vector3(0.08 * b.height, b.lift, d + 0.22),
+        from: 0.74,
+        to: 1,
+        ease: 0.07,
+      },
+    ],
+    // Anchored to the take-off foot on the way up and the landing foot on the
+    // way down, blended through the flight — the same handover the mantle
+    // uses, and for the same reason: nothing has to be converted.
+    anchor: (p, _h, d, _land, b, c) => {
+      const off = c[0].at;
+      const on = c[1].at;
+      const rise = ramp(p, 0.04, 0.5);
+      const fall = ramp(p, 0.5, 0.92);
+      // Absorb AND recover. Without the second half the deepest point of the
+      // crouch is the last frame, and since the root is what the anchor moves,
+      // "hips low" reads as "body 250 mm under the ground" to anything that
+      // asks the move where it ended. A landing that never stands up is not a
+      // landing.
+      const settle = ramp(p, 0.86, 1);
+      return {
+        a: {
+          bone: 'Hips',
+          at: new Vector3(
+            off.x * 0.35,
+            off.y + b.leg * lerp(0.72, 0.99, rise),
+            off.z + lerp(-b.leg * 0.34, d * 0.55, rise)
+          ),
+        },
+        b: {
+          bone: 'Hips',
+          at: new Vector3(
+            on.x * 0.35,
+            on.y + b.leg * lerp(lerp(0.99, 0.76, fall), 1.02, settle),
+            on.z + lerp(-d * 0.45, 0.02, fall)
+          ),
+        },
+        t: ramp(p, 0.34, 0.66),
+      };
+    },
+    turn: () => 0,
+    pose: (p, pose, b) => {
+      const flight = arch(ramp(p, 0.05, 0.95));
+      const land = ramp(p, 0.72, 1);
+      pose.rotate('Hips', [X, 0.22 + 0.2 * flight + 0.3 * land]);
+      pose.rotate('Spine', [X, 0.14 * flight]);
+      pose.rotate('Chest', [X, 0.1 * flight]);
+      pose.rotate('Head', [X, -0.22]);
+      // Arms drive up on take-off and swing forward for the landing — the
+      // counterweight is most of what a long jump actually is.
+      for (const side of ['Left', 'Right'] as const) {
+        const s = side === 'Left' ? 1 : -1;
+        pose.rotate(`${side}Arm`, [Z, s * (1.15 - 0.9 * flight)], [Y, -s * (0.5 * flight)]);
+        pose.rotate(`${side}ForeArm`, [Z, s * (0.3 + 0.5 * flight)]);
+      }
       void b;
     },
   },
@@ -680,7 +907,7 @@ export interface ParkourContactReport {
   /** Peak wander of a planted limb from its contact point, in metres. */
   contactSlip: number;
   /**
-   * Deepest any planted limb sinks BELOW the top surface, in metres.
+   * Deepest any planted limb sinks below the surface IT IS HOLDING, in metres.
    *
    * A hand inside the wall is the tell that kills the whole illusion, and it
    * is invisible from every camera angle that does not happen to graze the
@@ -704,6 +931,13 @@ export interface ParkourContactReport {
    * penetration numbers only look at frames where a limb is already PLANTED,
    * and a limb that snaps into place arrives correct. Removing the ease
    * entirely used to leave every other number unchanged.
+   *
+   * Each ramp is its own track. Pooling a contact's ease-IN and ease-OUT
+   * samples into one list makes the step from the last frame of one to the
+   * first frame of the other look consecutive when it spans the entire plant
+   * between them — for a foot held to the end of a gap jump that is a quarter
+   * of the move, and it reported 282 mm as a single frame's motion on a move
+   * whose real worst frame was 32 mm.
    */
   snap: number;
   /** Contacts that were actually planted at some point in the move. */
@@ -729,12 +963,22 @@ export function measureParkourContact(
   const move = createMove(rig, name, obstacle, options);
   const contacts = contactsFor(rig, name, obstacle);
   const mixer = new AnimationMixer(rig.object);
-  mixer.clipAction(move.clip).play();
+  // ONE-SHOT, because that is what the move is and what `Parkour` plays.
+  // `clipAction` defaults to `LoopRepeat`, and a repeating action asked for
+  // the time at exactly the clip's duration wraps to zero — so the very last
+  // sample of every measurement was the move's FIRST frame. It read as a
+  // 185 mm jump in a foot's final frame on a step-up whose real worst frame
+  // was 7 mm, and it was in the harness, not the animation.
+  const action = mixer.clipAction(move.clip);
+  action.setLoop(LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
 
   const restPos = rig.object.position.clone();
   const restQuat = rig.object.quaternion.clone();
   const seen = new Map<Contact, Vector3[]>();
-  const approach = new Map<Contact, Vector3[]>();
+  // Keyed per RAMP, not per contact — see `snap`.
+  const approach = new Map<string, Vector3[]>();
   let stretch = 0;
   let penetration = 0;
   const here = new Vector3();
@@ -757,22 +1001,27 @@ export function measureParkourContact(
       // planted stretch and the median step is zero — the limb is holding
       // still, which is the point — and every ratio against it explodes.
       const ease = contact.ease ?? 0.08;
-      const easingIn = p >= contact.from - ease && p <= contact.from;
-      const easingOut = p >= contact.to && p <= contact.to + ease;
-      if (easingIn || easingOut) {
-        if (!approach.has(contact)) approach.set(contact, []);
-        approach.get(contact)!.push(rig.bones[contact.bone].getWorldPosition(new Vector3()));
+      const ramp =
+        p >= contact.from - ease && p <= contact.from
+          ? 'in'
+          : p >= contact.to && p <= contact.to + ease
+            ? 'out'
+            : null;
+      if (ramp) {
+        const key = `${contact.bone}|${contact.from}|${ramp}`;
+        if (!approach.has(key)) approach.set(key, []);
+        approach.get(key)!.push(rig.bones[contact.bone].getWorldPosition(new Vector3()));
       }
       if (p >= contact.from + edge && p <= contact.to - edge) {
         stretch = Math.max(stretch, d / (l1 + l2));
         const w = rig.bones[contact.bone].getWorldPosition(new Vector3());
         if (!seen.has(contact)) seen.set(contact, []);
         seen.get(contact)!.push(w);
-        // Below the top surface AND within the obstacle's footprint is inside
-        // it; below the top out in front of the edge is just the ground.
-        if (w.z > -0.02 && w.z < obstacle.depth + 0.02) {
-          penetration = Math.max(penetration, -w.y);
-        }
+        // Measured against the CONTACT'S OWN surface, not against y = 0.
+        // A drop lands BELOW the ledge it left by definition, so judging it
+        // against the top read the whole fall height as penetration — 3.3 m
+        // of "hand inside the wall" for a move that never touches the wall.
+        penetration = Math.max(penetration, contact.at.y - w.y);
       }
     }
   }
@@ -821,7 +1070,12 @@ export class Parkour {
   private readonly starts = new Set<ParkourListener>();
   private readonly ends = new Set<ParkourListener>();
   private move: ParkourMove | null = null;
-  private obstacle: Obstacle | null = null;
+  /**
+   * The frame the move is playing in — an obstacle's top edge, or a gap's near
+   * lip. Only the `Object3D` is kept, not the description it came from: once
+   * the move is built, everything the obstacle had to say is baked into it.
+   */
+  private anchor: Object3D | null = null;
   private action: AnimationAction | null = null;
   private t = 0;
   private phase: ParkourPhase = 'idle';
@@ -867,24 +1121,74 @@ export class Parkour {
     if (this.busy) return null;
     const name = this.choose(obstacle, speed);
     if (!name) return null;
-    this.obstacle = obstacle;
+    this.start(name, obstacle.edge, obstacle);
+    return name;
+  }
+
+  /**
+   * How this body would meet the ground stepping off here — without doing it.
+   *
+   * The fall is the far side: `landing` if the obstacle declares one, its
+   * `height` otherwise. `hurt` is returned rather than refused, because a
+   * character walking off a roof falls whether or not there is a technique
+   * for it, and how much that costs is the game's business, not ANIMA's.
+   */
+  landing(obstacle: Pick<Obstacle, 'height' | 'landing'>): LandingKind {
+    return landingFor(obstacle.landing ?? obstacle.height, this.reach);
+  }
+
+  /**
+   * Step off and land. Returns how the landing went, or `null` if there is
+   * nothing to fall — the same honest-`null` contract `attempt` has.
+   *
+   * Separate from `attempt` on purpose. Going UP an obstacle is a choice
+   * between techniques a body may or may not have; going DOWN one is not a
+   * choice at all, and routing it through `chooseMove` would mean asking
+   * "which move gets me over this?" about a wall already underfoot.
+   */
+  descend(obstacle: Obstacle): LandingKind | null {
+    if (this.busy) return null;
+    const fall = obstacle.landing ?? obstacle.height;
+    if (fall <= 0) return null;
+    this.start('drop', obstacle.edge, obstacle);
+    return landingFor(fall, this.reach);
+  }
+
+  /**
+   * Jump a gap. Returns `'gap-jump'`, or `null` if this body cannot clear it
+   * at this speed — and it is the refusal that is worth having. A run-up is
+   * most of a long jump, so the same ditch is crossable at a sprint and not
+   * from a standstill, for the same character.
+   */
+  leap(gap: Gap, speed = 0): MoveName | null {
+    if (this.busy) return null;
+    if (!canClear(gap.width, this.reach, speed)) return null;
+    this.start('gap-jump', gap.edge, { height: 0, depth: gap.width });
+    return 'gap-jump';
+  }
+
+  private start(
+    name: MoveName,
+    anchor: Object3D,
+    obstacle: Pick<Obstacle, 'height' | 'depth' | 'landing'>
+  ): void {
+    this.anchor = anchor;
     this.move = createMove(this.rig, name, obstacle);
     this.t = 0;
     this.phase = 'moving';
     this.action = this.loco.overlay(this.move.clip, { loop: false, fadeIn: 0.12 });
     this.loco.influence = 0;
     for (const listener of [...this.starts]) listener(name);
-    return name;
   }
 
   update(dt: number): void {
-    if (!this.move || !this.obstacle || this.phase !== 'moving') return;
+    if (!this.move || !this.anchor || this.phase !== 'moving') return;
     this.t = Math.min(this.move.duration, this.t + dt);
     const p = this.t / this.move.duration;
 
     // Place the body by the move's own trajectory, expressed in the
     // obstacle's frame — the same frame the contacts were solved in.
-    const edge = this.obstacle.edge;
+    const edge = this.anchor;
     edge.updateWorldMatrix(true, false);
     this.move.travel(p, this.world);
     edge.localToWorld(this.world);
@@ -908,7 +1212,7 @@ export class Parkour {
   reset(): void {
     this.phase = 'idle';
     this.move = null;
-    this.obstacle = null;
+    this.anchor = null;
     this.loco.influence = 1;
   }
 }

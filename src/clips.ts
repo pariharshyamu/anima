@@ -108,6 +108,63 @@ const TAU = Math.PI * 2;
 const halfUp = (v: number): number => Math.max(0, v);
 
 /**
+ * Put the lower foot on the ground.
+ *
+ * A sine-driven leg is a pendulum, and a pendulum's foot traces an ARC: with a
+ * straight knee and the hip swung by θ, the ankle rides `leg × (1 − cos θ)`
+ * above the floor. At the run's 0.85 rad that is 277 mm. So the raw gait had no
+ * foot on the ground for **43% of the walk cycle and 63% of the run**, peaking
+ * 79 mm and 222 mm up. A character walking is airborne half the time.
+ *
+ * Nothing saw it for thirty-odd releases. `npm run skate` measures foot
+ * SKATE — how far a planted foot slides horizontally — and says nothing about
+ * whether a foot is planted at all; every other check is a screenshot, and a
+ * still frame of a floating character looks exactly like a still frame of a
+ * walking one.
+ *
+ * The correction is a pure vertical one: measure where the lower ankle
+ * actually is on the posed body and lower the hips onto it. Because it only
+ * moves `Hips.position.y`, every descendant translates straight down and no
+ * foot's Z changes — the stride, and therefore the whole skate gate, is
+ * untouched by construction.
+ *
+ * What comes out is not a fudge but the compass gait: the pelvis rides highest
+ * at midstance and drops as the legs spread, because that is what legs of a
+ * fixed length do. It is why the authored `bob` term is gone from the walk and
+ * the run — the vertical motion of a gait is a CONSEQUENCE of the leg
+ * geometry, not a free parameter, and having both meant the free one was
+ * fighting the real one.
+ */
+function planter(rig: HumanoidRig): (pose: Pose) => void {
+  const rest = new Map<BoneName, Quaternion>();
+  for (const key of Object.keys(rig.bones) as BoneName[]) {
+    rest.set(key, rig.bones[key].quaternion.clone());
+  }
+  const restHipsY = rig.bones.Hips.position.y;
+  const probe = new Vector3();
+  // Where the ankle sits, in the rig's own frame, when the body simply stands.
+  // Measured, not assumed: it is the foot BONE, not the sole of the shoe.
+  rig.object.updateWorldMatrix(true, true);
+  const ground = Math.min(
+    rig.object.worldToLocal(rig.bones.LeftFoot.getWorldPosition(probe)).y,
+    rig.object.worldToLocal(rig.bones.RightFoot.getWorldPosition(probe)).y
+  );
+  return (pose: Pose): void => {
+    for (const [key, q] of rest) rig.bones[key].quaternion.copy(q);
+    for (const [key, q] of pose.rotations) rig.bones[key].quaternion.copy(q);
+    rig.bones.Hips.position.y = pose.hipsY;
+    rig.object.updateWorldMatrix(true, true);
+    const lowest = Math.min(
+      rig.object.worldToLocal(rig.bones.LeftFoot.getWorldPosition(probe)).y,
+      rig.object.worldToLocal(rig.bones.RightFoot.getWorldPosition(probe)).y
+    );
+    pose.hipsY -= lowest - ground;
+    for (const [key, q] of rest) rig.bones[key].quaternion.copy(q);
+    rig.bones.Hips.position.y = restHipsY;
+  };
+}
+
+/**
  * Synthesize idle/walk/run `AnimationClip`s for a humanoid rig from gait
  * parameters — no animation files, deterministic, loop-seamless, and
  * in-place (movement comes from whatever drives the object; `Locomotion`
@@ -119,6 +176,7 @@ export function createLocomotionClips(
 ): LocomotionClips {
   const fps = options.fps ?? 30;
   const restHipsY = rig.bones.Hips.position.y;
+  const plant = planter(rig);
   const hang = Math.PI / 2 - 0.14; // arms hang with a slight outward splay
 
   /** Shared limb math for a full gait cycle at phase p. */
@@ -129,14 +187,24 @@ export function createLocomotionClips(
     kneeFlex: number,
     armSwing: number,
     elbowBend: number,
-    bob: number,
+    stanceFlex: number,
     lean: number,
     twist: number
   ): void => {
     for (const side of ['Left', 'Right'] as const) {
       const s = side === 'Left' ? 1 : -1;
-      const leg = hipSwing * Math.sin(TAU * p + (s === 1 ? 0 : Math.PI));
-      const flex = kneeFlex * halfUp(Math.sin(TAU * p + 0.35 + (s === 1 ? 0 : Math.PI)));
+      const phase = TAU * p + (s === 1 ? 0 : Math.PI);
+      const leg = hipSwing * Math.sin(phase);
+      // Swing-leg flexion clears the foot. STANCE-leg flexion — the ~25° a
+      // runner's knee bends absorbing the rise over a vertical leg — is a
+      // separate thing, and it is why the hips still travel 214 mm a stride
+      // at the run. The hook is here and set to zero, because a bent stance
+      // knee pulls the ankle BACK: it changes the measured stride, and
+      // `STRIDE_FACTOR` below is calibrated against that stride. Turning it on
+      // without re-deriving the declared speeds put the run 17.1%% out and
+      // `npm run skate` said so. That derivation is its own piece of work.
+      const flex =
+        kneeFlex * halfUp(Math.sin(phase + 0.35)) + stanceFlex * halfUp(-Math.cos(phase));
       pose.rotate(`${side}UpLeg`, [X, -leg]);
       pose.rotate(`${side}Leg`, [X, flex]);
       pose.rotate(`${side}Foot`, [X, 0.7 * (leg - flex)]);
@@ -146,7 +214,10 @@ export function createLocomotionClips(
       pose.rotate(`${side}Arm`, [X, -arm], [Z, -s * hang]);
       pose.rotate(`${side}ForeArm`, [Y, -s * (elbowBend + 0.25 * halfUp(arm))]);
     }
-    pose.hipsY = restHipsY - 0.012 * rig.height + bob * Math.sin(TAU * 2 * p + 0.4);
+    // No authored bob. The vertical motion of a gait is a CONSEQUENCE of the
+    // leg geometry, and `planter` derives it; an independent sine on top was
+    // a second opinion fighting the real one.
+    pose.hipsY = restHipsY - 0.012 * rig.height;
     pose.rotate('Hips', [Y, twist * Math.sin(TAU * p)], [Z, 0.03 * Math.sin(TAU * p)]);
     pose.rotate('Spine', [X, lean * 0.45]);
     pose.rotate('Chest', [X, lean * 0.55], [Y, -twist * 1.4 * Math.sin(TAU * p)]);
@@ -156,13 +227,15 @@ export function createLocomotionClips(
   const walkDuration = options.walkDuration ?? 1.0;
   const walkHipSwing = options.walkHipSwing ?? 0.55;
   const walk = buildClip(rig, 'walk', walkDuration, fps, (p, pose) => {
-    gait(pose, p, walkHipSwing, 0.95, 0.45, 0.3, 0.014 * rig.height, 0.04, 0.07);
+    gait(pose, p, walkHipSwing, 0.95, 0.45, 0.3, 0, 0.04, 0.07);
+    plant(pose);
   });
 
   const runDuration = options.runDuration ?? 0.62;
   const runHipSwing = options.runHipSwing ?? 0.85;
   const run = buildClip(rig, 'run', runDuration, fps, (p, pose) => {
-    gait(pose, p, runHipSwing, 1.55, 0.85, 1.05, 0.028 * rig.height, 0.24, 0.1);
+    gait(pose, p, runHipSwing, 1.55, 0.85, 1.05, 0, 0.24, 0.1);
+    plant(pose);
   });
 
   const idle = buildClip(rig, 'idle', 3.4, fps, (p, pose) => {
@@ -180,6 +253,7 @@ export function createLocomotionClips(
     pose.rotate('Spine', [X, 0.015 * breath]);
     pose.rotate('Chest', [X, 0.025 * breath]);
     pose.rotate('Head', [Y, 0.05 * Math.sin(TAU * p + 2)], [X, -0.01 * breath]);
+    plant(pose);
   });
 
   // Stride-matched reference speeds: 2 steps per cycle, step length from leg
