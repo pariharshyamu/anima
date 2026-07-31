@@ -237,3 +237,16 @@ export {
   type RowingOptions,
   type RowStyle,
 } from './rowing';
+
+// Mood — how a body carries whatever it is already doing. A layer, not a pose.
+export {
+  Mood,
+  MOODS,
+  MOOD_NAMES,
+  MOOD_LIMIT,
+  measurePosture,
+  type MoodName,
+  type MoodOptions,
+  type MoodPoint,
+  type PostureReport,
+} from './mood';

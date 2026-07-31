@@ -20,6 +20,27 @@ release found.
 
 ## Releases
 
+## [0.44.0] — 2026-07-31
+
+### Added
+
+- **`Mood` — a modulation layer, not a pose set.** An emotion has no keyframe:
+  sadness is eight degrees of head pitch, a chest that has stopped opening,
+  four centimetres off your height and a walk a third slower, applied to
+  standing, sitting, climbing and fighting alike. Two axes (`valence`,
+  `arousal`), thirteen named corners in `MOODS`, and the same additive
+  give-it-back machinery `Cockpit` uses for g-load.
+- **It publishes rather than applies.** `pace`, `gestureScale`,
+  `mannerismRate` and `gazeAuthority` — a mood that quietly slowed
+  `Locomotion` would desynchronise the stride from the declared speed and
+  slide the foot every step. Mood describes; the game applies.
+- **`measurePosture` and `npm run mood`** — the fourth gate, after `skate`,
+  `climb` and `parkour`. Monotone on both axes over 41 samples; `neutral`
+  moves the body by exactly nothing; 3600 frames and three mood changes leave
+  6.4e-7 behind; no mood saturates its own clamp; and `pace`, re-timed the way
+  a game re-times, costs **0.551%** foot skate — the baseline walk's own
+  number. Four mutations verified firing.
+
 ## [0.43.0] — 2026-07-31
 
 ### Added

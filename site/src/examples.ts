@@ -4059,6 +4059,174 @@ window.dogfightDebug = () => ({
 
 game.start();`,
   },
+  {
+    id: 'mood',
+    title: 'Mood: one walk, thirteen ways to carry it',
+    group: 'Scale',
+    code: `// THIRTEEN IDENTICAL BODIES, ONE WALK CYCLE, THIRTEEN MOODS.
+//
+// An emotion is not a pose. Sadness has no keyframe: it is eight degrees of
+// head pitch, a chest that has stopped opening, shoulders forward, four
+// centimetres off your height and a walk a third slower. Author it as a clip
+// and you need a sad version of every clip in the library. Author it as a
+// LAYER and every clip already in the library gets one for free.
+//
+// So every body here is playing the SAME walk. Nothing below picks a
+// different animation for anybody. The differences you can see — and you can
+// see them from here — are one additive layer riding on top.
+//
+// Two axes, not a list of feelings: valence (miserable…elated) and arousal
+// (torpid…keyed up). Fear is not a third axis, it is low valence with high
+// arousal, and what falls out is fear.
+//
+// Watch the front row. \`pace\` is published, not applied: the scene multiplies
+// BOTH the travel speed and the clip's timeScale by it, because slowing a body
+// without re-timing its gait slides the planted foot on every step.
+import { Mesh, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, Locomotion, LookAt, Mannerisms, Mood, MOODS,
+         MOOD_NAMES, measurePosture, OUTFITS } from 'anima3d';
+import { Game, Hud } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 4 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const hud = new Hud();
+
+// ── One body per mood, and the SAME seed for all of them ────────────
+// Same seed on purpose: any difference you can see is the layer, because
+// there is nothing else left for it to be.
+const COLS = 7;
+const PITCH = 2.0;
+const walkers = MOOD_NAMES.map((name, i) => {
+  const rig = createHumanoid({ seed: 5, palette: OUTFITS.villager });
+  const col = i % COLS;
+  const row = Math.floor(i / COLS);
+  const x = (col - (COLS - 1) / 2) * PITCH;
+  const z = row * 3.4;
+  rig.object.position.set(x, 0, z);
+  scene.add(rig.object);
+  const loco = new Locomotion(rig);
+  // The layer. Rise fast, fade slow — bad news lands in under a second and
+  // takes a minute to leave.
+  const mood = new Mood(rig, { ...MOODS[name], rise: 0.7, fall: 4 });
+  // Mannerisms and gaze both take their orders from the mood rather than
+  // reaching for it: a dejected body fidgets less and does not hold your eye.
+  const tics = new Mannerisms(rig, loco, { seed: 20 + i });
+  const gaze = new LookAt(rig);
+  return { name, rig, loco, mood, tics, gaze, x, z, posture: measurePosture(rig, name) };
+});
+
+// ── The lap ─────────────────────────────────────────────────────────
+// Everyone walks the same short beat, turns, and walks back. Identical
+// distance, identical clip; the ones in a hurry simply get there first, which
+// is what \`pace\` means.
+const LEG = 5.5;
+const BASE = 1.15;              // metres per second at pace 1
+const velocity = new Vector3();
+const look = new Vector3();
+let t = 0;
+
+game.onUpdate((tick) => {
+  const dt = tick.delta;
+  t += dt;
+
+  for (const w of walkers) {
+    w.mood.update(dt);
+    const pace = w.mood.pace;
+    const speed = BASE * pace;
+
+    // Out and back on a shared clock, so the row stays a row.
+    const cycle = (t * speed) / LEG;
+    const leg = Math.floor(cycle) % 2;
+    const along = (cycle % 1) * LEG;
+    const z = w.z + (leg === 0 ? along : LEG - along);
+    w.rig.object.position.set(w.x, 0, z);
+    w.rig.object.rotation.y = leg === 0 ? 0 : Math.PI;
+
+    // BOTH the travel speed and the clip. Passing the scaled velocity is what
+    // keeps the stride matched to the ground — Locomotion derives its playback
+    // rate from the speed it is handed, so a mood that slowed the body without
+    // telling it would slide the foot on every step.
+    velocity.set(0, 0, speed);
+    w.loco.update(dt, velocity);
+
+    // The mood drives the fidgeting and the gaze without either of them
+    // knowing what a mood is.
+    w.tics.rate = w.mood.mannerismRate;
+    w.tics.update(dt);
+    look.set(0, 1.5, w.z + LEG * 0.5 + 6);
+    w.gaze.target = look;
+    w.gaze.weight = w.mood.gazeAuthority;
+    w.gaze.update(dt);
+  }
+
+  // Every twelve seconds the whole row swaps to one shared mood and back to
+  // its own, so the RISE and the FADE are both visible on the same bodies.
+  const phase = Math.floor(t / 12) % 3;
+  for (const w of walkers) {
+    if (phase === 1) w.mood.set('grieving');
+    else if (phase === 2) w.mood.set('elated');
+    else w.mood.set(MOODS[w.name]);
+  }
+
+  const shown = walkers[Math.floor(t / 3) % walkers.length];
+  hud.objective(
+    shown.name.toUpperCase() +
+    '   valence ' + MOODS[shown.name].valence.toFixed(2) +
+    '   arousal ' + MOODS[shown.name].arousal.toFixed(2) +
+    '   pace ' + shown.mood.pace.toFixed(2)
+  );
+  hud.prompt(
+    'head ' + shown.posture.headPitch.toFixed(3) + ' rad' +
+    '   stature ' + (shown.posture.stature * 1000).toFixed(0) + ' mm' +
+    '   gaze ' + shown.mood.gazeAuthority.toFixed(2) +
+    (phase === 1 ? '   \\u2014 ALL GRIEVING' : phase === 2 ? '   \\u2014 ALL ELATED' : '')
+  );
+  hud.update(dt);
+});
+
+game.camera.position.set(0, 6.2, -9.5);
+game.camera.lookAt(0, 1.1, 4.2);
+
+window.moodDebug = () => ({
+  moods: walkers.length,
+  // The scene's OWN clock and phase. A probe that checks the shared-mood
+  // swap against wall time is guessing: the two are not the same number, and
+  // a swap that never fired looks exactly like one read at the wrong moment.
+  clock: Number(t.toFixed(1)),
+  phase: Math.floor(t / 12) % 3,
+  // Monotone means AT FIXED AROUSAL. These thirteen differ on both axes, so
+  // sorting them by valence and expecting an ordered head pitch is a
+  // comparison that was never controlled — arousal lifts the head too.
+  sweep: [-1, -0.5, 0, 0.5, 1].map((v) => {
+    const r = measurePosture(walkers[0].rig, { valence: v, arousal: 0.5 });
+    return { v, head: Number(r.headPitch.toFixed(3)), stature: Number((r.stature * 1000).toFixed(1)) };
+  }),
+  // The claim the scene makes, in numbers: same body, same clip, and the
+  // posture still orders itself by valence.
+  byValence: walkers
+    .slice()
+    .sort((a, b) => MOODS[a.name].valence - MOODS[b.name].valence)
+    .map((w) => ({
+      name: w.name,
+      head: Number(w.posture.headPitch.toFixed(3)),
+      stature: Number((w.posture.stature * 1000).toFixed(1)),
+      pace: Number(w.mood.pace.toFixed(2)),
+    })),
+  // Live, not settled — this is what the layer is doing right now.
+  live: walkers.map((w) => Number(w.mood.valence.toFixed(2))),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();`,
+  },
 ];
 
 export function findExample(id: string): Example {
