@@ -424,3 +424,31 @@ export {
   type FighterOptions,
   type StrikeCard,
 } from './sparring';
+
+// Blade — a weapon is a mass distribution, and everything else is derived.
+export {
+  BALANCE_TOLERANCE,
+  BLADES,
+  BLADE_NAMES,
+  DENSITIES,
+  NODE_FRACTION,
+  SOLID_ROUND,
+  balanceFromCross,
+  balancePoint,
+  bladeExtension,
+  bladeLength,
+  bladeMass,
+  inertia,
+  measureBlade,
+  pendulumPeriod,
+  percussion,
+  segmentMass,
+  tubeFill,
+  vibrationNodes,
+  withPommel,
+  type BladeName,
+  type BladeReport,
+  type BladeSegment,
+  type BladeSpec,
+  type Material,
+} from './blade';

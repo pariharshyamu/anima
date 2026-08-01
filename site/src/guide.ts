@@ -24,6 +24,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'fightstyle', title: 'FightStyle: a style is where the feet are' },
   { id: 'sparring', title: 'Sparring: the reach advantage emerges' },
   { id: 'tameshiwari', title: 'The tameshiwari handshake: two libraries, one physics' },
+  { id: 'blade', title: 'Blade: a weapon is a mass distribution' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

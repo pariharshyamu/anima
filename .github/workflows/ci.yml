@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, thirteen gates
+    name: typecheck, tests, build, fourteen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -64,6 +64,13 @@ jobs:
       - run: npm run fightstyle
       - run: npm run sparring
       - run: npm run tameshiwari
+      # ...and the fourteenth is the only one with a closed form on the other
+      # side. A uniform steel bar's inertia, sweet spot and pendulum period are
+      # textbook exact, so a segment sum that gets a tapered sword subtly wrong
+      # gets the bar wrong in the twelfth decimal place. The javelin is checked
+      # against a rule book rather than a range: 800 g, and the centre of mass
+      # 0.90-1.06 m from the tip, neither of them typed in.
+      - run: npm run blade
 
   browser:
     name: every example renders

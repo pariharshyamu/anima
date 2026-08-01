@@ -20,6 +20,96 @@ release found.
 
 ## Releases
 
+## [0.55.0] — 2026-08-01
+
+### Added
+
+- **`Blade` — a weapon is a mass distribution held in a hand.** There is no
+  `damage` in the file, no `speed`, no tier, no rarity, and nowhere any of them
+  could go. Nine objects described with a ruler — lengths, widths, thicknesses,
+  materials and a cross-section fraction — and **not one mass in the table**.
+  The weight, the balance point, the moment of inertia about whatever point the
+  hand holds, the centre of percussion and the pendulum period are all sums
+  over it.
+- **`npm run blade`, the fourteenth gate**, and the first with a closed form on
+  the other side of it.
+
+### The two checks, both from outside
+
+- **A uniform steel bar is in the shipped table, not in the gate**, so what is
+  checked is what is exported. Every one of its answers is on a textbook page,
+  and every one of them comes back exact to 1e-12: `I = mL²/3` about the end,
+  `mL²/12` about the centre, the centre of percussion at exactly `2L/3`, the
+  period at `2π√(2L/3g)`. A segment sum that gets a tapered sword subtly wrong
+  gets a uniform rod **exactly** wrong.
+- **The javelin has a rule book, which is stronger than a range.** World
+  Athletics: at least 800 g, 2.60–2.70 m, a 150–160 mm cord, and — since the
+  1986 change that shortened the world record by 10% overnight — the centre of
+  mass 0.90–1.06 m from the tip. What is typed in is a 1.5 mm aluminium wall, a
+  2.5 mm steel one and a ruler. What comes out is **807.9 g** and **1.003 m
+  from the tip**. The two wall thicknesses are the only free numbers in the
+  entry, and they are the same two a manufacturer has.
+
+### What getting the javelin right broke, which was the finding
+
+The rules put the binding **on** the centre of mass. `percussion` and
+`pendulumPeriod` both divide by the distance from the hand to the balance
+point, and that distance is now zero, so both diverged.
+
+That is not a numerical guard to add. **An object held at its own centre of
+mass has no restoring torque, no pendulum period and no centre of percussion.
+It does not swing. It is thrown** — and the arithmetic says so before anybody
+does. Both return `Infinity`, which is the limit rather than an error code, and
+the javelin is the one row in the table with neither number.
+
+It also forced a correction to a number that had already been written down:
+`sweetSpot` was the fraction of the way from the **cross** to the tip, which is
+meaningless for a pole arm. A spear is held a third of the way up its own shaft
+and its cross sits 1.2 m past the balance point, so the spear read −70 cm of
+blade and the javelin read 517%. It is measured from the **hand** to the tip
+now — the two landmarks every weapon in the table actually has.
+
+### And a folk claim that turned out to be two different claims
+
+A pommel is a counterweight, and "lighter in the hand, slower in the air" is
+**two different inertias**, which only became visible with both printed side by
+side. 200 g at the butt of a longsword moves the balance 32 mm back toward the
+hand, costs **0.4%** of the inertia about the hand — the pommel sits almost on
+the pivot, so it is nearly free there — and **8.7%** of the inertia in free
+rotation, which is what "slower" is actually about. The swing period gets
+*longer*, not shorter, because `d` shrinks faster than `I` grows.
+
+### Bugs this found
+
+- **Four of the nine entries described the wrong object.** A rapier at 2.610 kg
+  against a real 1.0–1.3, a javelin at 2.367 kg against a regulation 0.800, an
+  axe at 3.662 and a longsword at 1.787 — every one of them a cross-section
+  described too generously, and none of them detectable without comparing
+  against what museums weigh.
+- **One of the gate's own assertions was vacuous.** The sweet spot was budgeted
+  as "between 0 and 1.2", and measuring it from the cross instead of the hand
+  passed that budget cleanly — the mutant survived. Replaced with the physical
+  claim: the centre of percussion is a point on the weapon, past the hand, past
+  the cross, no further than the tip, and the reported fraction is that point
+  expressed between those landmarks. A range the number already sits in is not
+  an assertion.
+
+Mutation-tested eight ways: drop the parallel-axis term, drop the own-centre
+term, replace the tapered centroid with a midpoint, make the javelin shaft
+solid, paper over the divergence at the balance point, measure the sweet spot
+from the cross, move the steel density 5%, round the node fraction to a quarter.
+All eight die.
+
+### Also
+
+- `armoury` playground example: nine weapons hanging from their own grips,
+  released together, each swinging by `θ'' = −(m·g·d/I)·sin θ` integrated from
+  the derived numbers rather than played back. The meshes are built from the
+  same segment table the physics sums. The javelin does not move.
+- `tubeFill(diameter, wall)` and `SOLID_ROUND`, so a cross-section fraction is
+  derived from a wall thickness — the number a manufacturer actually has —
+  rather than typed in.
+
 ## [0.54.0] — 2026-08-01
 
 ### Added

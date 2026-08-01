@@ -5789,6 +5789,204 @@ window.boutDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'armoury',
+    title: 'Armoury: nine objects, and not one of them was weighed',
+    group: 'Scale',
+    code: `// NINE WEAPONS HANGING FROM THEIR OWN GRIPS, RELEASED TOGETHER.
+//
+// Every shape here is built from the SAME segment table the physics reads — a
+// list of lengths, widths, thicknesses and materials, with no mass anywhere in
+// it. The weight, the balance point and the swing all come out of that table,
+// and the meshes below are drawn from it, so what is on screen is what is
+// being measured.
+//
+// They are released at the same angle at the same instant, and they come
+// apart, because each swings with the period of ITS OWN mass distribution:
+//
+//   T = 2π√(I / m·g·d)
+//
+// which is the compound pendulum, and the one number in this whole library a
+// person with a real sword, a piece of string and a stopwatch can walk up and
+// falsify.
+//
+// The swing is INTEGRATED, not played back: θ'' = −(m·g·d / I)·sin θ, stepped
+// every frame from the derived m, d and I. Nothing tells it the period. That
+// the timed period comes back equal to the closed form is the check.
+//
+// Watch the javelin, eighth along. Its rules put the binding ON its centre of
+// mass, so d = 0, so there is no restoring torque and it hangs at exactly the
+// angle it was released at while the other eight swing past it. That is not a
+// special case in the code — it is the same formula everyone else uses,
+// dividing by a distance that has gone to zero. An object held at its own
+// balance point is not swung. It is thrown.
+//
+// Blue bead = the balance point. Orange ring = the centre of percussion, the
+// spot that does not sting the hand. The javelin has neither.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, RingGeometry, Group, DoubleSide } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { BALANCE_TOLERANCE, BLADES, BLADE_NAMES, balancePoint, bladeMass,
+         inertia, measureBlade, percussion } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 3 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const COLOUR = { steel: 0x9aa3ad, alloy: 0xb9c3cd, ash: 0xc8a06a,
+                 oak: 0x8a6a42, grip: 0x4a3a30, brass: 0xc9a227 };
+const PIVOT_Y = 1.8;
+const SPACING = 0.5;
+const RELEASE = 0.25;   // radians, the same for all nine
+
+// The rail they all hang from.
+const rail = new Mesh(
+  new BoxGeometry(BLADE_NAMES.length * SPACING + 0.4, 0.05, 0.05),
+  new MeshStandardMaterial({ color: 0x555b63, metalness: 0.3, roughness: 0.5 })
+);
+rail.position.set(0, PIVOT_Y, 0);
+scene.add(rail);
+
+const hung = BLADE_NAMES.map((name, i) => {
+  const spec = BLADES[name];
+  const report = measureBlade(name);
+  const pivot = new Group();
+  pivot.position.set((i - (BLADE_NAMES.length - 1) / 2) * SPACING, PIVOT_Y, 0);
+  scene.add(pivot);
+
+  // ONE MESH PER SEGMENT, straight off the table the physics sums. A tapered
+  // segment is drawn as a tapered cylinder because that is what it is: the
+  // volume the mass came from and the volume you are looking at are the same
+  // description of the same object.
+  for (const s of spec.segments) {
+    const len = Math.max(0.001, s.to - s.from);
+    const metal = s.material === 'steel' || s.material === 'alloy' || s.material === 'brass';
+    const bar = new Mesh(
+      new CylinderGeometry(
+        Math.max(0.0015, (s.width[1] + s.thick[1]) / 4),
+        Math.max(0.0015, (s.width[0] + s.thick[0]) / 4),
+        len, 12
+      ),
+      new MeshStandardMaterial({
+        color: COLOUR[s.material],
+        // Metalness without an environment map renders BLACK in three.js —
+        // a rack of physically-correct steel that looks like nine wires. The
+        // shapes are the measurement here, so they have to be visible.
+        metalness: metal ? 0.3 : 0.05,
+        roughness: metal ? 0.42 : s.material === 'grip' ? 0.9 : 0.6,
+        emissive: metal ? 0x1a1f24 : 0x120d08,
+      })
+    );
+    // Hanging from the grip: the butt is UP, the tip is DOWN.
+    bar.position.y = -((s.from + s.to) / 2 - spec.grip);
+    pivot.add(bar);
+  }
+
+  // Where the mass actually is.
+  const bead = new Mesh(
+    new CylinderGeometry(0.03, 0.03, 0.014, 16),
+    new MeshStandardMaterial({ color: 0x3a8fd0, emissive: 0x0b2438 })
+  );
+  bead.position.y = -(report.balance - spec.grip);
+  pivot.add(bead);
+
+  // ...and where it can be hit without punishing the hand. Not drawn for the
+  // javelin, because the javelin does not have one.
+  const cop = percussion(spec);
+  if (Number.isFinite(cop)) {
+    const ring = new Mesh(
+      new RingGeometry(0.032, 0.046, 20),
+      new MeshStandardMaterial({ color: 0xd8862a, emissive: 0x3a1c06, side: DoubleSide })
+    );
+    ring.position.y = -(cop - spec.grip);
+    pivot.add(ring);
+  }
+
+  // The three numbers the swing needs, and all three are sums over the table.
+  //
+  // The javelin's balance lands about 20 MICRONS from its grip, and whether
+  // that lands + or − is arithmetic, not physics — nobody can find a real
+  // javelin's balance point to a fifth of a millimetre. Integrated raw, a
+  // negative one turns it into a very slow INVERTED pendulum and it topples
+  // over the length of the demo, which would be a story about floating point
+  // dressed up as a story about javelins. Inside the tolerance the library
+  // already publishes, the honest value is zero: no lever, no torque, and it
+  // stays exactly where it was let go.
+  const lever = balancePoint(spec) - spec.grip;
+  return {
+    name, pivot, report,
+    m: bladeMass(spec),
+    d: Math.abs(lever) < BALANCE_TOLERANCE ? 0 : lever,
+    I: inertia(spec),
+    theta: RELEASE, omega: 0, crossings: [], measured: 0,
+  };
+});
+
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.033, frame.delta);
+  t += dt;
+  for (const h of hung) {
+    // θ'' = −(m·g·d / I)·sin θ. Not the small-angle version, and not a sine
+    // wave played back at a chosen rate: the equation, with the derived
+    // numbers, sub-stepped so the integrator is not what is being measured.
+    const steps = 8;
+    const sub = dt / steps;
+    for (let k = 0; k < steps; k++) {
+      const before = h.theta;
+      h.omega -= ((h.m * 9.81 * h.d) / h.I) * Math.sin(h.theta) * sub;
+      h.theta += h.omega * sub;
+      // Time it the way a person with a stopwatch would: count the passes
+      // through the bottom. Two of them make one period.
+      if (before > 0 !== h.theta > 0) h.crossings.push(t + k * sub);
+    }
+    if (h.crossings.length > 2) {
+      const spanned = h.crossings[h.crossings.length - 1] - h.crossings[0];
+      h.measured = (2 * spanned) / (h.crossings.length - 1);
+    }
+    h.pivot.rotation.z = h.theta;
+  }
+});
+
+// The rail hangs low on purpose: a sword is a few millimetres thick, and nine
+// of them against a bright sky is nine hairlines. Against the floor they read.
+// The javelin still reaches 1.6 m ABOVE the rail, because that is what hanging
+// something from its own balance point looks like.
+game.camera.position.set(0, 1.15, 5.0);
+game.camera.lookAt(0, 1.95, 0);
+
+window.armouryDebug = () => ({
+  // The scene's own clock — headless runs at about a third of real time, and a
+  // rack nobody has released yet looks exactly like one that never swings.
+  clock: Number(t.toFixed(1)),
+  release: RELEASE,
+  blades: hung.map((h) => ({
+    name: h.name,
+    mass: Number(h.report.mass.toFixed(3)),
+    length: Number(h.report.length.toFixed(3)),
+    balance: Number(h.report.balance.toFixed(3)),
+    // What the formula says, and what the integrated swing actually did.
+    period: Number.isFinite(h.report.period) ? Number(h.report.period.toFixed(3)) : null,
+    measured: h.measured ? Number(h.measured.toFixed(3)) : null,
+    swings: h.crossings.length,
+    theta: Number(h.theta.toFixed(3)),
+  })),
+  // Nine objects, and the table they came from has no mass in it.
+  segments: BLADE_NAMES.reduce((n, k) => n + BLADES[k].segments.length, 0),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
