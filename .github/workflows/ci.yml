@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, seven gates
+    name: typecheck, tests, build, eight gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -46,7 +46,7 @@ jobs:
       # keyframe density that quietly followed the playback rate. Not one of
       # them could fail a unit test or show up in a still frame.
       - run: npm run skate
-      # The other four measure the same kind of thing one movement over: hands
+      # The other five measure the same kind of thing one movement over: hands
       # on rungs, hands and feet on a wall and the landing on the floor, a
       # modulation layer that stays monotone and gives the body back, and a bar
       # that stays over mid-foot through a set that visibly decays. Every one
@@ -58,6 +58,7 @@ jobs:
       - run: npm run lifting
       - run: npm run dining
       - run: npm run archery
+      - run: npm run striking
 
   browser:
     name: every example renders

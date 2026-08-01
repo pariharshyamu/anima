@@ -20,6 +20,48 @@ release found.
 
 ## Releases
 
+## [0.49.0] — 2026-08-01
+
+### Added
+
+- **`Striking` — the damage is a measurement, not a table.** Fourteen strikes:
+  `jab`, `cross`, `hook`, `uppercut`, `overhand`, `backfist`, `hammerfist`,
+  `palmStrike`, `elbow`, `knee`, `teep`, `frontKick`, `roundhouse`, `sideKick`.
+- **Effective mass is derived, not chosen**:
+  `Σ mᵢ(vᵢ·n̂)⁺ / (v_surface·n̂)` — the momentum of the body along the strike
+  line over the speed of the thing striking. `mᵢ` is Dempster's segment mass
+  table (sums to exactly 1, asserted); the velocities are read off the bone
+  transforms while the strike plays. **A cross measures 1.88× a jab and kicks
+  1.94× punches**, because half a body drives one and a leg weighs three times
+  an arm.
+- **`skill` is the kinetic chain** — how far the pelvis runs ahead of the fist.
+  Worth **3.55× on a cross**, 2.71× on a palm strike, and **1.0× on a
+  roundhouse**: a straight punch *is* its chain, and a leg is heavy enough
+  without one. At skill 0 the hip peaks *after* the fist, which is an arm
+  punch, measured.
+- **`stability(rig)`** — margin from the centre of mass to the edge of the base
+  of support, in foot lengths, from the same segment table. A jab costs 0.61, a
+  roundhouse −0.03. Commitment with no move table and no recovery frames.
+- **`strikeReach(rig, name)`** — geometry, not a range band:
+  `(R − rootZ)² = limb² − rootX² − (targetY − rootY)²`. A head kick reaches
+  less than a body kick off the same leg; a cross out-reaches a jab.
+- **`bodyMass`, `centreOfMass`, `SEGMENT_MASS_TOTAL`** and `measureStrike`.
+- `Blow` carries `impulse` in kg·m/s. ANIMA does not compute damage.
+- **`npm run striking`** — the eighth gate. Five bodies, fourteen strikes, ten
+  budgets. Mutation-tested: delete the weight transfer and a cross reads 0.50×
+  a jab; freeze the chain lag and skill buys 1.00×.
+- The `striking` playground: six identical fighters, one skill each, heavy bags
+  as pendulums, and a live balance bar.
+
+### Fixed
+
+- **The published impulse depended on the frame rate.** A cross measured 43.7
+  kg·m/s on a 20 fps frame and 34.6 at 480 — the effective mass is a ratio of
+  two finite differences and was only as good as the step they were taken over.
+  A game would have been easier to win on a slow machine and GAMA's replay
+  would not have been deterministic. `Striking` now steps at a fixed internal
+  rate whatever it is handed, and reads identically from 20 to 120 fps.
+
 ## [0.48.0] — 2026-08-01
 
 ### Fixed

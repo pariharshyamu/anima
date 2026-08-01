@@ -238,6 +238,28 @@ export {
   type RowStyle,
 } from './rowing';
 
+// Striking — the damage is a measurement, not a table.
+export {
+  Striking,
+  STRIKES,
+  STRIKE_NAMES,
+  SEGMENT_MASS_TOTAL,
+  bodyMass,
+  centreOfMass,
+  measureStrike,
+  stability,
+  strikeReach,
+  type Blow,
+  type StrikeName,
+  type StrikeOptions,
+  type StrikePath,
+  type StrikePhase,
+  type StrikeReport,
+  type StrikeSpec,
+  type StrikeSurface,
+  type StrikingOptions,
+} from './striking';
+
 // Archery — the draw is a force, the anchor is a contact, the group is the metric.
 export {
   Archery,

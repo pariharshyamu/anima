@@ -1,7 +1,7 @@
 {
   "name": "anima3d",
-  "version": "0.48.0",
-  "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
+  "version": "0.49.0",
+  "description": "ANIMA \u2014 professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -28,7 +28,7 @@
     "skate": "node bench/skate.mjs",
     "climb": "node bench/climb.mjs",
     "parkour": "node bench/parkour.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking",
     "dev:portrait": "vite examples/portrait",
     "dev:hoops": "vite examples/basketball",
     "dev:village": "vite examples/village",
@@ -48,7 +48,8 @@
     "mood": "node bench/mood.mjs",
     "lifting": "node bench/lifting.mjs",
     "dining": "node bench/dining.mjs",
-    "archery": "node bench/archery.mjs"
+    "archery": "node bench/archery.mjs",
+    "striking": "node bench/striking.mjs"
   },
   "repository": {
     "type": "git",

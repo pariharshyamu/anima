@@ -5053,6 +5053,170 @@ window.archeryDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'striking',
+    title: 'The bag room: the mass is the body behind it',
+    group: 'Scale',
+    code: `// SIX FIGHTERS, FOURTEEN STRIKES, AND NOBODY TYPED A DAMAGE NUMBER.
+//
+// Every figure over every head is MEASURED off the body that threw it while
+// the strike plays. The mass is Dempster's segment fractions summed along the
+// strike line; the speed is the striking surface's own travel; the impulse is
+// the product. ANIMA publishes it and something upstream decides what it
+// costs — here, how hard the bag swings.
+//
+// Three things to watch, all consequences rather than settings:
+//
+//   THE CROSS OUTWEIGHS THE JAB by about 1.9x, because half a body drives one
+//   and nothing drives the other. Turning the shoulders is not what does it —
+//   a trunk rotating about its own axis moves almost no mass, since its centre
+//   of mass is ON that axis. It is the shove off the back foot.
+//
+//   THE KICKS OUTWEIGH THE PUNCHES by about 2x, because a leg weighs three
+//   times what an arm does. Nothing in the module says so; Dempster does.
+//
+//   SKILL IS THE CHAIN — ON THE STRAIGHT PUNCHES. Left to right the fighters
+//   go from novice to champion, one body six times, and the spread opens up on
+//   the jab, cross, uppercut and palm strike (up to 3.5x) and closes to
+//   nothing on the kicks and the swings. That is the model working: a straight
+//   punch IS its chain, a leg is heavy enough without one, and a hook's power
+//   is its rotation whatever order it arrives in. The novice throws an ARM
+//   PUNCH — measured, their hip peaks AFTER their fist.
+//
+// The bar in front of each fighter is their balance: how much base of support
+// is left. Watch it empty on a roundhouse and barely move on a jab.
+import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
+         PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, STRIKES, STRIKE_NAMES, Striking, bodyMass } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 3 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const SKILLS = [0.05, 0.25, 0.45, 0.65, 0.85, 1];
+const SPACING = 1.95;
+const fighters = SKILLS.map((skill, i) => {
+  // ONE BODY, six times, down to the kit. Varying the seed as well as the
+  // skill was comparing BODIES: the novice drew a heavier build and out-hit
+  // the champion, which is true of those two people and says nothing whatever
+  // about skill. Identical fighters is the whole point — the only thing that
+  // differs down the line is the number handed to the skill option.
+  const rig = createHumanoid({ seed: 5 });
+  rig.object.position.set((i - (SKILLS.length - 1) / 2) * SPACING, 0, 0);
+  scene.add(rig.object);
+
+  // A heavy bag on a chain. A pendulum has no opinion about how hard it was
+  // hit, so what it does is entirely the impulse's doing.
+  const bag = new Group();
+  const body = new Mesh(
+    new CylinderGeometry(0.155, 0.17, 1.1, 14),
+    new MeshStandardMaterial({ color: 0x33323a, roughness: 0.85 })
+  );
+  body.position.y = -0.575;
+  const chain = new Mesh(
+    new CylinderGeometry(0.012, 0.012, 0.75, 6),
+    new MeshStandardMaterial({ color: 0x8a8a92, metalness: 0.7, roughness: 0.4 })
+  );
+  chain.position.y = 0.375;
+  bag.add(body, chain);
+  bag.position.set(rig.object.position.x, 1.62, 0.62);
+  scene.add(bag);
+
+  const bar = new Mesh(
+    new BoxGeometry(1, 0.06, 0.06),
+    new MeshStandardMaterial({ color: 0x4caf50, emissive: 0x123a15 })
+  );
+  bar.position.set(rig.object.position.x, 0.06, -1.1);
+  scene.add(bar);
+
+  const striker = new Striking(rig, { target: bag, skill, fade: 0.08 });
+  const state = {
+    rig, bag, bar, striker, skill,
+    mass: bodyMass(rig),
+    swing: 0, swingVel: 0,
+    last: null, lastCross: null, hardest: 0, thrown: 0,
+  };
+  striker.onBlow((blow) => {
+    // Impulse over the bag's mass. That is the whole conversion.
+    state.swingVel += blow.impulse / 26;
+    state.last = blow;
+    state.hardest = Math.max(state.hardest, blow.impulse);
+    if (blow.strike === 'cross') state.lastCross = blow;
+    state.thrown++;
+  });
+  return state;
+});
+
+// Everybody works the same rotation, so what varies is the BODY and the SKILL.
+const ROUND = STRIKE_NAMES;
+let step = 0;
+let cool = 0.6;
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  cool -= dt;
+  if (cool <= 0) {
+    for (const f of fighters) f.striker.throwStrike(ROUND[step % ROUND.length]);
+    step++;
+    cool = 1.6;
+  }
+  for (const f of fighters) {
+    f.striker.update(dt);
+    // Gravity restores the bag, the air takes it back out of it.
+    f.swingVel += (-9.81 / 1.15) * Math.sin(f.swing) * dt;
+    f.swingVel *= Math.exp(-1.1 * dt);
+    f.swing += f.swingVel * dt;
+    f.bag.rotation.x = -f.swing;
+    const bal = Math.max(0, Math.min(1, f.striker.balance));
+    f.bar.scale.x = 0.08 + bal;
+    f.bar.material.color.setHSL(0.33 * bal, 0.65, 0.45);
+  }
+});
+
+// Along the line and slightly above it: the comparison runs left to right, and
+// a comparison you cannot see both ends of is not one.
+// Front three-quarters and back far enough for all SIX. Straight on from
+// behind put the bags between the camera and the punches and cut the outer
+// two fighters out of frame entirely, which is no use for a comparison whose
+// whole content is left to right.
+game.camera.position.set(2.6, 4.4, 10.2);
+game.camera.lookAt(0, 1.15, 0.15);
+
+window.strikingDebug = () => ({
+  fighters: fighters.length,
+  // The scene's OWN clock. Headless SwiftShader runs at about a third of real
+  // time, and a bag room where nobody has thrown yet looks exactly like one
+  // where nobody ever will.
+  clock: Number(t.toFixed(1)),
+  thrown: fighters[0].thrown,
+  strike: ROUND[(step - 1 + ROUND.length) % ROUND.length],
+  // Skill against the number over their head. If these do not order by skill,
+  // the thing the scene is named for is not happening.
+  bySkill: fighters.map((f) => ({
+    skill: Number(f.skill.toFixed(2)),
+    kg: Number((f.last ? f.last.mass : 0).toFixed(2)),
+    impulse: Number((f.last ? f.last.impulse : 0).toFixed(1)),
+    hardest: Number(f.hardest.toFixed(1)),
+    // The cross specifically, because that is where the chain shows.
+    cross: Number((f.lastCross ? f.lastCross.mass : 0).toFixed(2)),
+    balance: Number(f.striker.balance.toFixed(2)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
