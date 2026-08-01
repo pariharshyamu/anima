@@ -238,6 +238,28 @@ export {
   type RowStyle,
 } from './rowing';
 
+// Guard — coverage is geometry, and reaction is a race against the wind-up.
+export {
+  Guard,
+  GUARDS,
+  GUARD_NAMES,
+  GUARD_ZONES,
+  SIMPLE_REACTION,
+  CHOICE_REACTION,
+  canReactTo,
+  coverageOf,
+  intercepts,
+  reactionTime,
+  zoneOf,
+  zonePoint,
+  type ActiveDefence,
+  type Defence,
+  type GuardName,
+  type GuardOptions,
+  type GuardSpec,
+  type GuardZone,
+} from './guard';
+
 // Striking — the damage is a measurement, not a table.
 export {
   Striking,

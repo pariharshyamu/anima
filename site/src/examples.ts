@@ -5217,6 +5217,160 @@ window.strikingDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'sparring',
+    title: 'Sparring: what gets through is geometry',
+    group: 'Scale',
+    code: `// SEVEN GUARDS, ONE ATTACKER, AND NO BLOCK CHANCE ANYWHERE.
+//
+// One striker works down a line of defenders, each holding a different guard,
+// throwing the same rotation at every one. What gets through is decided by two
+// measurements and nothing else:
+//
+//   WHERE THE ARMS ARE. Coverage is sampled off the pose — every direction a
+//   strike could come from, asking whether the line passes through a limb. A
+//   cross-arm buries the head at 51% and a low guard gives it away at 5%; the
+//   low guard takes 26% of the BODY where the cross-arm takes 9%. Same two
+//   arms, and the trade is measured rather than declared.
+//
+//   WHETHER THERE WAS TIME. Simple visual reaction is 180 ms. A jab's wind-up
+//   is 130. Nobody reacts to a jab — not the expert, not anyone — and that is
+//   why it is the most thrown punch in boxing. The slower committed shots CAN
+//   be answered, and the defenders slip them when they can.
+//
+// The bar over each defender is what has got through them, in kg·m/s. The
+// green pips under the bar are the strikes their guard stopped.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, Guard, GUARDS, GUARD_NAMES, STRIKE_NAMES, STRIKES,
+         Striking, canReactTo, coverageOf } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 7 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const SPACING = 2.05;
+const SKILL = 0.85;
+
+// One defender per guard, all the same body, so the only thing that differs
+// down the line is where the hands are.
+const posts = GUARD_NAMES.map((name, i) => {
+  const x = (i - (GUARD_NAMES.length - 1) / 2) * SPACING;
+
+  const def = createHumanoid({ seed: 5 });
+  def.object.position.set(x, 0, 0.66);
+  def.object.rotation.y = Math.PI;
+  scene.add(def.object);
+  const guard = new Guard(def, { style: name, skill: SKILL, fade: 0.08 });
+
+  const atk = createHumanoid({ seed: 12 });
+  atk.object.position.set(x, 0, 0);
+  scene.add(atk.object);
+  const striker = new Striking(atk, { target: def.bones.Head, skill: 0.8, fade: 0.08 });
+
+  // A post over the defender: how much has reached them.
+  const bar = new Mesh(
+    new BoxGeometry(0.09, 1, 0.09),
+    new MeshStandardMaterial({ color: 0xcc3333, emissive: 0x3a1010 })
+  );
+  bar.position.set(x, 2.15, 0.66);
+  scene.add(bar);
+  const pip = new Mesh(
+    new CylinderGeometry(0.05, 0.05, 0.03, 10),
+    new MeshStandardMaterial({ color: 0x44cc55, emissive: 0x0f3a14 })
+  );
+  pip.position.set(x, 0.03, 0.66);
+  scene.add(pip);
+
+  const post = {
+    name, def, atk, guard, striker, bar, pip,
+    through: 0, stopped: 0, landed: 0, last: null,
+  };
+  striker.onBlow((blow) => {
+    const answer = guard.defend(blow);
+    post.last = answer;
+    post.landed++;
+    if (answer.stopped) post.stopped++;
+    else post.through += answer.through;
+  });
+  return post;
+});
+
+const ROUND = STRIKE_NAMES;
+let step = 0;
+let cool = 0.8;
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  cool -= dt;
+  if (cool <= 0) {
+    const strike = ROUND[step % ROUND.length];
+    for (const p of posts) {
+      p.striker.throwStrike(strike);
+      // The defenders answer what they can SEE. A jab is not one of them.
+      if (canReactTo(strike, SKILL)) p.pending = strike;
+      else p.pending = null;
+      p.seen = 0;
+    }
+    step++;
+    cool = 1.7;
+  }
+  for (const p of posts) {
+    p.striker.update(dt);
+    p.guard.update(dt);
+    // Reacting takes as long as it takes. Trigger the slip when the defender
+    // would actually have seen the shot, not when it was declared.
+    if (p.pending) {
+      p.seen += dt;
+      if (p.seen >= p.guard.reaction) {
+        p.guard.react(p.pending, 'slip');
+        p.pending = null;
+      }
+    }
+    const h = 0.12 + Math.min(3, p.through / 90);
+    p.bar.scale.y = h;
+    p.bar.position.y = 1.5 + h / 2;
+    p.pip.scale.setScalar(0.4 + p.stopped * 0.22);
+  }
+});
+
+// Along the line, high enough that all seven pairs and all seven posts fit.
+game.camera.position.set(1.1, 5.6, 13.2);
+game.camera.lookAt(0, 1.2, 0.3);
+
+window.sparringDebug = () => ({
+  posts: posts.length,
+  // The scene's OWN clock — headless SwiftShader runs this at about a third of
+  // real time, and a gym where nobody has thrown yet looks exactly like one
+  // where nobody ever will.
+  clock: Number(t.toFixed(1)),
+  thrown: step,
+  landed: posts[0].landed,
+  // Coverage against what got through. If the guards that cover more are not
+  // taking less, the thing the scene is named for is not happening.
+  byGuard: posts.map((p) => ({
+    guard: p.name,
+    head: Number((coverageOf(p.def, 'head') * 100).toFixed(1)),
+    body: Number((coverageOf(p.def, 'body') * 100).toFixed(1)),
+    stopped: p.stopped,
+    through: Number(p.through.toFixed(0)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

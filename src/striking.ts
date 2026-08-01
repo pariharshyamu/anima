@@ -866,6 +866,13 @@ export class Striking {
       this.phase = this.clock < spec.windup ? 'windup' : this.clock < total ? 'recover' : 'done';
       this.pose(spec, clamp01(t));
       this.sample(spec);
+      // Publish the blow when it LANDS — at the end of the wind-up — not when
+      // the whole strike finishes. They are not the same moment: a roundhouse
+      // lands at 260 ms and finishes at 520, and anything downstream that has
+      // to answer it in real time (a guard deciding whether to slip, a hit
+      // reaction, a hit-stop) was being told a quarter of a second late. It is
+      // the difference between a defence system and a post-mortem.
+      if (!this.struck && this.clock >= spec.windup) this.land(spec);
       if (this.clock >= total) {
         this.finish(spec);
       }
@@ -1482,8 +1489,8 @@ export class Striking {
 
   private lastStep = 0;
 
-  /** The strike is over: publish what landed and clear the slate. */
-  private finish(spec: StrikeSpec): void {
+  /** Contact. Everything the blow needs was measured on the way out. */
+  private land(spec: StrikeSpec): void {
     if (!this.struck) {
       this.struck = true;
       const tolerance = CONTACT * this.rig.height;
@@ -1504,6 +1511,11 @@ export class Striking {
       this.lastSpeed = blow.speed;
       for (const fn of this.blowCbs) fn(blow);
     }
+  }
+
+  /** The strike is over: clear the slate for the next one. */
+  private finish(spec: StrikeSpec): void {
+    this.land(spec);
     this.current = null;
     this.phase = this.queue.length ? 'windup' : 'guard';
     this.previous.clear();

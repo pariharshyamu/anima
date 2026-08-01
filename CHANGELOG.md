@@ -20,6 +20,46 @@ release found.
 
 ## Releases
 
+## [0.50.0] — 2026-08-01
+
+### Added
+
+- **`Guard` — defence is geometry and a stopwatch, not a dice roll.** Seven
+  guards: `peekaboo`, `philly`, `longGuard`, `highCover`, `lowGuard`,
+  `crossArm`, `open`. There is no block chance in the module and nowhere one
+  could be added.
+- **`coverageOf(rig, zone)`** — the fraction of the directions a strike could
+  arrive from that a limb is currently on. Sampled off the pose the body is in,
+  so it answers for a guard, a guard mid-parry, and a guard that has not got
+  the hand back yet. **A cross-arm covers 50.9% of the head and a low guard
+  5.5% — and the low guard takes 26.0% of the body where the cross-arm takes
+  8.8%.** A trade, made with the same two arms, and neither number is written
+  down.
+- **`reactionTime(skill)` and `canReactTo(strike, skill)`** — the other half.
+  Simple visual reaction is 180 ms, choice reaction 350; `skill` interpolates,
+  and that interval is what "reading" somebody means. Raced against the wind-up
+  `Striking` measures: **nobody reacts to a jab**, an expert answers the
+  committed shots, a novice answers none.
+- **`Defence`** — `through` and `absorbed` in kg·m/s, which sum to exactly what
+  was thrown. A limb in the way is not a wall: the deeper the line passes into
+  it, the more it takes. A slip absorbs nothing and delivers nothing.
+- **`intercepts`, `zonePoint`, `zoneOf`, `GUARDS`, `GUARD_ZONES`.**
+- **`npm run guard`** — the ninth gate. Seven guards × three zones × three
+  bodies, plus 28 exchanges driven through `Striking`. Mutation-tested: give
+  every guard the peekaboo's hands and *hands down* covers 57.9% of the head;
+  make reaction independent of skill and a novice slips roundhouses.
+- The `sparring` playground: one striker per guard, working the same rotation
+  into all seven, with a post over each showing what got through.
+
+### Fixed
+
+- **`Striking` published the `Blow` when the strike FINISHED, not when it
+  LANDED.** A roundhouse lands at 260 ms and finishes at 520, so anything that
+  had to answer in real time — a guard deciding whether to slip, a hit
+  reaction, a hit-stop — was told a quarter of a second late. Nothing in
+  `Striking`'s own gate could see it, because from inside one strike the number
+  was right either way.
+
 ## [0.49.0] — 2026-08-01
 
 ### Added
