@@ -20,6 +20,54 @@ release found.
 
 ## Releases
 
+## [0.47.0] — 2026-08-01
+
+### Added
+
+- **`Archery` — the draw is a force, the anchor is a contact, the group is the
+  metric.** Five bows: `longbow`, `recurve`, `compound`, `horsebow`,
+  `crossbow`.
+- **The arrow's speed is derived, not chosen.** `arrowSpeed` is the area under
+  a force–draw curve turned into `½mv²`: a 170 N longbow at a 0.71 m draw
+  gives **54.9 m/s**, and SCENA's ammunition table independently declares an
+  arrow at **55**. Neither library imports the other and neither number was
+  copied; they agree to **0.20%**, and `npm run archery` checks that they
+  still do.
+- **`elevationFor` / `maxRange`** — the ballistic solution, so a far butt
+  visibly raises the bow arm and a target past `v²/g` returns `NaN` rather
+  than an angle that does not exist.
+- **`groupAt` — millimetres of anchor become centimetres of miss.** An anchor
+  `e` off over a draw `d` tilts the arrow by `e/d`, so the group at range `R`
+  is `R·e/d`. One `skill` number moves the whole thing: 20 mm of anchor
+  scatter and a 50 cm group at 0.3, 3 mm and 7 cm at 1.0.
+- **The compound is a different machine, from two numbers.** Its cams store
+  80% of peak × draw where a longbow stores 50 (94.3 m/s against 54.9), and
+  its let-off leaves 68 N in the fingers against 170 — which is why the same
+  archer at the same skill groups 18.6 cm with it and 30.5 with a longbow.
+  A crossbow is held by a catch, so `holdForce` is zero and the anchor does
+  not apply at all.
+- **`npm run archery` — the seventh gate.** A quiver of every bow on six
+  bodies, 180 arrows, ten budgets. The best check compares two independent
+  routes to the same number — the anchor scatter read off the posed rig, and
+  the launch velocities that actually left — and they meet to **1.5%**.
+- **The `archery` playground** closes the trilogy loop in one scene: ANIMA
+  publishes the launch, GAMA's `Projectiles` flies it, and the marks
+  accumulate on SCENA-shaped butts. Measured live: 37 arrows loosed, one in
+  flight, zero console errors.
+
+### Fixed
+
+- Found by the new gate: an anchor error measured against the anchor the hand
+  had been aimed at rather than the one the face has, reporting zero error for
+  an archer who was all over the place; a deflection that applied the error's
+  magnitude to both axes with a sign, grouping four times wider than the
+  anchor that caused it; a follow-through sampled on the single frame the
+  string goes, where the tremor is bigger than the travel; a bow hand that was
+  exactly still because it was IK'd to a fixed point; and a drawing hand that
+  reappeared beside the bow the instant the follow-through ended, 483 mm on
+  one frame.
+- CI now runs all seven gates.
+
 ## [0.46.0] — 2026-07-31
 
 ### Added

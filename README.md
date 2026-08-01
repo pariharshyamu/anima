@@ -118,6 +118,7 @@ npm run parkour   # hands and feet on the wall, and the landing on the floor
 npm run mood      # a layer that is monotone, bounded, and given back
 npm run lifting   # a bar over mid-foot, a rep that is not a sine, a set that decays
 npm run dining    # the fork reaches the mouth, and the spoon still has soup on it
+npm run archery   # the anchor holds, and the arrows group by exactly as much as it moved
 ```
 
 `skate` has found three shipped defects — a run stride factor nobody had measured

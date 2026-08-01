@@ -4827,6 +4827,232 @@ window.diningDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'archery',
+    title: 'The range: five bows, and the anchor decides the group',
+    group: 'Scale',
+    code: `// FIVE ARCHERS, FIVE BOWS, AND THE ARROWS ACTUALLY FLY.
+//
+// This is the trilogy's loop closed in one scene. ANIMA decides where the
+// nock is and how fast the arrow leaves; GAMA flies it and tells you what it
+// hit; the target is a prop. Nothing imports anything.
+//
+// Nothing about the flight was chosen:
+//
+//   THE SPEED   comes out of the bow's stored energy — peak x draw x storage
+//               x efficiency, then half-m-v-squared rearranged. A longbow
+//               lands on 54.9 m/s, and SCENA's ammunition table independently
+//               says an arrow does 55.
+//   THE ANGLE   comes out of the ballistic solution. Watch the far butts:
+//               the bow arm visibly rises for them and does not for the near
+//               ones, and past v-squared-over-g there is no angle at all.
+//   THE GROUP   comes out of the anchor. Millimetres of wander at the face
+//               become centimetres of miss at the target, and the number you
+//               can turn is \`skill\` — which is what the row is showing.
+//
+// Left to right the archers go from a novice to an Olympian, with the same
+// bodies and the same bows. The white marks on each butt are where their
+// arrows went.
+import { BufferAttribute, BufferGeometry, CylinderGeometry, Group, Line,
+         LineBasicMaterial, Mesh, MeshStandardMaterial, PlaneGeometry,
+         TorusGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { Archery, BOWS, BOW_STYLES, createHumanoid, OUTFITS,
+         quiverOf } from 'anima3d';
+import { Game, Hud, Projectiles } from 'gama3d';
+
+const palette = PALETTES.meadow;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(400, 400), createSurface('grass', { seed: 4 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const hud = new Hud();
+
+// GAMA flies the arrows. It is handed a launch and it does the rest — the
+// same gravity SCENA puts on an arrow.
+const shots = new Projectiles({ capacity: 220, gravity: 9.81, floor: 0 });
+scene.add(shots.mesh);
+
+const GOLD = new MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.8 });
+const STRAW = new MeshStandardMaterial({ color: 0xd9c48f, roughness: 0.95 });
+const RING = new MeshStandardMaterial({ color: 0x2b3a55, roughness: 0.9 });
+const HIT = new MeshStandardMaterial({ color: 0xf7fbff, roughness: 0.6 });
+const WOOD = new MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.85 });
+
+const LANE = 2.6;
+const RANGE = 22;
+
+/** A boss: straw, three rings, and somewhere to stick arrows. */
+function makeButt(x) {
+  const g = new Group();
+  const face = new Mesh(new CylinderGeometry(0.62, 0.62, 0.1, 22), STRAW);
+  face.rotation.x = Math.PI / 2;
+  face.position.y = 1.2;
+  g.add(face);
+  for (const [r, m] of [[0.4, RING], [0.2, RING], [0.09, GOLD]]) {
+    const ring = new Mesh(new TorusGeometry(r, 0.012, 6, 24), m);
+    ring.position.set(0, 1.2, -0.055);
+    g.add(ring);
+  }
+  const leg = new Mesh(new CylinderGeometry(0.05, 0.05, 1.2, 8), WOOD);
+  leg.position.y = 0.6;
+  g.add(leg);
+  g.position.set(x, 0, RANGE);
+  scene.add(g);
+  return g;
+}
+
+// ── Five archers, five bows, five skills ────────────────────────────
+const archers = BOW_STYLES.map((style, i) => {
+  const spec = BOWS[style];
+  const x = (i - 2) * LANE;
+  const butt = makeButt(x);
+
+  const rig = createHumanoid({ seed: 6 + i * 4, palette: OUTFITS.villager });
+  rig.object.position.set(x, 0, 0);
+  scene.add(rig.object);
+
+  // The skill ramp, left to right. One number, and it decides the group.
+  const skill = 0.3 + i * 0.17;
+  const arrows = quiverOf(10);
+  const bow = new Archery(rig, {
+    style, target: butt, arrows, skill,
+    seed: 3 + i * 5, fade: 0.5, tempo: 1,
+  });
+
+  // The line the bow arm is making, so the elevation reads from here.
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(6), 3));
+  const aim = new Line(geo, new LineBasicMaterial({ color: 0xffd889 }));
+  aim.frustumCulled = false;
+  scene.add(aim);
+
+  const marks = [];
+  const record = new Group();
+  record.position.set(x, 0, RANGE - 0.06);
+  scene.add(record);
+
+  // ANIMA publishes the launch; GAMA takes it from here.
+  bow.onLoose((s) => {
+    shots.fire(s.from, s.velocity, { life: 6, radius: 0.03 });
+    // …and where it would land, marked on the face. The lateral miss is the
+    // anchor error over the draw, times the range — which is \`groupAt\`, and
+    // which is the whole of why an anchor point exists.
+    const dot = new Mesh(new CylinderGeometry(0.028, 0.028, 0.02, 8), HIT);
+    dot.rotation.x = Math.PI / 2;
+    const across = new Vector3(1, 0, 0).dot(s.velocity.clone().normalize()) * RANGE;
+    const drop = (s.velocity.y / s.speed) * RANGE - 0.5 * 9.81 * (RANGE / s.speed) ** 2;
+    dot.position.set(across, 1.2 + drop * 0.5, 0);
+    record.add(dot);
+    marks.push(dot);
+    if (marks.length > 10) marks.shift().removeFromParent();
+  });
+
+  return { style, spec, rig, bow, arrows, butt, aim, geo, x, skill, marks, record };
+});
+
+const from = new Vector3();
+const to = new Vector3();
+let t = 0;
+let loosed = 0;
+for (const a of archers) a.bow.onLoose(() => loosed++);
+
+game.onUpdate((tick) => {
+  const dt = tick.delta;
+  t += dt;
+  shots.update(dt);
+
+  for (const a of archers) {
+    a.bow.update(dt);
+
+    // The aim line: bow hand out to where the arrow is going. It rises for a
+    // far butt because the ballistic solution says it has to.
+    a.rig.bones[a.style === 'crossbow' ? 'RightHand' : 'LeftHand'].getWorldPosition(from);
+    to.copy(from).add(new Vector3(0, Math.sin(a.bow.elevation), Math.cos(a.bow.elevation)).multiplyScalar(2.2));
+    const p = a.geo.attributes.position;
+    p.setXYZ(0, from.x, from.y, from.z);
+    p.setXYZ(1, to.x, to.y, to.z);
+    p.needsUpdate = true;
+
+    // A quiver that empties gets refilled — an archery range is a place where
+    // people shoot more than ten arrows.
+    if (a.bow.done && !a.resting) a.resting = t + 2.5;
+    if (a.resting && t > a.resting) {
+      a.resting = 0;
+      a.arrows.setCount(10);
+      for (const m of a.marks) m.removeFromParent();
+      a.marks.length = 0;
+      a.bow.release();
+      a.bow = new Archery(a.rig, {
+        style: a.style, target: a.butt, arrows: a.arrows, skill: a.skill,
+        seed: 3, fade: 0.5,
+      });
+      a.bow.onLoose((s) => {
+        shots.fire(s.from, s.velocity, { life: 6, radius: 0.03 });
+        loosed++;
+        const dot = new Mesh(new CylinderGeometry(0.028, 0.028, 0.02, 8), HIT);
+        dot.rotation.x = Math.PI / 2;
+        const across = new Vector3(1, 0, 0).dot(s.velocity.clone().normalize()) * RANGE;
+        dot.position.set(across, 1.2, 0);
+        a.record.add(dot);
+        a.marks.push(dot);
+        if (a.marks.length > 10) a.marks.shift().removeFromParent();
+      });
+    }
+  }
+
+  const shown = archers[Math.floor(t / 4) % archers.length];
+  hud.objective(
+    shown.spec.label.toUpperCase() +
+    '   skill ' + shown.skill.toFixed(2) +
+    '   arrow ' + shown.bow.shots +
+    '   ' + shown.bow.phase
+  );
+  hud.prompt(
+    shown.bow.speed.toFixed(1) + ' m/s from ' + shown.spec.peak + ' N' +
+    '   holding ' + shown.bow.hold.toFixed(0) + ' N' +
+    '   elevation ' + shown.bow.elevation.toFixed(3) +
+    '   predicted group ' + (shown.bow.spread * 100).toFixed(0) + ' cm' +
+    '   reach ' + shown.bow.reach.toFixed(0) + ' m'
+  );
+  hud.update(dt);
+});
+
+// Behind the shooting line and above it, so all five lanes and all five
+// butts are in one frame — the elevation difference and the groups are both
+// comparisons, and a comparison you cannot see both halves of is not one.
+game.camera.position.set(0, 4.6, -7.4);
+game.camera.lookAt(0, 1.5, 13);
+
+window.archeryDebug = () => ({
+  archers: archers.length,
+  // The scene's OWN clock. Headless SwiftShader runs this at about a third of
+  // real time, and a range where nobody has shot yet looks exactly like one
+  // where nobody ever will.
+  clock: Number(t.toFixed(1)),
+  loosed,
+  inFlight: shots.active,
+  arrows: archers.map((a) => a.bow.shots),
+  // One body, one bow each, and one number between them. If these do not
+  // order by skill, the thing the scene is named for is not happening.
+  group: archers.map((a) => ({
+    bow: a.style,
+    skill: Number(a.skill.toFixed(2)),
+    speed: Number(a.bow.speed.toFixed(1)),
+    holdN: Number(a.bow.hold.toFixed(0)),
+    predictedCm: Number((a.bow.spread * 100).toFixed(1)),
+  })),
+  marks: archers.map((a) => a.marks.length),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

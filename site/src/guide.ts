@@ -17,6 +17,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'mood', title: 'Mood: the layer, not the pose' },
   { id: 'lifting', title: 'Lifting: the rep that decays' },
   { id: 'dining', title: 'Dining: the utensil is the mechanism' },
+  { id: 'archery', title: 'Archery: the anchor decides the group' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

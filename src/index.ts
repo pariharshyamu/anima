@@ -238,6 +238,29 @@ export {
   type RowStyle,
 } from './rowing';
 
+// Archery — the draw is a force, the anchor is a contact, the group is the metric.
+export {
+  Archery,
+  BOWS,
+  BOW_STYLES,
+  arrowSpeed,
+  elevationFor,
+  groupAt,
+  holdForce,
+  maxRange,
+  measureShot,
+  quiverOf,
+  type AnchorPoint,
+  type ArcheryOptions,
+  type BowSpec,
+  type BowStyle,
+  type DrawStyle,
+  type Loose,
+  type ShotOptions,
+  type ShotPhase,
+  type ShotReport,
+} from './archery';
+
 // Dining — the utensil is the mechanism, not the prop.
 export {
   Dining,
