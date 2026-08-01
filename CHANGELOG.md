@@ -20,6 +20,50 @@ release found.
 
 ## Releases
 
+## [0.53.0] — 2026-08-01
+
+### Added
+
+- **`Sparring` — the payoff, and the point of the whole fighting track.** Two
+  fighters, and a decision function that reads four numbers: `strikeReach` on
+  its own body against the gap, `stability()` for what the strike costs in
+  balance, joules left in the tank, and `coverageOf()` for where the opponent
+  is open. **It does not read height, weight, style or who should win.**
+  And yet **the longer fighter wins 40 of 45 pairs across ten seeded bodies,
+  with the reach gap predicting the margin at r = 0.673** — because a longer
+  arm measures further, so there is a band of distance one fighter can reach
+  across and the other has to walk through.
+- **Reach is not height.** Four pairs in the sweep are taller *and* shorter in
+  the reach, and **all four lose.** Gated: if a body ever wins a pair it is
+  taller but shorter-reaching in, the gate fails.
+- **`Fighter`** — a body, a style, a `Guard`, a `Striking` and a card of what
+  it can do, measured once. `adapt()` is the only memory in a bout: between
+  rounds a fighter covers where they have been hit, choosing the guard by
+  measuring **every** guard in the library on that body rather than from a
+  table of counters. **Round one blocks nothing and round two blocks 31 of 63,
+  taking 39% less.**
+- **Fatigue is a work budget.** Muscle runs at ~20% efficiency and a body holds
+  ~300 J/kg of anaerobic reserve — both published figures — so a 68.7 kg body
+  has 20.6 kJ in it and eight rounds spends 52% of it. A tired fighter has no
+  debuff: they have spent the energy, `skill` falls, and the expensive strikes
+  stop being affordable, so the last round is jabs.
+- **`npm run sparring`, the twelfth gate**, and CI runs all twelve.
+- **The `bout` playground** — two seeded fighters, reach rings drawn at their
+  measured range, and the corner between rounds.
+
+### Fixed
+
+- **A defender's `Guard` was being overwritten by their own `Striking` every
+  frame.** `Striking` drives both arms and whoever updates last owns the hands,
+  so every fighter defended with their hands wherever their own last punch left
+  them. The guard stopped **0 of 83 crosses** in a module whose own gate says a
+  peekaboo stops a cross. The guard now owns the hands except while a strike is
+  in the air.
+- **A parry triggered on declaration rather than on sight** — the exact defect
+  `Guard`'s gate caught in 0.50.0, reintroduced one release later by a consumer
+  of it. Reactions are now scheduled at `reaction` seconds after the strike is
+  thrown.
+
 ## [0.52.0] — 2026-08-01
 
 ### Added

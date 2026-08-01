@@ -407,3 +407,20 @@ export {
   type FightStyleSpec,
   type StyleProfile,
 } from './fightstyle';
+
+// Sparring — the payoff: reach advantage emerges, nobody encodes it.
+export {
+  Bout,
+  Fighter,
+  ANAEROBIC_RESERVE,
+  MUSCLE_EFFICIENCY,
+  chooseStrike,
+  measureBout,
+  preferredGap,
+  strikeCost,
+  type BoutOptions,
+  type BoutReport,
+  type Exchange,
+  type FighterOptions,
+  type StrikeCard,
+} from './sparring';

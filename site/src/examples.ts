@@ -5664,6 +5664,131 @@ window.stylesDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'bout',
+    title: 'Bout: nobody encoded the reach advantage',
+    group: 'Scale',
+    code: `// TWO FIGHTERS. THE AI READS FOUR NUMBERS AND NOT ONE OF THEM IS HEIGHT.
+//
+// The tall one on the left and the short one on the right are the same code
+// with different seeds. The decision each of them makes, every time, is:
+//
+//   can this limb GET there          strikeReach() on my own body vs the gap
+//   can I afford the BALANCE         stability(), right now
+//   can I afford the FUEL            joules left in a 300 J/kg tank
+//   where are they OPEN              coverageOf() on their current pose
+//
+// No height. No weight. No style matchup table. No dice.
+//
+// And the longer fighter wins — 40 of 45 pairs across ten seeded bodies, with
+// the reach gap predicting the margin at r = 0.673 — because a longer arm
+// MEASURES further, so there is a band of distance where one of them can
+// reach and the other has to walk through it.
+//
+// Watch the corner between rounds. Round one blocks nothing: both open in the
+// guard their style chose, and each aims at whatever it does not cover. Then
+// they cover it, and the incoming drops by a third and stays there. The only
+// memory in the whole bout is 'where have I been hit', and which guard to
+// switch to is measured off every guard in the library tried on that body.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, RingGeometry, DoubleSide } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, Bout, Fighter } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 5 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// The mat, so the eye has somewhere to put the fight.
+const mat = new Mesh(
+  new RingGeometry(1.25, 1.33, 48),
+  new MeshStandardMaterial({ color: 0x99332a, emissive: 0x2a0f0c, side: DoubleSide })
+);
+mat.rotation.x = -Math.PI / 2;
+mat.position.y = 0.012;
+scene.add(mat);
+
+// Seed 42 is 1.750 m; seed 7 is 1.603 m. Same code, same style, same skill.
+const tall = new Fighter(createHumanoid({ seed: 42 }), { style: 'boxing', skill: 0.8 });
+const short = new Fighter(createHumanoid({ seed: 7 }), { style: 'boxing', skill: 0.8 });
+scene.add(tall.rig.object, short.rig.object);
+
+const bout = new Bout(tall, short, { rounds: 4, roundSeconds: 22 });
+
+// A post each: what has got through them, in kg-m/s.
+const posts = [tall, short].map((f, i) => {
+  const post = new Mesh(
+    new BoxGeometry(0.11, 1, 0.11),
+    new MeshStandardMaterial({ color: 0xcc4422, emissive: 0x3a1408 })
+  );
+  post.position.set(i === 0 ? -0.95 : 0.95, 1.2, 0);
+  scene.add(post);
+  return post;
+});
+// ...and a ring under each, sized by how far that body can actually reach.
+for (const [i, f] of [tall, short].entries()) {
+  const ring = new Mesh(
+    new RingGeometry(f.range - 0.02, f.range, 40),
+    new MeshStandardMaterial({ color: 0x3a8fd0, emissive: 0x0b2438, side: DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  ring.userData.who = f;
+  scene.add(ring);
+  posts[i].userData.ring = ring;
+}
+
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  if (!bout.done) bout.update(dt);
+  for (const [i, f] of [tall, short].entries()) {
+    const h = 0.06 + Math.min(2.4, f.through / 220);
+    posts[i].scale.y = h;
+    posts[i].position.y = 0.9 + h / 2;
+    // The reach ring follows the body, so you can SEE the band where one of
+    // them can touch the other and the other cannot.
+    posts[i].userData.ring.position.z = f.rig.object.position.z;
+  }
+});
+
+game.camera.position.set(2.5, 1.6, 2.2);
+game.camera.lookAt(0, 1.0, 0);
+
+window.boutDebug = () => ({
+  // The scene's OWN clock. Headless SwiftShader runs at about a third of real
+  // time, and a gym where nobody has thrown yet looks exactly like one where
+  // nobody ever will.
+  clock: Number(t.toFixed(1)),
+  round: bout.round,
+  gap: Number(bout.gap.toFixed(3)),
+  exchanges: bout.exchanges.length,
+  stopped: bout.exchanges.filter((e) => e.stopped).length,
+  guards: bout.guards,
+  fighters: [tall, short].map((f) => ({
+    height: Number(f.rig.height.toFixed(3)),
+    reach: Number(f.range.toFixed(3)),
+    guard: f.guarding,
+    thrown: f.thrown,
+    through: Number(f.through.toFixed(0)),
+    taken: Number(f.taken.toFixed(0)),
+    fatigue: Number((f.fatigue * 100).toFixed(0)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
