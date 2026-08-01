@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, ten gates
+    name: typecheck, tests, build, eleven gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -61,6 +61,7 @@ jobs:
       - run: npm run striking
       - run: npm run guard
       - run: npm run grappling
+      - run: npm run fightstyle
 
   browser:
     name: every example renders

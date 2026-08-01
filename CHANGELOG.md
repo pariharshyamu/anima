@@ -20,6 +20,54 @@ release found.
 
 ## Releases
 
+## [0.52.0] — 2026-08-01
+
+### Added
+
+- **`FightStyle` — a style is where the feet are.** Six: `boxing`, `karate`,
+  `muayThai`, `wingChun`, `taekwondo`, `brawler`. Each is three facts — a
+  stance, a guard and a repertoire — and there is no damage multiplier in the
+  table and nowhere one could be added. Everything else is a consequence
+  measured by a module that was already there: `stability()` and
+  `breakEffort()` for the stance, `coverageOf()` for the guard,
+  `measureStrike()` for the strikes. **Nobody wins every column and nobody
+  loses every column**, which is the gate's headline because the two ways this
+  can fail look identical from outside.
+- **`StanceShape` and `applyStance()`** — a stance stated as two footprints and
+  a pelvis height rather than a pile of joint angles, so it means the same
+  thing on a 1.6 m body and a 1.9 m one. `sink` is *extra* crouch: the drop
+  needed to reach the footprints at all is Pythagoras on the worst leg.
+  **A long stance is automatically a low one — karate 115 mm against a
+  brawler's 41 mm** — and it is the length that does it, not the width, because
+  a pelvis is already 90 mm wide. That came out backwards on the first attempt.
+- **`styleProfile()`** — eight measured columns per style. The long stance is
+  the rooted one (**karate 12.4° against a brawler's 9.5°, and the brawler goes
+  over backwards**); the centre line is its own column and **wing chun's long
+  guard is the only one in the library with anything on it, at 20.0%** against
+  a peekaboo's 0.0%.
+- **`Striking` gains `footing` and `follow`.** `follow` is how far the hips and
+  thorax keep turning through contact — what `TAIL` was. It was built to
+  express *kime*, and then **measured: it buys a cross 4.13× the effective mass
+  for −0.000 of balance and 0.000 s of recovery.** That is a free damage
+  multiplier with a physical-sounding name, so no style sets it and the gate
+  asserts that none ever does.
+- **`src/limbik.ts`** — the two-bone IK, in one place instead of two.
+- **`npm run fightstyle`, the eleventh gate**, and CI runs all eleven.
+- **The `styles` playground** — six fighters, six styles, one body.
+
+### Fixed
+
+- **`restJoint` cached "at rest" from whatever pose the body was in the first
+  time anybody asked.** Ask for a reach with a fighter already stood in a wide
+  stance and the cache freezes a pelvis that dropped 50 mm to get there, and
+  every reach that body reports afterwards is 50 mm short — *depending on the
+  order things were measured in*. It now reads the skeleton's bind pose.
+  A consequence: **reach is a fact about an arm, not about a stance**, and the
+  same cross reaches 0.591 m from all six stances to the millimetre.
+- `styleProfile` measures the guard from a clean body. `measureStrike` does not
+  lower the guard when it finishes, and measuring afterwards read the same long
+  guard as 36.3% standalone and 28.0% in a profile.
+
 ## [0.51.0] — 2026-08-01
 
 ### Added

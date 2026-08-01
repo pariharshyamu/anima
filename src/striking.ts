@@ -1,5 +1,12 @@
-import { Object3D, Quaternion, Vector3 } from 'three';
+import { Matrix4, Object3D, Quaternion, Vector3 } from 'three';
 import type { BoneName, HumanoidRig } from './humanoid';
+import {
+  holdStance,
+  stanceDrop,
+  stanceFeet,
+  type StanceHold,
+  type StanceShape,
+} from './stance';
 
 /**
  * Striking — where the damage is a MEASUREMENT, not a table.
@@ -52,9 +59,9 @@ const ease = (t: number): number => {
  * A hip does not stop at contact. It turns over through the punch, which is
  * both what coaches say and what makes the number come out right.
  */
-const ramp = (u: number, k: number): number => {
+const ramp = (u: number, k: number, tail = TAIL): number => {
   const x = u / Math.max(1e-6, k);
-  return x >= 1 ? 1 + TAIL * (x - 1) : ease(x);
+  return x >= 1 ? 1 + tail * (x - 1) : ease(x);
 };
 
 /** How much a proximal link keeps turning past its nominal angle. */
@@ -597,18 +604,40 @@ interface LimbGeometry {
 
 const REST = new WeakMap<HumanoidRig, Map<string, Vector3>>();
 
-/** Where a joint sits in the rig's frame with the body standing at rest. */
+/**
+ * Where a joint sits in the rig's frame with the body standing at rest.
+ *
+ * Read out of the SKELETON'S BIND POSE, which is what "at rest" means, rather
+ * than out of whatever the body happened to be doing the first time anybody
+ * asked. The lazy version was indistinguishable from this one for as long as
+ * every rig was measured from a clean pose — and then `FightStyle` asked for a
+ * reach with a body already standing in a wide stance, the cache froze a
+ * pelvis that had dropped 50 mm to get there, and every reach that body ever
+ * reported afterwards was 50 mm short. Worse, it was 50 mm short depending on
+ * the ORDER things were measured in, which is the kind of defect that survives
+ * a green test suite indefinitely.
+ */
 function restJoint(rig: HumanoidRig, bone: BoneName, out: Vector3): Vector3 {
   let cache = REST.get(rig);
   if (!cache) REST.set(rig, (cache = new Map()));
   const had = cache.get(bone);
   if (had) return out.copy(had);
-  rig.object.updateWorldMatrix(true, true);
-  rig.bones[bone].getWorldPosition(out);
-  rig.object.worldToLocal(out);
+  const index = rig.skeleton.bones.indexOf(rig.bones[bone]);
+  if (index >= 0) {
+    BIND.copy(rig.skeleton.boneInverses[index]).invert();
+    out.setFromMatrixPosition(BIND);
+  } else {
+    // A bone outside the skeleton has no bind matrix. Nothing in this library
+    // builds one, but a retargeted rig might.
+    rig.object.updateWorldMatrix(true, true);
+    rig.bones[bone].getWorldPosition(out);
+    rig.object.worldToLocal(out);
+  }
   cache.set(bone, out.clone());
   return out;
 }
+
+const BIND = new Matrix4();
 
 const V = new Vector3();
 
@@ -687,6 +716,30 @@ export interface StrikingOptions {
   fade?: number;
   /** Which side leads. Orthodox leads with the left. */
   stance?: 'orthodox' | 'southpaw';
+  /**
+   * Where the feet are. Supplied by a `FightStyle`, or left alone for the
+   * boxing stance this module has always held.
+   *
+   * It is not decoration. `stability()` reads the polygon the feet make, so
+   * the stance decides what every strike costs in balance; `strikeReach`
+   * measures from a shoulder the stance has moved; and `breakEffort` is a
+   * statement about the same polygon. Change the feet and all three move.
+   */
+  footing?: StanceShape;
+  /**
+   * How far past contact the strike drives, 0..1.
+   *
+   * Default 0.45, which is what this module has always used. 0 is *kime* —
+   * the body stops turning the moment the ramp saturates, so the surface
+   * arrives on a still torso. Higher values keep the hips and thorax turning
+   * THROUGH contact, and since the effective mass is a sum over what is still
+   * moving toward the target, that is more of the body arriving. This is NOT a damage multiplier: it changes where on the ramp the
+   * surface is when it lands, and the effective mass at that instant is then
+   * measured exactly as it always was. Driving through buys impulse and pays
+   * for it in balance, and both halves of that come out of the measurement
+   * rather than out of a table.
+   */
+  follow?: number;
 }
 
 /**
@@ -721,6 +774,10 @@ export class Striking {
   readonly leadSide: 'Left' | 'Right';
 
   private readonly mass: number;
+  private readonly footing: StanceShape | null;
+  private readonly tail: number;
+  private footHold: StanceHold | null = null;
+  private stanceGave = 0;
   private target: Object3D | null;
 
   private weight = 0;
@@ -763,6 +820,8 @@ export class Striking {
     // between punches is the tell that this is a clip player.
     this.wanted = 1;
     this.target = options.target ?? null;
+    this.footing = options.footing ?? null;
+    this.tail = Math.max(0, options.follow ?? TAIL);
     this.mass = bodyMass(rig);
   }
 
@@ -957,8 +1016,8 @@ export class Striking {
     // unskilled fighter fires everything at once and the momentum sum comes
     // out smaller because half the body has already stopped moving by contact.
     const lag = MAX_LAG * this.skill;
-    const hipDrive = ramp(u, 1 - 2 * lag);
-    const trunkDrive = ramp(u, 1 - lag);
+    const hipDrive = ramp(u, 1 - 2 * lag, this.tail);
+    const trunkDrive = ramp(u, 1 - lag, this.tail);
     // NOT eased. `ease` has zero slope at both ends, so a limb driven by it is
     // stationary at full extension — and since that is exactly where contact
     // happens, every strike measured zero speed and therefore zero impulse.
@@ -1097,6 +1156,19 @@ export class Striking {
   private stance(spec: StrikeSpec, extend: number, w: number): void {
     const sign = this.leadSide === 'Left' ? 1 : -1;
     const kick = spec.limb === 'leg' ? (spec.side === 'lead' ? this.leadSide : other(this.leadSide)) : null;
+    if (this.footing) {
+      // Footprints, not angles. The pelvis comes down as a DELTA, the way the
+      // weight shift does, because `driveBase` has already added this frame's
+      // hip turn to the same bone and resetting it here would throw that away.
+      if (!this.footHold) this.footHold = holdStance(this.rig);
+      const drop = stanceDrop(this.rig, this.footHold, this.footing, this.leadSide) * w;
+      this.rig.bones.Hips.position.y += this.stanceGave - drop;
+      this.stanceGave = drop;
+      stanceFeet(this.rig, this.footHold, this.footing, this.leadSide, w, kick, (b) =>
+        this.remember(b)
+      );
+      return;
+    }
     for (const side of ['Left', 'Right'] as const) {
       if (side === kick) continue; // the kicking leg is driven separately
       const isLead = side === this.leadSide;
@@ -1408,6 +1480,10 @@ export class Striking {
     if (this.hipHeld) {
       this.rig.bones.Hips.position.z -= this.hipGave;
       this.hipGave = 0;
+    }
+    if (this.stanceGave !== 0) {
+      this.rig.bones.Hips.position.y += this.stanceGave;
+      this.stanceGave = 0;
     }
   }
 

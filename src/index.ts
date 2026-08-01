@@ -381,3 +381,29 @@ export {
   type ThrowReport,
   type ThrowSpec,
 } from './grappling';
+
+// Stance — a stance is where the feet are, not a pile of joint angles.
+export {
+  FIGHTING_STANCE,
+  applyStance,
+  holdStance,
+  releaseStance,
+  stanceDrop,
+  stanceFeet,
+  type StanceHold,
+  type StanceShape,
+} from './stance';
+export { pointBone, solveLimb } from './limbik';
+
+// FightStyle — a style is where the feet are, not a damage multiplier.
+export {
+  FightStyle,
+  FIGHT_STYLES,
+  FIGHT_STYLE_NAMES,
+  STYLED_STRIKES,
+  styleProfile,
+  type FightStyleName,
+  type FightStyleOptions,
+  type FightStyleSpec,
+  type StyleProfile,
+} from './fightstyle';

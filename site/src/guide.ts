@@ -21,6 +21,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'striking', title: 'Striking: the mass is measured' },
   { id: 'guard', title: 'Guard: coverage is geometry' },
   { id: 'grappling', title: 'Grappling: no kuzushi, no throw' },
+  { id: 'fightstyle', title: 'FightStyle: a style is where the feet are' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

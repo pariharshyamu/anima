@@ -1,5 +1,6 @@
-import { Object3D, Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
 import type { BoneName, HumanoidRig } from './humanoid';
+import { solveLimb, turnAbout } from './limbik';
 import { bodyMass, centreOfMass, stability } from './striking';
 
 /**
@@ -363,27 +364,14 @@ const FIXED_STEP = 1 / 120;
 const MAX_SUBSTEPS = 8;
 
 const PQ = new Quaternion();
-const PB = new Quaternion();
 const QA = new Quaternion();
-const QB = new Quaternion();
 const S1 = new Vector3();
 const S2 = new Vector3();
 const S3 = new Vector3();
 const S4 = new Vector3();
-const S5 = new Vector3();
 const LEAN_AXIS = new Vector3();
 const COM = new Vector3();
 
-/** Rotate a bone about a WORLD axis, on top of whatever it is already doing. */
-function turnAbout(bone: Object3D, worldAxis: Vector3, angle: number): void {
-  const parent = bone.parent;
-  PQ.identity();
-  if (parent) parent.getWorldQuaternion(PQ);
-  PQ.invert();
-  S5.copy(worldAxis).applyQuaternion(PQ).normalize();
-  PB.setFromAxisAngle(S5, angle);
-  bone.quaternion.premultiply(PB);
-}
 
 /**
  * The axis a body tips about when its top goes toward `dir`.
@@ -396,65 +384,6 @@ function tipAxis(dir: Vector3, out: Vector3): Vector3 {
   return out.crossVectors(Y, dir).normalize();
 }
 
-/** Rotate one bone so its own rest axis points along a world direction. */
-function point(
-  rig: HumanoidRig,
-  bone: BoneName,
-  axis: Vector3,
-  worldDir: Vector3,
-  w: number,
-  before?: (b: BoneName) => void
-): void {
-  const b = rig.bones[bone];
-  before?.(bone);
-  const parent = b.parent;
-  QA.identity();
-  if (parent) parent.getWorldQuaternion(QA);
-  QA.invert();
-  S5.copy(worldDir).applyQuaternion(QA).normalize();
-  QB.setFromUnitVectors(axis, S5);
-  b.quaternion.slerp(QB, clamp01(w));
-}
-
-/**
- * Two-link IK: put the tip of a limb on a point, with the middle joint bending
- * toward `pole`. The same solve `Striking` uses, over whichever rig is handed
- * in — there are two of them here and neither owns it.
- */
-function solveLimb(
-  rig: HumanoidRig,
-  root: BoneName,
-  mid: BoneName,
-  tip: BoneName,
-  target: Vector3,
-  pole: Vector3,
-  w: number,
-  before?: (b: BoneName) => void
-): void {
-  const upper = rig.bones[mid].position.length();
-  const lower = rig.bones[tip].position.length();
-  const axis = S1.copy(rig.bones[mid].position).normalize();
-  rig.bones[root].getWorldPosition(S2);
-  const to = S3.subVectors(target, S2);
-  const span = clamp(to.length(), Math.abs(upper - lower) + 1e-4, upper + lower - 1e-4);
-  to.normalize();
-  const cosA = clamp((upper * upper + span * span - lower * lower) / (2 * upper * span), -1, 1);
-  const a = Math.acos(cosA);
-  const perp = S4.copy(pole).addScaledVector(to, -pole.dot(to));
-  if (perp.lengthSq() < 1e-8) perp.set(0, -1, 0).addScaledVector(to, -to.y * -1);
-  perp.normalize();
-  const upperDir = PQ2.copy(to).multiplyScalar(Math.cos(a)).addScaledVector(perp, Math.sin(a));
-  point(rig, root, axis, upperDir, w, before);
-  // The middle joint is computed rather than read: a bone's matrixWorld is a
-  // frame stale until the whole hierarchy is updated, and aiming the forearm
-  // from last frame's elbow is how a limb ends up chasing itself.
-  S2.addScaledVector(upperDir, upper);
-  const lowerDir = PQ3.subVectors(target, S2).normalize();
-  point(rig, mid, axis, lowerDir, w, before);
-}
-
-const PQ2 = new Vector3();
-const PQ3 = new Vector3();
 
 // ---------------------------------------------------------- breaking a base
 

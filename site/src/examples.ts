@@ -5519,6 +5519,151 @@ window.dojoDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'styles',
+    title: 'Styles: a style is where the feet are',
+    group: 'Scale',
+    code: `// SIX FIGHTERS, SIX STYLES, AND NOT ONE DAMAGE MULTIPLIER BETWEEN THEM.
+//
+// Every fighter on this line is the same body. What differs is three facts:
+// where the feet are, which guard the hands hold, and what the fighter throws
+// at all. Everything else you can see is a CONSEQUENCE, measured by a module
+// that was already there for its own reasons.
+//
+//   the footprints    stability() reads the polygon the feet make, so the
+//                     stance decides what every strike costs in balance and
+//                     which way this fighter gets thrown
+//   the guard         coverageOf() samples the directions a strike could come
+//                     from and asks whether an arm is on the line
+//   the repertoire    availability, not advantage. A style does not make an
+//                     elbow hurt more; it makes an elbow available
+//
+// The green ring under each fighter is how rooted they are — how far they have
+// to be tipped before they are going over, measured by breakEffort() on the
+// body actually standing there. The post behind them is what their guard
+// covers. Watch the karate stance sink as it settles: nobody typed that in,
+// the pelvis has to come down 115 mm just for the legs to REACH a stance that
+// long, and a brawler standing twice as wide barely crouches at all.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, RingGeometry, DoubleSide } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, FightStyle, FIGHT_STYLES, FIGHT_STYLE_NAMES,
+         Guard, Striking, styleProfile } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('concrete', { seed: 11 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const SPACING = 2.1;
+
+const fighters = FIGHT_STYLE_NAMES.map((name, i) => {
+  const x = (i - (FIGHT_STYLE_NAMES.length - 1) / 2) * SPACING;
+  const spec = FIGHT_STYLES[name];
+
+  const rig = createHumanoid({ seed: 5 });
+  rig.object.position.set(x, 0, 0);
+  scene.add(rig.object);
+
+  // Measured BEFORE anybody poses anything, on a clean body.
+  const profile = styleProfile(rig, name);
+
+  // The stance goes first every frame; Striking composes on top of it.
+  const style = new FightStyle(rig, name, { fade: 0.5 });
+  const guard = new Guard(rig, { style: spec.guard, skill: 0.8, fade: 0.3 });
+  const striking = new Striking(rig, {
+    target: null, skill: 0.8, fade: 0.12, footing: spec.stance,
+  });
+
+  // How rooted they are: the ring grows with the tip they can take.
+  const ring = new Mesh(
+    // Centred on the range the six actually span (9.0° to 12.4°) rather than
+    // on zero, because a ring that starts at zero makes a 38% difference look
+    // like a 6% one. The number is in the readout; this is the shape of it.
+    new RingGeometry(0.2, 0.2 + (profile.rooted - 0.14) * 9, 28),
+    new MeshStandardMaterial({ color: 0x33aa55, emissive: 0x0c2e16, side: DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.02, 0);
+  scene.add(ring);
+
+  // What the guard covers of the head.
+  const post = new Mesh(
+    new BoxGeometry(0.1, Math.max(0.06, profile.cover * 2.6), 0.1),
+    new MeshStandardMaterial({ color: 0x4488cc, emissive: 0x0e2438 })
+  );
+  post.position.set(x - 0.18, 1.8 + (profile.cover * 2.6) / 2, -0.35);
+  scene.add(post);
+
+  // ...and of the centre line, which is a different question entirely.
+  const pip = new Mesh(
+    new CylinderGeometry(0.07, 0.07, Math.max(0.03, profile.centre * 1.4), 12),
+    new MeshStandardMaterial({ color: 0xddaa33, emissive: 0x3a2b08 })
+  );
+  pip.position.set(x + 0.18, 1.8 + (profile.centre * 1.4) / 2, -0.35);
+  scene.add(pip);
+
+  return { name, rig, style, guard, striking, profile, beat: 0 };
+});
+
+let cool = 1.2;
+let t = 0;
+let round = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  cool -= dt;
+  if (cool <= 0) {
+    for (const f of fighters) {
+      // Each fighter throws from their OWN repertoire, in order. Nobody is
+      // throwing a strike their style does not have.
+      f.striking.throwStrike(f.style.at(f.beat));
+      f.beat++;
+    }
+    round++;
+    cool = 1.9;
+  }
+  for (const f of fighters) {
+    f.style.update(dt);
+    f.guard.update(dt);
+    f.striking.update(dt);
+  }
+});
+
+game.camera.position.set(0, 2.6, 10.4);
+game.camera.lookAt(0, 1.2, -0.15);
+
+window.stylesDebug = () => ({
+  fighters: fighters.length,
+  // The scene's OWN clock. Headless SwiftShader runs at about a third of real
+  // time, and a gym where nobody has thrown yet looks exactly like one where
+  // nobody ever will.
+  clock: Number(t.toFixed(1)),
+  rounds: round,
+  byStyle: fighters.map((f) => ({
+    style: f.name,
+    guard: FIGHT_STYLES[f.name].guard,
+    thrown: f.beat,
+    strike: f.style.at(Math.max(0, f.beat - 1)),
+    base: Number(f.profile.base.toFixed(3)),
+    cover: Number((f.profile.cover * 100).toFixed(1)),
+    centre: Number((f.profile.centre * 100).toFixed(1)),
+    rooted: Number(((f.profile.rooted * 180) / Math.PI).toFixed(1)),
+    weakLine: f.profile.weakLine,
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
