@@ -20,6 +20,45 @@ release found.
 
 ## Releases
 
+## [0.54.0] — 2026-08-01
+
+### Added
+
+- **`npm run tameshiwari`, the thirteenth gate — and the only one that imports
+  two libraries.** ANIMA derives what a strike arrives with from Dempster's
+  segment masses and a measured surface velocity. SCENA 0.108.0 derives what a
+  board takes to break from the Wood Handbook, ASTM D245 and three-point beam
+  bending. **Neither package imports the other.** Both produce SI units, so
+  they can be put side by side — and either they agree about the world or one
+  of them is wrong about physics rather than about an API.
+- SCENA's number is checked from this repository against a published
+  measurement: Feld, McNair and Wilk put a 30 × 15 × 2.5 cm pine board at about
+  **3.1 kN** in *Scientific American* in 1979, and the derivation says **3.62
+  kN** with nothing fitted. A number only its own tests believe is a number
+  nobody has checked.
+
+### What it settled, which was not what it was written to check
+
+The gate was written to ask whether a hammerfist breaks a board. **The question
+turned out to be in the wrong units.**
+
+> The lightest strike in the library clears the dearest board **1.9× over on
+> energy**. The heaviest clears a pine board by **425×**.
+
+A jab carries 16 J; a pine board needs 1.9 J. An energy criterion says
+everything breaks everything, which is not what happens in a dojo. **What a
+person runs out of is force, in the first millimetre** — which is why SCENA
+states its threshold in newtons, and a conclusion neither library could have
+reached alone.
+
+### And the piece that is deliberately still missing
+
+Finishing the comparison — *does this strike break this board* — needs one
+number **neither library measures**: how compliant a fist is. It could be
+invented. It has not been, because inventing it is the thing these gates exist
+to refuse, and because the honest result is more interesting than the fudged
+one. There is no board-breaking playground in this release for the same reason.
+
 ## [0.53.0] — 2026-08-01
 
 ### Added

@@ -23,6 +23,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'grappling', title: 'Grappling: no kuzushi, no throw' },
   { id: 'fightstyle', title: 'FightStyle: a style is where the feet are' },
   { id: 'sparring', title: 'Sparring: the reach advantage emerges' },
+  { id: 'tameshiwari', title: 'The tameshiwari handshake: two libraries, one physics' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 
