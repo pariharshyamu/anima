@@ -92,6 +92,12 @@ export interface FootSkateOptions {
    * Default 0.02 — a shade under a shoe sole.
    */
   groundTolerance?: number;
+  /**
+   * The bone whose vertical travel is reported as `bodyRise`. Default `Hips`.
+   * `bodyRise` is 0 when the named bone is absent, so a rig that has no such
+   * bone simply does not report the number rather than throwing.
+   */
+  body?: string;
 }
 
 export interface FootSkateReport {
@@ -155,6 +161,22 @@ export interface FootSkateReport {
    * always does.
    */
   airborne: number;
+  /**
+   * How far the pelvis travels vertically over one cycle, in metres.
+   *
+   * The companion to `airborne`, and the other thing a horizontal skate
+   * measurement cannot see. A gait can have a foot down at every instant and
+   * still be wrong, because a leg of fixed length swung about the hip is a
+   * COMPASS: the pelvis rides highest when the leg is vertical and drops as
+   * the legs spread, by `leg × (1 − cos θ)`. Nothing corrects that on its own,
+   * and unchecked it gave ANIMA a walk whose hips travelled 95 mm and a run at
+   * 234 — against the 46 mm a real pelvis moves at a walk. It reads as a
+   * bobbing, hopping gait, and no still frame shows it.
+   *
+   * Read off the transform hierarchy, so it includes the ride-height solve,
+   * the pelvis's own roll, and whatever the bake did to them.
+   */
+  bodyRise: number;
   samples: number;
 }
 
@@ -197,9 +219,12 @@ export function measureFootSkate(
     return probe.z;
   };
 
-  // Vertical, before anything horizontal: does a foot ever touch down?
+  // Vertical, before anything horizontal: does a foot ever touch down, and
+  // does the body ride level over them?
   const tolerance = options.groundTolerance ?? 0.02;
+  const bodyBone = rig.bones[options.body ?? 'Hips'];
   const lower: number[] = [];
+  const body: number[] = [];
   for (let i = 0; i < samples; i++) {
     mixer.setTime((i / samples) * clip.duration);
     rig.object.updateMatrixWorld(true);
@@ -208,10 +233,12 @@ export function measureFootSkate(
       low = Math.min(low, rig.object.worldToLocal(rig.bones[name].getWorldPosition(probe)).y);
     }
     lower.push(low);
+    if (bodyBone) body.push(rig.object.worldToLocal(bodyBone.getWorldPosition(probe)).y);
   }
   const floor = Math.min(...lower);
   const float = Math.max(...lower) - floor;
   const airborne = lower.filter((y) => y > floor + tolerance).length / samples;
+  const bodyRise = body.length ? Math.max(...body) - Math.min(...body) : 0;
 
   const stepDuration = contact ? duty! * clip.duration : clip.duration / stepsPerCycle;
   const strides: number[] = [];
@@ -278,6 +305,7 @@ export function measureFootSkate(
     peakDeviation,
     float,
     airborne,
+    bodyRise,
     samples,
   };
 }

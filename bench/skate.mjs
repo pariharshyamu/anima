@@ -21,8 +21,7 @@
  * routes to the same number, compared. That independence is the point, and it
  * is why neither formula may ever be rewritten to call the measurement.
  *
- * All three defects it was written to catch were real, and all three were
- * shipped:
+ * Every defect it was written to catch was real, and every one was shipped:
  *
  *   - `createLocomotionClips` used an unmeasured factor of 1.6 for the run's
  *     stride against 1.35 for the walk. The run's declared speed overstated
@@ -36,6 +35,17 @@
  *     got 19, the coarse bake rounded off the hoof's arc, and skate doubled to
  *     7.5%. Found only because this sweeps tempo — a gate that had measured
  *     the default would have called it clean.
+ *   - the biped's own bake had the same disease and nobody had looked,
+ *     because a stride factor fitted to the measurement was absorbing it. A
+ *     gait's stride ends on a CORNER — the hip reverses, the knee's two
+ *     curves meet — and unless a keyframe lands on it the interpolation cuts
+ *     it off. Not monotone in fps, either: 2.87% short at 30, 0.03% at 60,
+ *     1.47% at 45. Fixed by rounding the frame count so the quarter phases
+ *     are keys.
+ *   - the pelvis travelling 5.4% of body height at a walk and 13.3% at a run,
+ *     against the 2.6% a real one moves, for thirty-odd releases. See
+ *     `bodyRise` below: skate is a HORIZONTAL measurement and every foot can
+ *     be exactly where it should be while the body pogos over them.
  *
  * ## Budgets, not baselines
  *
@@ -91,11 +101,18 @@ const HIND = ['LHHoof', 'RHHoof'];
  */
 const BUDGETS = {
   // `airborne` is 0 for the bipeds and deliberately so: a walk is DEFINED by
-  // always having a foot down, and ANIMA's run has no suspension phase (see
-  // the stance-flexion note in `clips.ts`). If a real flight phase is ever
-  // authored, this is the number that has to be raised on purpose.
-  'humanoid walk': { mismatch: 0.01, spread: 0.02, airborne: 0 }, // measured 0.57%, 0.00%, 0%
-  'humanoid run': { mismatch: 0.01, spread: 0.02, airborne: 0 }, // measured 0.30%, 0.97%, 0%
+  // always having a foot down, and ANIMA's run has no suspension phase. If a
+  // real flight phase is ever authored, this is the number that has to be
+  // raised on purpose.
+  //
+  // `bodyRise` is a ceiling on how far the pelvis may travel vertically, as a
+  // fraction of the body's height. Real figures, not taste: a walking adult's
+  // pelvis moves about 46 mm, which on a 1.75 m body is 2.6%; a runner's
+  // centre of mass moves roughly twice that. ANIMA sat at 5.4% and 13.3% —
+  // a compass gait's full `leg × (1 − cos θ)`, uncorrected, through every
+  // release — and the ceilings here are what stops it going back.
+  'humanoid walk': { mismatch: 0.01, spread: 0.02, airborne: 0, bodyRise: 0.03 }, // 0.09%, 0.00%, 0%, 2.1%
+  'humanoid run': { mismatch: 0.01, spread: 0.02, airborne: 0, bodyRise: 0.06 }, // 0.23%, 0.00%, 0%, 5.0%
   'horse walk': { mismatch: 0.015, spread: null }, // measured 0.82%
   'horse walk fore': { mismatch: 0.015, spread: null }, // measured 0.72%
   'horse walk hind': { mismatch: 0.035, spread: null }, // measured 2.40%
@@ -133,16 +150,19 @@ const worst = new Worst();
 /** Every measurement, for `--json` and for the per-case detail lines. */
 const samples = [];
 
-function record(label, where, report) {
+function record(label, where, report, height = 1) {
   worst.add(label, 'mismatch', report.mismatch, where);
   worst.add(label, 'spread', report.spread, where);
   worst.add(label, 'airborne', report.airborne, where);
+  worst.add(label, 'bodyRise', report.bodyRise / height, where);
   samples.push({
     label,
     where,
     mismatch: report.mismatch,
     spread: report.spread,
     airborne: report.airborne,
+    bodyRise: report.bodyRise,
+    bodyRiseFraction: report.bodyRise / height,
     float: report.float,
     stride: report.stride,
     impliedSpeed: report.impliedSpeed,
@@ -161,12 +181,14 @@ for (const seed of SEEDS) {
   record(
     'humanoid walk',
     `seed ${seed}`,
-    measureFootSkate(rig, clips.walk, { speed: clips.walkSpeed })
+    measureFootSkate(rig, clips.walk, { speed: clips.walkSpeed }),
+    rig.height
   );
   record(
     'humanoid run',
     `seed ${seed}`,
-    measureFootSkate(rig, clips.run, { speed: clips.runSpeed })
+    measureFootSkate(rig, clips.run, { speed: clips.runSpeed }),
+    rig.height
   );
 }
 
@@ -253,6 +275,15 @@ for (const [label, budget] of Object.entries(BUDGETS)) {
       `${label}: airborne ${pct(a.value)} of the cycle, over ${pct(budget.airborne)} (${a.where})`
     );
   }
+  // Does the body ride level over those feet? The other thing a horizontal
+  // measurement cannot see, and the one that was wrong for thirty releases.
+  const b = worst.get(label, 'bodyRise');
+  if (budget.bodyRise !== undefined && b.value > budget.bodyRise) {
+    failures.push(
+      `${label}: pelvis travels ${pct(b.value)} of body height, over ` +
+        `${pct(budget.bodyRise)} (${b.where})`
+    );
+  }
 }
 
 if (!process.argv.includes('--json')) {
@@ -284,6 +315,15 @@ if (!process.argv.includes('--json')) {
     `  worst airborne fraction       ${pct(air)} of the cycle  (${worstAir.label}, ${worstAir.where})`
   );
   console.log(`  worst lower-foot float        ${(flt * 1000).toFixed(1)} mm`);
+  for (const label of ['humanoid walk', 'humanoid run']) {
+    const rise = samples.filter((s) => s.label === label);
+    const mm = Math.max(...rise.map((s) => s.bodyRise));
+    const frac = Math.max(...rise.map((s) => s.bodyRiseFraction));
+    console.log(
+      `  ${label.padEnd(14)} pelvis rise    ${(mm * 1000).toFixed(1)} mm  ` +
+        `(${pct(frac)} of height, budget ${pct(BUDGETS[label].bodyRise)})`
+    );
+  }
   console.log(
     `\n  ${samples.length} measurements — ${SEEDS.length} humanoid seeds, ` +
       `${HORSES.length} horse builds (species × tempo)`

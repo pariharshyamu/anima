@@ -1,7 +1,7 @@
 {
   "name": "anima3d",
-  "version": "0.47.0",
-  "description": "ANIMA \u2014 professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
+  "version": "0.48.0",
+  "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

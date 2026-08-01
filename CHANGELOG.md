@@ -20,6 +20,63 @@ release found.
 
 ## Releases
 
+## [0.48.0] — 2026-08-01
+
+### Fixed
+
+- **The pelvis was pogoing.** A leg of fixed length swung about the hip is a
+  compass: it carries the body up by `leg × (1 − cos θ)`, and nothing corrected
+  it. ANIMA's walk moved its pelvis **95 mm** a cycle and its run **234 mm** —
+  5.4% and 13.3% of body height, against the **46 mm, 2.6%**, a real walking
+  pelvis moves. Now **37 mm (2.1%)** and **88 mm (5.0%)**, and gated.
+- **The swing knee fired at the wrong moment** — peaking at maximum hip
+  flexion, where a real knee is nearly straight at heel strike and most bent
+  just after toe-off. The swinging leg hung 106 mm BELOW the planted one in
+  terminal swing, so the body rode the wrong foot. This is why the stance-knee
+  hook had been parked at zero for several releases: nothing it did could
+  matter while the other leg was competing to carry the pelvis. Retimed to
+  peak a third of the way through the swing, from the standard gait-cycle
+  landmarks (toe-off 60%, peak swing knee 73%, heel strike 100%).
+- **`STRIDE_FACTOR` is gone.** It was 1.35 and it was *fitted* — solved for
+  whatever made the measurement agree — and it was covering for the mistimed
+  knee, which shortened the real stride by about a third while the constant put
+  a third back. Two errors cancelling. The stride is now the ankle's own travel
+  over the leg's forward kinematics, which comes out at `2 · leg ·
+  sin(hipSwing)` because the knee is straight at both ends of stance.
+- **The bake was rounding off the stride's corners.** With the fitted constant
+  gone the gate could finally see it: 2.87% short at the walk, 3.14% at the
+  run, and *not monotone in `fps`* — the good cases were exactly the ones where
+  `round(duration × fps)` divided evenly. `buildClip` now rounds the frame
+  count up to a multiple of eight so the quarter phases are keyframes. Walk
+  0.09%, run 0.23%. Same disease as the horse's `tempo` defect, one species
+  over, invisible for as long as a fitted constant was absorbing it.
+
+### Changed
+
+- **`walkHipSwing` / `runHipSwing` defaults are now the real hip excursion**:
+  0.36 and 0.53 rad (21 and 30 degrees) where they were 0.55 and 0.85 (31 and
+  49). The stance flexion and both declared speeds are re-derived from whatever
+  you pass. Declared speeds barely moved — 1.15 → 1.18 m/s and 2.67 → 2.71 —
+  because the two cancelling errors had been landing in roughly the right
+  place all along.
+- **Stance-knee flexion is solved, not authored**: a scan for the flexion that
+  leaves the pelvis flattest. There is a real optimum — bending lowers the top
+  of the arc, but past a point it lowers the bottom too — and it lands around
+  **14 degrees**, against the 18 the literature puts on loading response. Two
+  of the six determinants of gait are modelled here; the missing ones are the
+  difference.
+
+### Added
+
+- **`bodyRise` on `FootSkateReport`** — how far the pelvis travels vertically
+  over a cycle, read off the transform hierarchy. The companion to `airborne`:
+  skate is a HORIZONTAL measurement, and every foot can be exactly where it
+  should be while the body pogos over them. Gated in `npm run skate` as a
+  fraction of body height (3% walking, 6% running), and watched failing — with
+  the solve removed it reads 3.02% and 6.23%.
+- `FootSkateOptions.body` — which bone `bodyRise` follows. Default `Hips`; 0
+  when the rig has no such bone, rather than throwing.
+
 ## [0.47.0] — 2026-08-01
 
 ### Added

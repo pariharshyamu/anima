@@ -1,6 +1,6 @@
 # Locomotion & gaits
 
-ANIMA ships no animation files. `createLocomotionClips(rig)` **synthesizes** idle, walk and run `AnimationClip`s from gait parameters — hip swing, knee flexion timed to the swing phase, ankle leveling, arm counter-swing with elbow bend, pelvis/chest counter-twist, hip bob, forward lean at a run. Clips are loop-seamless (last frame = first), in-place, deterministic, and their reference ground speeds derive from the rig's actual leg length.
+ANIMA ships no animation files. `createLocomotionClips(rig)` **synthesizes** idle, walk and run `AnimationClip`s from gait parameters — hip swing, a knee curve with a solved stance half and a front-loaded swing half, ankle leveling, arm counter-swing with elbow bend, pelvis/chest counter-twist, forward lean at a run. There is no authored bob and no stride factor: the pelvis height is whatever planting the lower foot makes it, and the reference ground speeds are the ankle's own travel over the leg's forward kinematics. Clips are loop-seamless (last frame = first), in-place, and deterministic.
 
 ```js
 const clips = createLocomotionClips(rig, { walkDuration: 1.0, runHipSwing: 0.9 });

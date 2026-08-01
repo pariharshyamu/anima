@@ -33,6 +33,7 @@ wrong and the planted foot slides, every step, the same way.
 |---|---|
 | `float` | how far the **lower** foot rises above its own lowest point over the cycle |
 | `airborne` | fraction of the cycle with **no** foot within tolerance of that point |
+| `bodyRise` | how far the pelvis travels vertically over the cycle |
 | `stride` | how far a foot travels while planted, **measured from the bones** |
 | `stepDuration` | how long it's planted: `duration / stepsPerCycle`, or `duty × duration` |
 | `impliedSpeed` | `stride / stepDuration` — the speed at which these feet do not slip |
@@ -103,7 +104,7 @@ gated: gating it would be gating the choice of curve. What matters is that the
 stride is right, because *that* error repeats identically every step, and
 repetition is what the eye picks up.
 
-## Three defects it found, all of them shipped
+## Five defects it found, all of them shipped
 
 **The run's stride factor was a guess.** `createLocomotionClips` used an
 empirical 1.6 for the run against 1.35 for the walk. Both gaits are the same
@@ -210,9 +211,9 @@ reported and not yet gated for exactly that reason — the gallop currently read
 **92.92% airborne with 780 mm of float**, which is a finding waiting for its
 own release.
 
-### What the fix was, and what it was not
+### What the fix was
 
-`createLocomotionClips` now measures where the lower ankle actually sits on the
+`createLocomotionClips` measures where the lower ankle actually sits on the
 posed body each frame and lowers the hips onto it. It touches only
 `Hips.position.y`, so every descendant translates straight down and no foot's
 Z moves — the stride, and this whole gate, are untouched by construction.
@@ -223,10 +224,76 @@ drops as the legs spread, because that is what legs of a fixed length do. The
 vertical motion of a gait is a consequence of the leg geometry, not a free
 parameter, and having both meant the free one was fighting the real one.
 
-What it is *not* is a fix for the run's remaining 214 mm of hip travel per
-stride. That is the **stance** knee — a runner's bends about 25° absorbing the
-rise over a vertical leg, and this one does not. The hook is in `clips.ts` set
-to zero, because a bent stance knee pulls the ankle back: it changes the
-measured stride, and turning it on without re-deriving `STRIDE_FACTOR` put the
-run 17.1% out and this gate said so. That derivation is its own piece of work,
-and the budget was not raised to hide it.
+## `bodyRise` — the pelvis, which the compass gait leaves bouncing
+
+Planting the feet does not make a gait right; it makes the *feet* right. The
+compass arc it exposes is real geometry and it is far too big: a leg of fixed
+length swung about the hip carries the pelvis up by `leg × (1 − cos θ)`, which
+gave ANIMA **95 mm of pelvis travel at a walk and 234 mm at a run** — 5.4% and
+13.3% of body height, against the **46 mm, 2.6%,** a real walking pelvis moves.
+It reads as a bobbing, hopping gait. It is invisible to skate, which is a
+horizontal measurement, and invisible to a still frame.
+
+`bodyRise` is that number, read off the transform hierarchy in the same pass,
+and it is gated as a fraction of body height:
+
+```
+  humanoid walk  pelvis rise    38.5 mm  (2.15% of height, budget 3.00%)
+  humanoid run   pelvis rise    90.2 mm  (5.02% of height, budget 6.00%)
+```
+
+Three things had to change to get there, and the first two were *why* the
+correction had been parked as "its own piece of work" for several releases.
+
+**The swing knee was firing at the wrong moment.** It peaked at maximum hip
+flexion — the leg bent most while reaching forward — where a real knee is
+almost straight at heel strike and most bent just after toe-off. So the
+swinging leg hung *below* the planted one in terminal swing, by 106 mm at the
+run, and the body rode the wrong foot. Nothing the stance knee did could
+matter while that was true: bending the stance knee just handed the pelvis to
+the other leg. Retiming the bump to peak a third of the way through the swing
+(toe-off at 60% of the cycle, peak knee flexion at 73%, heel strike at 100% —
+so `sin(pi · s^SKEW)` rather than a symmetric bump) is most of the fix.
+
+**The stance knee is solved, not authored.** There is a real optimum and it is
+not "as much as possible": bending lowers the top of the arc, but past a point
+it lowers the bottom too and the excursion grows again. What comes out is
+about **14 degrees**, against the 18 the literature puts on loading response —
+two of the six determinants of gait are modelled here, and the missing ones
+are the difference.
+
+**`STRIDE_FACTOR` is gone.** It was 1.35, and it was fitted: solved for
+whatever made the measurement agree. It was covering for the mistimed knee,
+which shortened the real stride by about a third while the constant put a
+third back — two errors cancelling in the declared speed. With the knee timed
+properly the stride is `2 · leg · sin(hipSwing)` and nothing else, and the hip
+swing is now the real excursion: **21 degrees at a walk, 30 at a run**, where
+it used to be 31 and 49. The declared speeds barely moved (1.15 → 1.18 m/s,
+2.67 → 2.71) because the two errors had been cancelling all along.
+
+An earlier attempt solved the *swing* knee from a clearance target as well.
+It reads better and it is wrong: the depth equation has two roots, they
+coincide only where the leg is straight, and approaching heel strike the
+continuous branch folds the shank back under the hips. It jumped the knee 41
+degrees at every heel strike — 27 mm of foot float, 95% of the cycle airborne,
+the run 15% out on stride. A foot that has to reach forward and touch down
+level with the other one is not something a knee can do alone; a real leg
+spends its heel on it.
+
+### And the bake, which had been hiding behind the fitted constant
+
+With the geometry honest, the gate had something new to say: the biped's
+mismatch jumped to **2.87% at the walk and 3.14% at the run**, and it was not
+monotone in `fps` — 0.03% at 60 for the walk, 1.47% for the run, 0.03% at 45
+for the run. The good cases were exactly the ones where `round(duration × fps)
+` divided evenly.
+
+A gait's stride ends on a **corner**: the hip reverses and the knee's two
+curves meet. Bake a key either side of a corner and the interpolation cuts it
+off. `buildClip` now rounds the frame count up to a multiple of eight, so the
+quarter phases — both stride ends, midstance and mid-swing — are keys. It
+costs at most seven frames and takes the walk to 0.09% and the run to 0.23%.
+
+This is the horse's `tempo` defect again, one species over, and it had been
+invisible on the bipeds for as long as a constant fitted to the measurement
+was absorbing it. That is the argument against fitted constants in one line.

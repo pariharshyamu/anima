@@ -17,7 +17,12 @@ export interface GaitOptions {
   walkDuration?: number;
   /** Run cycle duration, seconds. Default 0.62. */
   runDuration?: number;
-  /** Hip swing amplitude at walk / run. Defaults 0.55 / 0.85. */
+  /**
+   * Hip flexion/extension amplitude at walk / run, radians. Defaults 0.36 and
+   * 0.53 — about 21 and 30 degrees, which is what a hip actually does. The
+   * stance-knee flexion and both declared speeds are re-derived from whatever
+   * you pass, so overriding these stays self-consistent.
+   */
   walkHipSwing?: number;
   runHipSwing?: number;
   /** Keyframe sampling rate. Default 30. */
@@ -75,9 +80,29 @@ export function buildClip(
    * Default true — but a ONE-SHOT (a vault, a mantle) must end where it ends,
    * and a looping build snaps it back to its start pose on the final frame.
    */
-  loop = true
+  loop = true,
+  /**
+   * Round the frame count up to a multiple of this, so the cycle's landmarks
+   * land ON keyframes instead of between them.
+   *
+   * A gait's stride ends at phase 0.25 and 0.75, where the hip reverses and
+   * the knee's two curves meet — corners, not smooth turns. Bake a key either
+   * side of a corner and the interpolation cuts it off, which shortens the
+   * measured stride by however much the bake missed. It is not a small effect
+   * and it is not monotone in `fps`: at 30 fps the walk came out 2.87% short
+   * and the run 3.14%, at 45 the run was 0.03% and the walk 1.24%, at 60 the
+   * walk was 0.03% and the run 1.47% — the good cases are exactly the ones
+   * where `round(duration × fps)` happens to divide evenly. Eight, not four:
+   * four puts keys on the two stride ends, and eight also puts them on
+   * midstance and mid-swing, where the knee peaks. At four the run's 20-key
+   * bake still rounded the crossover enough to lift the planted foot 29 mm
+   * and read 4.2% airborne on a gait that has no flight phase. Asking for it
+   * costs at most seven frames.
+   */
+  align = 1
 ): AnimationClip {
-  const frames = Math.max(8, Math.round(duration * fps));
+  const wanted = Math.max(8, Math.round(duration * fps));
+  const frames = align > 1 ? Math.ceil(wanted / align) * align : wanted;
   const times = new Float32Array(frames + 1);
   const probe = new Pose();
   sample(0, probe);
@@ -105,7 +130,205 @@ export function buildClip(
 }
 
 const TAU = Math.PI * 2;
+const PI = Math.PI;
 const halfUp = (v: number): number => Math.max(0, v);
+const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
+
+/**
+ * Where peak knee flexion sits inside the swing, and the skew that puts it
+ * there — both read off the standard gait cycle rather than chosen.
+ *
+ * The landmarks are the textbook ones, as percentages of a stride measured
+ * from heel strike: toe-off at 60%, peak swing knee flexion at 73%, next heel
+ * strike at 100%. So the peak sits `(73 - 60) / (100 - 60)` of the way through
+ * the swing — a third, not the half a symmetric bump would give. `sin(pi * s)`
+ * peaks at s = 0.5; `sin(pi * s^SKEW)` peaks where `s^SKEW = 0.5`, so SKEW is
+ * whatever puts that at `PEAK`.
+ *
+ * Getting this wrong is not cosmetic. A symmetric bump leaves the knee bent
+ * through terminal swing, and a bent knee with the thigh reaching forward puts
+ * the ankle BELOW the planted foot — so the body rides the swinging leg and
+ * the gait plants the wrong foot.
+ */
+const PEAK = (73 - 60) / (100 - 60);
+const SKEW = Math.log(0.5) / Math.log(PEAK);
+
+/** The parameters one gait is made of. One object, read by poser and geometry alike. */
+interface GaitShape {
+  /** Hip flexion/extension amplitude, radians. The real excursion, not a proxy. */
+  hipSwing: number;
+  /** Peak knee flexion during swing, radians. */
+  kneeFlex: number;
+  /** Peak knee flexion at midstance, radians. Solved, not authored. */
+  stanceFlex: number;
+  armSwing: number;
+  elbowBend: number;
+  lean: number;
+  twist: number;
+  roll: number;
+}
+
+/** Segment lengths and hip-joint offsets, read off the rig rather than assumed. */
+interface LegGeometry {
+  thigh: number;
+  shank: number;
+  leg: number;
+  offset: Record<'Left' | 'Right', Vector3>;
+}
+
+function legGeometry(rig: HumanoidRig): LegGeometry {
+  const thigh = Math.abs(rig.bones.LeftLeg.position.y);
+  const shank = Math.abs(rig.bones.LeftFoot.position.y);
+  return {
+    thigh,
+    shank,
+    leg: thigh + shank,
+    offset: {
+      Left: rig.bones.LeftUpLeg.position.clone(),
+      Right: rig.bones.RightUpLeg.position.clone(),
+    },
+  };
+}
+
+/**
+ * Where one ankle is, in the rig's own frame, at phase `p` — closed form.
+ *
+ * This is forward kinematics over the chain that actually ships: the hip
+ * offset, both leg segments, and the pelvis's own yaw and roll. It exists so
+ * the declared speeds can be DERIVED from the geometry instead of from a
+ * fitted constant, and it stays independent of `measureFootSkate`, which
+ * drives an `AnimationMixer` over the baked clip. What is left between them —
+ * about three quarters of a per cent at the run — is the 30 fps bake cutting
+ * corners off the arc, which is exactly the defect a stride gate is for.
+ */
+function ankleAt(
+  g: LegGeometry,
+  shape: GaitShape,
+  p: number,
+  side: 'Left' | 'Right',
+  out: Vector3
+): Vector3 {
+  let ph = (TAU * p + (side === 'Left' ? 0 : PI)) % TAU;
+  if (ph > PI) ph -= TAU;
+  if (ph <= -PI) ph += TAU;
+  const hip = shape.hipSwing * Math.sin(ph);
+  const flex = kneeAngle(g, shape, ph);
+  const o = g.offset[side];
+  out.set(
+    o.x,
+    o.y - g.thigh * Math.cos(hip) - g.shank * Math.cos(hip - flex),
+    g.thigh * Math.sin(hip) + g.shank * Math.sin(hip - flex)
+  );
+  return out.applyQuaternion(
+    SPIN.setFromAxisAngle(Y, shape.twist * Math.sin(TAU * p)).multiply(
+      TILT.setFromAxisAngle(Z, shape.roll * Math.sin(TAU * p))
+    )
+  );
+}
+
+const SPIN = new Quaternion();
+const TILT = new Quaternion();
+
+/**
+ * The knee, over a whole cycle. Two halves, meeting at zero.
+ *
+ * `cos(ph) < 0` is stance — the leg is sweeping backward, carrying the body —
+ * and there the knee takes a bump peaking at midstance: it is the only place a
+ * bend can lower the pelvis without also dragging the foot back under the
+ * hips, because there the thigh is vertical. At heel strike and toe-off the
+ * bump is zero and the leg is straight, which is what keeps the stride equal
+ * to the honest `2·leg·sin(hipSwing)` with no fudge factor anywhere.
+ *
+ * `cos(ph) > 0` is swing, and there the knee takes a FRONT-LOADED bump: up
+ * fast after toe-off, back to straight by heel strike, peaking a third of the
+ * way through rather than half.
+ *
+ * Both halves are zero at both boundaries, so the two meet without a step. An
+ * earlier draft solved the swing knee from a clearance target instead, which
+ * reads better and is wrong: the depth equation has two roots, they coincide
+ * only where the leg is straight, and approaching heel strike the continuous
+ * one is the branch that folds the shank back UNDER the hips. It jumped the
+ * knee 41 degrees at every heel strike — 27 mm of foot float, 95% of the
+ * cycle airborne, and the run 15% out on stride. A foot that has to reach
+ * forward and touch down at the same height as the other one is not something
+ * a knee can do alone; a real leg spends its heel on it.
+ */
+function kneeAngle(g: LegGeometry, shape: GaitShape, ph: number): number {
+  if (Math.cos(ph) <= 0) return shape.stanceFlex * halfUp(-Math.cos(ph));
+  const s = clamp((ph + PI / 2) / PI, 0, 1);
+  return shape.kneeFlex * Math.sin(PI * Math.pow(s, SKEW));
+}
+
+/** How far the pelvis travels vertically over a cycle — it rides the lower ankle. */
+function pelvisRise(g: LegGeometry, shape: GaitShape, samples: number): number {
+  const a = new Vector3();
+  const b = new Vector3();
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < samples; i++) {
+    const y = -Math.min(
+      ankleAt(g, shape, i / samples, 'Left', a).y,
+      ankleAt(g, shape, i / samples, 'Right', b).y
+    );
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  return hi - lo;
+}
+
+/**
+ * The stance flexion that leaves the pelvis flattest.
+ *
+ * There is a real optimum and it is not "as much as possible". Bending the
+ * stance knee lowers the top of the arc, but past a point it starts lowering
+ * the bottom too — the two legs are both short at the crossover — and the
+ * excursion grows again. So this scans and refines rather than solving, and
+ * what comes out is around 14 degrees, against the 18 the gait literature puts
+ * on loading response. Two of the six determinants of gait are modelled here;
+ * the missing ones are why it is not exactly 18.
+ */
+function solveStanceFlex(g: LegGeometry, shape: GaitShape): number {
+  let lo = 0;
+  let hi = 0.6;
+  let best = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    let bestRise = Infinity;
+    const steps = 12;
+    for (let i = 0; i <= steps; i++) {
+      const f = lo + ((hi - lo) * i) / steps;
+      const rise = pelvisRise(g, { ...shape, stanceFlex: f }, 180);
+      if (rise < bestRise) {
+        bestRise = rise;
+        best = f;
+      }
+    }
+    const span = (hi - lo) / steps;
+    lo = Math.max(0, best - span);
+    hi = best + span;
+  }
+  return best;
+}
+
+/**
+ * How far the ankle travels while the foot is down — the stride, per step.
+ *
+ * Stance is exactly half the cycle by construction, and the knee is straight
+ * at both ends of it, so this comes out at `2·leg·sin(hipSwing)` to within the
+ * pelvis's own yaw. That is the whole point of the rework: the stride is the
+ * geometry, and `STRIDE_FACTOR` — a constant fitted to make a mistimed knee's
+ * measured stride agree with a formula that ignored it — is gone.
+ */
+function strideOf(g: LegGeometry, shape: GaitShape, samples = 512): number {
+  const v = new Vector3();
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i <= samples; i++) {
+    const z = ankleAt(g, shape, 0.25 + (0.5 * i) / samples, 'Left', v).z;
+    if (z < lo) lo = z;
+    if (z > hi) hi = z;
+  }
+  return hi - lo;
+}
 
 /**
  * Put the lower foot on the ground.
@@ -177,66 +400,99 @@ export function createLocomotionClips(
   const fps = options.fps ?? 30;
   const restHipsY = rig.bones.Hips.position.y;
   const plant = planter(rig);
+  const geometry = legGeometry(rig);
   const hang = Math.PI / 2 - 0.14; // arms hang with a slight outward splay
 
   /** Shared limb math for a full gait cycle at phase p. */
-  const gait = (
-    pose: Pose,
-    p: number,
-    hipSwing: number,
-    kneeFlex: number,
-    armSwing: number,
-    elbowBend: number,
-    stanceFlex: number,
-    lean: number,
-    twist: number
-  ): void => {
+  const gait = (pose: Pose, p: number, shape: GaitShape): void => {
     for (const side of ['Left', 'Right'] as const) {
       const s = side === 'Left' ? 1 : -1;
-      const phase = TAU * p + (s === 1 ? 0 : Math.PI);
-      const leg = hipSwing * Math.sin(phase);
-      // Swing-leg flexion clears the foot. STANCE-leg flexion — the ~25° a
-      // runner's knee bends absorbing the rise over a vertical leg — is a
-      // separate thing, and it is why the hips still travel 214 mm a stride
-      // at the run. The hook is here and set to zero, because a bent stance
-      // knee pulls the ankle BACK: it changes the measured stride, and
-      // `STRIDE_FACTOR` below is calibrated against that stride. Turning it on
-      // without re-deriving the declared speeds put the run 17.1%% out and
-      // `npm run skate` said so. That derivation is its own piece of work.
-      const flex =
-        kneeFlex * halfUp(Math.sin(phase + 0.35)) + stanceFlex * halfUp(-Math.cos(phase));
+      let ph = (TAU * p + (s === 1 ? 0 : PI)) % TAU;
+      if (ph > PI) ph -= TAU;
+      if (ph <= -PI) ph += TAU;
+      const leg = shape.hipSwing * Math.sin(ph);
+      // The same knee `ankleAt` uses — one function, so the speed the clip
+      // declares and the pose the clip holds cannot drift apart.
+      const flex = kneeAngle(geometry, shape, ph);
       pose.rotate(`${side}UpLeg`, [X, -leg]);
       pose.rotate(`${side}Leg`, [X, flex]);
       pose.rotate(`${side}Foot`, [X, 0.7 * (leg - flex)]);
 
       // Arms counter-swing their own side's leg.
-      const arm = armSwing * Math.sin(TAU * p + (s === 1 ? Math.PI : 0));
+      const arm = shape.armSwing * Math.sin(TAU * p + (s === 1 ? PI : 0));
       pose.rotate(`${side}Arm`, [X, -arm], [Z, -s * hang]);
-      pose.rotate(`${side}ForeArm`, [Y, -s * (elbowBend + 0.25 * halfUp(arm))]);
+      pose.rotate(`${side}ForeArm`, [Y, -s * (shape.elbowBend + 0.25 * halfUp(arm))]);
     }
     // No authored bob. The vertical motion of a gait is a CONSEQUENCE of the
     // leg geometry, and `planter` derives it; an independent sine on top was
     // a second opinion fighting the real one.
     pose.hipsY = restHipsY - 0.012 * rig.height;
-    pose.rotate('Hips', [Y, twist * Math.sin(TAU * p)], [Z, 0.03 * Math.sin(TAU * p)]);
-    pose.rotate('Spine', [X, lean * 0.45]);
-    pose.rotate('Chest', [X, lean * 0.55], [Y, -twist * 1.4 * Math.sin(TAU * p)]);
-    pose.rotate('Head', [X, -lean * 0.5]); // eyes stay level when leaning
+    pose.rotate(
+      'Hips',
+      [Y, shape.twist * Math.sin(TAU * p)],
+      [Z, shape.roll * Math.sin(TAU * p)]
+    );
+    pose.rotate('Spine', [X, shape.lean * 0.45]);
+    pose.rotate('Chest', [X, shape.lean * 0.55], [Y, -shape.twist * 1.4 * Math.sin(TAU * p)]);
+    pose.rotate('Head', [X, -shape.lean * 0.5]); // eyes stay level when leaning
+  };
+
+  /** Finish a gait: the stance knee is solved, never authored. */
+  const settle = (shape: Omit<GaitShape, 'stanceFlex'>): GaitShape => {
+    const draft = { ...shape, stanceFlex: 0 };
+    return { ...draft, stanceFlex: solveStanceFlex(geometry, draft) };
   };
 
   const walkDuration = options.walkDuration ?? 1.0;
-  const walkHipSwing = options.walkHipSwing ?? 0.55;
-  const walk = buildClip(rig, 'walk', walkDuration, fps, (p, pose) => {
-    gait(pose, p, walkHipSwing, 0.95, 0.45, 0.3, 0, 0.04, 0.07);
-    plant(pose);
+  // Human hip excursion at a walk is about 21 degrees of flexion and as much
+  // extension; at a run, 30. The old 0.55 / 0.85 were half again as large,
+  // and the stride factor that went with them was fitted to a knee that bent
+  // at the wrong moment — two errors that cancelled in the declared speed and
+  // showed up as a pelvis bouncing 95 mm at a walk and 234 at a run.
+  const walkShape = settle({
+    hipSwing: options.walkHipSwing ?? 0.3606,
+    kneeFlex: 1.05, // 60 degrees: peak swing knee flexion, walking
+    armSwing: 0.45,
+    elbowBend: 0.3,
+    lean: 0.04,
+    twist: 0.07,
+    roll: 0.03,
   });
+  const walk = buildClip(
+    rig,
+    'walk',
+    walkDuration,
+    fps,
+    (p, pose) => {
+      gait(pose, p, walkShape);
+      plant(pose);
+    },
+    true,
+    8
+  );
 
   const runDuration = options.runDuration ?? 0.62;
-  const runHipSwing = options.runHipSwing ?? 0.85;
-  const run = buildClip(rig, 'run', runDuration, fps, (p, pose) => {
-    gait(pose, p, runHipSwing, 1.55, 0.85, 1.05, 0, 0.24, 0.1);
-    plant(pose);
+  const runShape = settle({
+    hipSwing: options.runHipSwing ?? 0.5318,
+    kneeFlex: 1.6, // 92 degrees: peak swing knee flexion, running
+    armSwing: 0.85,
+    elbowBend: 1.05,
+    lean: 0.24,
+    twist: 0.1,
+    roll: 0.03,
   });
+  const run = buildClip(
+    rig,
+    'run',
+    runDuration,
+    fps,
+    (p, pose) => {
+      gait(pose, p, runShape);
+      plant(pose);
+    },
+    true,
+    8
+  );
 
   const idle = buildClip(rig, 'idle', 3.4, fps, (p, pose) => {
     const breath = Math.sin(TAU * p);
@@ -256,24 +512,27 @@ export function createLocomotionClips(
     plant(pose);
   });
 
-  // Stride-matched reference speeds: 2 steps per cycle, step length from leg
-  // geometry and swing amplitude.
+  // Stride-matched reference speeds: two steps per cycle, and the step length
+  // is the ankle's own travel while the foot is down, taken from the leg's
+  // forward kinematics.
   //
-  // ONE factor, shared, because both gaits are the same geometry: how far the
-  // ankle travels for a given hip swing does not depend on whether you call
-  // the motion a walk or a run. The run used to use 1.6 while the walk used
-  // 1.35, and `measureFootSkate` showed what that cost — the run's declared
-  // speed overstated its real stride by 18.4%, on every seed, which made
-  // `Locomotion` play the clip 18% too slowly for the ground covered and slid
-  // the planted foot about 15 cm every step. Solving for the factor that makes
-  // the measured stride agree gives 1.3507, 1.3512, 1.3525, 1.3507 across four
-  // seeds — the walk's number. It was never a run-specific constant; it was an
-  // unmeasured guess.
+  // There is no stride factor any more. There used to be — 1.35, and 1.6 for
+  // the run until `measureFootSkate` showed the run's declared speed
+  // overstating its real stride by 18.4% on every seed, about 15 cm of slide
+  // per step. Solving for the factor that made the measurement agree gave
+  // 1.3507, 1.3512, 1.3525, 1.3507 across four seeds, so 1.35 it became.
   //
-  // `npm run skate` is the gate that keeps them honest.
-  const STRIDE_FACTOR = 1.35;
-  const walkSpeed = (2 * STRIDE_FACTOR * rig.legLength * Math.sin(walkHipSwing)) / walkDuration;
-  const runSpeed = (2 * STRIDE_FACTOR * rig.legLength * Math.sin(runHipSwing)) / runDuration;
+  // But a constant fitted to a measurement is not a derivation, and this one
+  // was covering for a mistimed knee: the swing bump fired at maximum hip
+  // flexion instead of in swing, which shortened the real stride by about a
+  // third, and 1.35 put a third back. Two errors, cancelling. With the knee
+  // timed properly the stride is `2·leg·sin(hipSwing)` and nothing else.
+  //
+  // `npm run skate` is still the gate, and it now has something left to
+  // catch: the ~0.7% the 30 fps bake shaves off the arc, which the fitted
+  // constant used to absorb along with everything else.
+  const walkSpeed = (2 * strideOf(geometry, walkShape)) / walkDuration;
+  const runSpeed = (2 * strideOf(geometry, runShape)) / runDuration;
 
   return { idle, walk, run, walkSpeed, runSpeed };
 }
