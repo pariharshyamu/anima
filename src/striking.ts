@@ -818,16 +818,46 @@ export class Striking {
    * easier to win on a slow machine. It would also have made GAMA's replay
    * non-deterministic.
    */
+  /**
+   * A genuinely fixed internal step, and the word genuinely is doing work.
+   *
+   * This used to be `steps = ceil(dt / FIXED_STEP); step = dt / steps`, which
+   * CAPS the step but does not floor it — so at 240 fps it ran at 1/240 and at
+   * 30 fps at 1/120. That is not a fixed step; it is a step that happens to be
+   * small, and since the effective mass here is a finite difference it still
+   * left a teep measuring 1.36x more impulse at one frame rate than another.
+   * The gate did not see it because it checked a cross, and a cross was one of
+   * the ones that happened to be stable.
+   *
+   * The leftover is carried, so every body in every session integrates on
+   * exactly the same lattice. The cap on `MAX_SUBSTEPS` stays: a long frame —
+   * a tab coming back, a hitch — must not be allowed to spiral.
+   */
   update(dt: number): void {
-    const total = Math.max(0, dt) * this.tempo;
-    // Cap the catch-up so a long frame (a tab coming back, a hitch) cannot
-    // spiral: better to lose a little time than to spend a second simulating.
-    const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(total / FIXED_STEP)));
-    const step = total / steps;
-    for (let i = 0; i < steps; i++) this.advance(step);
+    this.residue += Math.max(0, dt) * this.tempo;
+    let n = 0;
+    while (this.residue >= FIXED_STEP && n < MAX_SUBSTEPS) {
+      this.advance(FIXED_STEP);
+      this.residue -= FIXED_STEP;
+      n++;
+    }
   }
 
+  private residue = 0;
+
+  /**
+   * Seconds this controller has actually integrated.
+   *
+   * Public because a probe that differences positions frame by frame has to
+   * divide by the time that really passed inside here, not by its own `dt`.
+   * With a genuinely fixed step those are different numbers — at 240 fps every
+   * other frame advances nothing at all — and dividing by the wrong one puts a
+   * phantom double-speed spike on the first frame that does move.
+   */
+  elapsed = 0;
+
   private advance(step: number): void {
+    this.elapsed += step;
     this.lastStep = step;
     this.rig.object.updateMatrixWorld(true);
     this.balance = stability(this.rig);
@@ -1606,6 +1636,13 @@ export interface StrikeReport {
   chainSpeed: { hips: number; chest: number; shoulder: number; surface: number };
   /** Largest single-frame movement of the surface, metres. Pops show here. */
   worstStep: number;
+  /**
+   * The same thing as a SPEED, m/s, which is the frame-rate-free version of
+   * it. A teleport is a speed, not a distance: how far a surface moves in one
+   * step depends on how long the step is, and the step is a property of the
+   * engine rather than of the punch.
+   */
+  worstSpeed: number;
 }
 
 /**
@@ -1667,6 +1704,7 @@ export function measureStrike(
   const here = new Vector3();
   let worstBalance = Infinity;
   let worstStep = 0;
+  let worstSpeed = 0;
   let guardDrift = 0;
   let guardHome: Vector3 | null = null;
   let recovery = 0;
@@ -1682,9 +1720,13 @@ export function measureStrike(
   striker.throwStrike(name);
   const total = (spec.windup + spec.recover) / (options.tempo ?? 1);
   for (let t = 0; t <= total + 0.4; t += dt) {
+    const was = striker.elapsed;
     striker.update(dt);
+    const ran = striker.elapsed - was;
     rig.object.updateMatrixWorld(true);
     worstBalance = Math.min(worstBalance, striker.balance);
+    // A frame in which nothing was simulated is not a sample of anything.
+    if (ran <= 0) continue;
 
     // The chain, link by link, measured as LINEAR speed of each joint — not
     // the angle curves the poser drives. Two different things, and the order
@@ -1693,7 +1735,7 @@ export function measureStrike(
       rig.bones[bone].getWorldPosition(here);
       const prev = last.get(bone);
       if (prev) {
-        const v = here.distanceTo(prev) / dt;
+        const v = here.distanceTo(prev) / ran;
         const best = peak.get(bone);
         if (!best || v > best.speed) peak.set(bone, { speed: v, at: t });
         prev.copy(here);
@@ -1703,7 +1745,8 @@ export function measureStrike(
     if (surfaceHas) {
       const step = surf.distanceTo(surfaceLast);
       worstStep = Math.max(worstStep, step);
-      const v = step / dt;
+      worstSpeed = Math.max(worstSpeed, step / ran);
+      const v = step / ran;
       const best = peak.get('#surface');
       if (!best || v > best.speed) peak.set('#surface', { speed: v, at: t });
     }
@@ -1750,6 +1793,7 @@ export function measureStrike(
       surface: peak.get('#surface')?.speed ?? 0,
     },
     worstStep,
+    worstSpeed,
   };
 }
 

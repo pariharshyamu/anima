@@ -5371,6 +5371,154 @@ window.sparringDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'dojo',
+    title: 'Dojo: no kuzushi, no throw',
+    group: 'Scale',
+    code: `// FIVE PAIRS, THE SAME THROW, AND NOTHING BUT THE PULL BETWEEN THEM.
+//
+// Every pair on this line is attempting an identical seoi nage on an identical
+// body. The only thing that changes from left to right is how hard the tori
+// pulls — skill 0.35 at the near end, 0.95 at the far one — and the line
+// splits in the middle.
+//
+// Nothing in the scene decides who goes over. A throw completes if, and only
+// if, the uke\'s centre of mass has actually left the polygon their feet make
+// on the floor. That is judo\'s definition of kuzushi, and it is also exactly
+// what stability() measures, in foot lengths, off Dempster\'s segment masses.
+//
+//   the ones still standing   pulled hard enough to lean somebody, not to
+//                             break them. They report failed: notBroken, and
+//                             their tori is left committed and out of position
+//   the ones on the floor     went past zero, and then fell. The post is what
+//                             they arrived with, in kg-m/s: mass times
+//                             sqrt(2gh), from a fall nobody typed in
+//
+// A body only has to come about 11 degrees over its toes before it is going
+// down, and 4 over its heels. Kuzushi is small, and this is the difference
+// between enough of it and not quite.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { createHumanoid, Grappling, Locomotion, THROWS,
+         breakEffort } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 3 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const THROW = 'seoiNage';
+const SPACING = 2.25;
+const SKILLS = [0.35, 0.5, 0.65, 0.8, 0.95];
+
+const pairs = SKILLS.map((skill, i) => {
+  const x = (i - (SKILLS.length - 1) / 2) * SPACING;
+
+  const tori = createHumanoid({ seed: 1 });
+  tori.object.position.set(x, 0, 0);
+  scene.add(tori.object);
+
+  const uke = createHumanoid({ seed: 42 });
+  uke.object.position.set(x, 0, 0.44);
+  uke.object.rotation.y = Math.PI;
+  scene.add(uke.object);
+
+  // An idle underneath, so anybody NOT being thrown is standing rather than
+  // holding the rest pose with their arms out. Grappling takes the bones it
+  // needs on top of this and hands them straight back.
+  const idle = [new Locomotion(tori), new Locomotion(uke)];
+
+  // tempo below 1 because a real seoi nage is over in about a second, which
+  // is not long enough to watch.
+  const grapple = new Grappling(tori, uke, { skill, tempo: 0.7, fade: 0.08 });
+
+  // What arrived, in kg-m/s. Nothing at all for anybody still on their feet.
+  const post = new Mesh(
+    new BoxGeometry(0.12, 1, 0.12),
+    new MeshStandardMaterial({ color: 0xcc4422, emissive: 0x3a1408 })
+  );
+  post.position.set(x, 2.1, 0.22);
+  scene.add(post);
+  // Green while the balance is actually gone. Not a result — read every frame
+  // off where the centre of mass is right now.
+  const pip = new Mesh(
+    new CylinderGeometry(0.16, 0.16, 0.05, 16),
+    new MeshStandardMaterial({ color: 0x33aa55, emissive: 0x0c2e16 })
+  );
+  pip.position.set(x, 0.05, -0.55);
+  scene.add(pip);
+
+  const p = { skill, tori, uke, grapple, idle, post, pip, impulse: 0, thrown: 0, tries: 0 };
+  grapple.onThrow((e) => { p.tries++; p.failed = e.failed; if (e.completed) p.thrown++; });
+  grapple.onLand((l) => { p.impulse = l.impulse; p.torso = l.toTorso; });
+  return p;
+});
+
+let cool = 0.8;
+let round = 0;
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  cool -= dt;
+  if (cool <= 0 && pairs.every((p) => p.grapple.current === null)) {
+    for (const p of pairs) p.grapple.attempt(THROW);
+    round++;
+    cool = 4.2;
+  }
+  for (const p of pairs) {
+    // The idle runs only between attempts. Two systems driving one pelvis at
+    // once is an argument, and the throw would win it every frame anyway.
+    if (!p.grapple.current) for (const l of p.idle) l.update(dt, 0);
+    p.grapple.update(dt);
+    const h = 0.05 + Math.min(1.15, p.impulse / 260);
+    p.post.scale.y = h;
+    p.post.position.y = 1.62 + h / 2;
+    p.pip.scale.setScalar(p.grapple.ukeBalance < 0 ? 1 : 0.28);
+  }
+});
+
+game.camera.position.set(0, 3.1, 12.2);
+game.camera.lookAt(0, 1.15, 0.2);
+
+// How far this body has to be tipped in the direction this throw breaks — the
+// number every pair on the line is being measured against.
+const needed = breakEffort(createHumanoid({ seed: 42 }), THROWS[THROW].breaks);
+
+window.dojoDebug = () => ({
+  pairs: pairs.length,
+  // The scene\'s OWN clock. Headless SwiftShader runs at about a third of real
+  // time, and a dojo where nobody has thrown yet looks exactly like one where
+  // nobody ever will.
+  clock: Number(t.toFixed(1)),
+  rounds: round,
+  breaks: THROWS[THROW].breaks,
+  tipNeeded: Number(((needed.lean * 180) / Math.PI).toFixed(1)),
+  travelNeeded: Number((needed.travel * 1000).toFixed(0)),
+  // The far end of the line — the one that always has the pull to finish.
+  phase: pairs[pairs.length - 1].grapple.phase,
+  bySkill: pairs.map((p) => ({
+    skill: p.skill,
+    tries: p.tries,
+    thrown: p.thrown,
+    failed: p.failed ?? null,
+    balance: Number(p.grapple.ukeBalance.toFixed(3)),
+    impulse: Number(p.impulse.toFixed(0)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

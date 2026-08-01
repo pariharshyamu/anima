@@ -18,6 +18,9 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'lifting', title: 'Lifting: the rep that decays' },
   { id: 'dining', title: 'Dining: the utensil is the mechanism' },
   { id: 'archery', title: 'Archery: the anchor decides the group' },
+  { id: 'striking', title: 'Striking: the mass is measured' },
+  { id: 'guard', title: 'Guard: coverage is geometry' },
+  { id: 'grappling', title: 'Grappling: no kuzushi, no throw' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

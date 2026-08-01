@@ -20,6 +20,55 @@ release found.
 
 ## Releases
 
+## [0.51.0] — 2026-08-01
+
+### Added
+
+- **`Grappling` — a throw is a consequence of the balance, not a cutscene.**
+  Eight throws: `osotoGari`, `oGoshi`, `seoiNage`, `uchiMata`, `haraiGoshi`,
+  `taiOtoshi`, `footSweep`, `doubleLeg`. There is no success chance in the
+  module and nowhere one could be added: an attempt completes if, and only if,
+  the uke's centre of mass has left the polygon their feet make on the floor.
+  That is judo's definition of *kuzushi*, and it is also exactly what
+  `stability()` — written for `Striking`, for a different reason — measures.
+  **At skill 0.35 six of twenty-four attempts land; at 0.95 all twenty-four
+  do.** Both numbers have to be non-zero.
+- **`breakEffort(rig, direction)` and `weakestDirection(rig)`** — how hard this
+  body is to break, measured rather than tabulated: tip it a little further
+  each step and watch the real `stability()` come down. **A body goes over
+  backwards for 4.6° and forwards for 11.8°, a 3.6× spread on the same
+  person** — which is a heel sitting 75 mm behind an ankle and a toe 190 mm in
+  front of it, read off the feet. *Happo no kuzushi* supplies the eight points;
+  which one is cheapest is deliberately not written down anywhere.
+- **`Landing`** — `height`, `speed`, `impulse`, `toTorso`, all derived. A
+  centre of mass that falls `h` arrives at `sqrt(2gh)` carrying that times a
+  mass `bodyMass` gets from the body's own height and build. A hip throw lands
+  270 kg·m/s against a foot sweep's 190, because it lifts somebody first.
+- **`ukemi`** — a breakfall spreads an arrival; it does not shrink it. The fall
+  is identical to within 2.8% and **62% comes off the torso**. The ordering is
+  measured, not assumed: an arm that arrives late gets no relief.
+- **Grips are contact-gated**, the way `climb` gates a hand on a rung. A sleeve
+  grip moves an arm; a lapel cannot come to you, so **engagement range comes
+  out at 520 mm** and past it the attempt returns `failed: 'noGrip'`.
+- **`npm run grappling`, the tenth gate**, and CI runs all ten.
+- **The `dojo` playground** — five pairs, the same throw, nothing but the pull
+  between them, and the line splits in the middle.
+
+### Fixed
+
+- **The "fixed" internal timestep in `Striking` was capped but not floored.**
+  `steps = ceil(dt / FIXED_STEP); step = dt / steps` runs at 1/240 on a fast
+  frame and 1/120 on a slow one, which is not a fixed step at all — it is a
+  step that happens to be small. **Five of the fourteen strikes moved with the
+  frame rate, a teep by 1.36×.** `Striking`'s own gate could not see it because
+  it checked one strike and a cross was one of the stable ones. Both modules
+  now carry the leftover, and both gates check every move, exactly.
+- `measureStrike` differenced joint positions by its own `dt` rather than by
+  the time actually simulated, which put a phantom double-speed spike on the
+  first frame that moved. It now divides by `Striking.elapsed`.
+- `StrikeReport.worstSpeed` — the pop budget is a speed now, because how far a
+  surface moves in one step is a property of the engine, not of the punch.
+
 ## [0.50.0] — 2026-08-01
 
 ### Added

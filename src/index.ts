@@ -353,3 +353,31 @@ export {
   type MoodPoint,
   type PostureReport,
 } from './mood';
+
+// Grappling — a throw is a consequence of the balance, not a cutscene.
+export {
+  Grappling,
+  KUZUSHI,
+  KUZUSHI_DIRECTIONS,
+  THROWS,
+  THROW_NAMES,
+  GRIP_TOLERANCE,
+  MAX_LEAN,
+  UKEMI_RELIEF,
+  breakEffort,
+  gripPoints,
+  landingImpulse,
+  measureThrow,
+  weakestDirection,
+  type BreakEffort,
+  type Fulcrum,
+  type GrapplePhase,
+  type GrapplingOptions,
+  type GripPair,
+  type KuzushiDirection,
+  type Landing,
+  type ThrowEvent,
+  type ThrowName,
+  type ThrowReport,
+  type ThrowSpec,
+} from './grappling';
