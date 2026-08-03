@@ -538,3 +538,30 @@ export {
   type FencerOptions,
   type Touch,
 } from './fencing';
+
+// Speech — visemes, and the observation that the IPA already is a viseme table.
+export {
+  ANTICIPATION,
+  DOMINANCE,
+  JAW_SPEED,
+  JAW_TRAVEL,
+  PHONEMES,
+  PHONEME_KEYS,
+  REST,
+  REST_WEIGHT,
+  Speech,
+  VISEMES,
+  VISEME_NAMES,
+  createMouth,
+  mouthAt,
+  mouthOf,
+  syllableRate,
+  utterance,
+  utteranceLength,
+  visemeOf,
+  type MouthProp,
+  type MouthShape,
+  type PhonemeSpec,
+  type Segment,
+  type SpeechOptions,
+} from './speech';
