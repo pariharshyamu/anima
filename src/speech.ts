@@ -231,6 +231,23 @@ export const JAW_SPEED = 0.2;
 /** How far the jaw travels from shut to fully open, metres, on a 1.75 m body. */
 export const JAW_TRAVEL = 0.0525;
 
+/**
+ * How much jaw gap the LIPS can close on their own, metres, on a 1.75 m body.
+ *
+ * A seal is not the jaw shutting. The lips are soft tissue — about ten
+ * millimetres of vermilion each, plus a few of protrusion — and they stretch to
+ * meet across a gap the jaw has left open. That is exactly what a nasal is: you
+ * can hum with your mouth open, and the /m/ in "mama" happens while the jaw is
+ * still on its way down from the vowel.
+ *
+ * It is also a BOUND, and the useful half of the number. Past their own span
+ * the lips cannot reach, so a jaw further down than this has no seal available
+ * to it and a bilabial there would be a lie. `LIP_BRIDGE / JAW_TRAVEL` is
+ * therefore the widest jaw a sealed mouth may be drawn with — 46% — and it is
+ * the budget the gate holds the blend to, rather than a number anybody picked.
+ */
+export const LIP_BRIDGE = 0.024;
+
 export interface Segment {
   key: string;
   /** Seconds from the start of the utterance. */
@@ -387,10 +404,32 @@ export class Speech {
     const want = mouthAt(this.track, this.elapsed);
     const limit = (JAW_SPEED / this.jawTravel) * step;
     const d = want.open - this.shape.open;
+    const open = this.shape.open + Math.max(-limit, Math.min(limit, d));
+
+    // A SEAL THE LIPS CANNOT REACH IS NOT A SEAL.
+    //
+    // The lips are not rate-limited and the jaw is, so the blend switches the
+    // seal on while the jaw is still on its way up from the vowel. In "mam"
+    // that is twenty-five millimetres of gap at the instant /m/ starts, and the
+    // lips have twenty-four to span. The gate caught it as a 52%-open jaw under
+    // sealed lips, and it would have drawn as a bilabial whose lips never met.
+    //
+    // So the seal is capped by the geometry: the lips can close `lipBridge` of
+    // gap, and the gap is `open × jawTravel`, and a mouth wider than that gets
+    // the fraction it can have. Nothing is scheduled and nothing is faked — the
+    // seal simply COMPLETES WHEN THE JAW ARRIVES, twenty milliseconds later.
+    //
+    // It also predicts something nobody put in: at speech rates fast enough
+    // that the jaw never gets back up, bilabial closure degrades. That is the
+    // lips' half of Lindblom's undershoot, and it falls out of the same two
+    // lengths.
+    const gap = open * this.jawTravel;
+    const reachable = gap > 0 ? Math.min(1, this.lipBridge / gap) : 1;
+
     this.shape = {
-      open: this.shape.open + Math.max(-limit, Math.min(limit, d)),
+      open,
       round: want.round,
-      close: want.close,
+      close: Math.min(want.close, reachable),
       spread: want.spread,
     };
     return this.shape;
@@ -398,6 +437,9 @@ export class Speech {
 
   /** How far this face's jaw travels, metres. Scaled off the body. */
   jawTravel = JAW_TRAVEL;
+
+  /** How much gap this face's lips can close on their own, metres. */
+  lipBridge = LIP_BRIDGE;
 }
 
 /**
@@ -453,20 +495,35 @@ export function createMouth(rig: HumanoidRig): MouthProp {
     group,
     apply(shape: MouthShape): void {
       // The jaw drops. Everything else is the lips.
-      const gap = shape.open * 0.03 * H;
+      const scale = H / 1.75;
+      const gap = shape.open * JAW_TRAVEL * scale;
       const width = 1 + shape.spread * 0.35 - shape.round * 0.4;
-      upper.position.y = gap * 0.25;
-      lower.position.y = -gap * 0.75;
-      cavity.position.y = -gap * 0.25;
-      cavity.scale.y = Math.max(0.05, (gap / (0.004 * H)) * 0.9);
+      const seal = shape.close;
+
+      // AND THE LIPS BRIDGE WHAT THE JAW LEFT OPEN.
+      //
+      // Without this the prop drew a "sealed" mouth twenty-three millimetres
+      // apart, because `close` and `open` are separate channels and the jaw is
+      // deliberately not gated by the seal. That is right about the jaw and
+      // wrong about the picture: a /m/ whose lips do not meet is the exact
+      // failure this module exists to prevent, and the screenshot showed it.
+      //
+      // So the lips travel toward each other by the seal, up to their own span
+      // and no further — soft tissue stretching across a gap a bone left. Past
+      // LIP_BRIDGE they cannot reach, and a mouth that open does not get a seal
+      // drawn for it, which is the same bound the gate holds the blend to.
+      const bridge = Math.min(gap, LIP_BRIDGE * scale) * seal;
+      const shown = gap - bridge;
+
+      upper.position.y = gap * 0.25 - bridge * 0.25;
+      lower.position.y = -gap * 0.75 + bridge * 0.75;
+      cavity.position.y = -shown * 0.25;
+      cavity.scale.y = Math.max(0.05, (shown / (0.004 * H)) * 0.9);
       upper.scale.x = width;
       lower.scale.x = width;
       cavity.scale.x = width;
-      // A seal pushes the lips together and forward — the pucker of a /m/.
-      const seal = shape.close;
+      // A seal also pushes the lips forward — the pucker of a /m/.
       group.position.z = 0.0575 * H + seal * 0.004 * H;
-      upper.position.y += seal * 0.001 * H;
-      lower.position.y += seal * 0.001 * H;
     },
   };
 }

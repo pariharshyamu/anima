@@ -6750,6 +6750,215 @@ window.fenceDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'talking',
+    title: 'Speech: two mouths, and only one of them shuts',
+    group: 'Character',
+    code: `// THE VISEME TABLE HAS BEEN PUBLISHED SINCE 1888.
+//
+// Every lipsync system starts by inventing a list of mouth shapes and a mapping
+// from sounds onto them. That list already exists. It is the IPA vowel chart,
+// and its two axes are exactly the two things a mouth visibly does:
+//
+//   VOWEL HEIGHT   close ... open       is how far the jaw is down
+//   ROUNDEDNESS    spread ... rounded   is what the lips are doing
+//
+// So mouthOf() is two lookups and a subtraction. /i/ is close and unrounded, so
+// the jaw is nearly shut and the lips are wide; /u/ is close and rounded, so the
+// jaw is nearly shut and the lips are pursed. Nobody decided any of that.
+//
+// WHAT THIS SCENE IS ARGUING
+//
+// Two heads. The left one is saying "mama papa mama". The right one is saying
+// "halo sisi halo". Watch the LIPS, not the jaws.
+//
+// The left mouth SLAMS SHUT four times a second and the right one never does,
+// and that is the whole release. /p/, /b/ and /m/ are made by sealing the lips —
+// three different sounds and one picture, which is why lip-reading is hard — and
+// if the seal is blended down to 60% the face reads as flapping vaguely and
+// every viewer knows something is wrong without being able to say what.
+//
+// So closure is NOT blended like the other channels. It is taken as a MAXIMUM
+// over the neighbours, because that is what a seal physically is: the lips are
+// shut or they are not, and averaging shut with open does not give half-shut, it
+// gives wrong.
+//
+// THE PALE BAR
+//
+// Hanging between them is the readout: five bars per talker, left group for the
+// left mouth. Four are solid — jaw, round, seal, spread — and one is pale.
+//
+// The pale bar is what the coarticulation blend ASKED the jaw for. The solid
+// one next to it is what the jaw actually reached. The difference between them
+// is UNDERSHOOT: a short vowel between two consonants never gets to its own
+// opening, because a jaw peaks at about 200 mm/s and there is not time to get
+// there and back. Lindblom measured that in 1963, and nothing here encodes it —
+// it falls out of one published speed limiting one published duration.
+//
+// AND THE SEAL WAITS FOR THE JAW
+//
+// The lips are not rate-limited; they are light and they shut in fifty
+// milliseconds. The jaw is a bone. So the blend calls for a seal while the jaw
+// is still twenty-five millimetres down from the vowel — and lips are only
+// about twenty-four millimetres long, so for a moment there is no seal
+// available to have.
+//
+// Watch the red bar on "mama": it rises fast, hesitates just short of full, and
+// completes as the jaw arrives. That hesitation is LIP_BRIDGE / (open ×
+// JAW_TRAVEL) — two anatomical lengths and a division. It also predicts that at
+// speech fast enough for the jaw never to get back up, bilabial closure
+// degrades, which is the lips' half of the same undershoot.
+import { BoxGeometry, Group } from 'three';
+import { JAW_SPEED, JAW_TRAVEL, PHONEMES, Locomotion, Speech, createHumanoid,
+         createMouth, mouthAt, visemeOf } from 'anima3d';
+${STUDIO}
+
+// Two talkers. The only difference that matters between them is whether there
+// is a bilabial in the line.
+const LINES = [
+  { keys: 'mama.papa.mama.', seed: 42, x: -0.3, bilabial: true },
+  { keys: 'halo.sisi.halo.', seed: 7, x: 0.3, bilabial: false },
+];
+
+const BAR = { ghost: 0x7d8698, jaw: 0xd8a83a, round: 0x3a8fd0, seal: 0xcc4422, spread: 0x54b070 };
+const CHANNELS = ['ghost', 'jaw', 'round', 'seal', 'spread'];
+
+// ONE readout, hung between the two of them and in front, so the two seal bars
+// end up side by side. Two panels beside two heads did not fit the frame, and a
+// readout you cannot see is not instrumentation.
+const panel = new Group();
+panel.position.set(0, 1.4, 0.38);
+scene.add(panel);
+
+const talkers = LINES.map((line, side) => {
+  // No hat, no moustache: this scene is an argument about a mouth, and the
+  // first screenshot of it had the left talker's seal hidden under facial hair.
+  const rig = createHumanoid({
+    seed: line.seed, height: 1.75, accessories: 'none',
+    hair: { style: 'side-part' }, face: { facialHair: 'none' },
+  });
+  rig.object.position.x = line.x;
+  // Turned a few degrees toward the camera, so a seal is a silhouette change
+  // and not only a head-on one.
+  rig.object.rotation.y = line.x > 0 ? -0.22 : 0.22;
+  scene.add(rig.object);
+  // Idle locomotion, purely so the arms hang. A rig straight out of the
+  // constructor is in its bind pose, and the first screenshot was two people
+  // in a T-pose talking about phonetics.
+  const idle = new Locomotion(rig);
+
+  // The face createHumanoid builds is baked into the skinned mesh — no jaw bone
+  // and no morph target — so a moving mouth is an overlay parented to the Head,
+  // sized off the same body height the baked face was.
+  const mouth = createMouth(rig);
+  const speech = new Speech(line.keys, { loop: true });
+
+  // This talker's five channels, HANGING DOWN from the panel so they never
+  // climb across the faces.
+  const bars = CHANNELS.map((name, i) => {
+    const bar = new Mesh(
+      new BoxGeometry(0.03, 1, 0.03),
+      new MeshStandardMaterial({
+        color: BAR[name],
+        emissive: BAR[name],
+        emissiveIntensity: name === 'ghost' ? 0.12 : 0.5,
+        transparent: name === 'ghost',
+        opacity: name === 'ghost' ? 0.5 : 1,
+      })
+    );
+    bar.position.x = (side - 0.5) * 0.26 + (i - 2) * 0.042;
+    // The ghost stands just behind the jaw bar it is the target for, so
+    // undershoot reads as one bar falling short of another.
+    bar.position.z = name === 'ghost' ? -0.045 : 0;
+    if (name === 'ghost') bar.position.x += 0.042;
+    panel.add(bar);
+    return bar;
+  });
+
+  return { keys: line.keys, bilabial: line.bilabial, rig, idle, mouth, speech, bars };
+});
+
+const sealedFrames = [0, 0];
+let t = 0;
+// A seal lasts about fifty milliseconds, and a screenshot cannot be aimed that
+// precisely. So the scene can be stopped on one — window.speechPause() — which
+// is how the picture in the docs was taken with the lips actually shut.
+let paused = false;
+window.speechPause = () => { paused = true; };
+
+game.onUpdate((frame) => {
+  if (paused) return;
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+
+  talkers.forEach((talker, i) => {
+    talker.idle.update(dt, 0);
+
+    // The controller steps the utterance and rate-limits the jaw.
+    const shape = talker.speech.update(dt);
+    talker.mouth.apply(shape);
+    if (shape.close > 0.9) sealedFrames[i]++;
+
+    // ...and this is the unlimited target it was chasing, for the pale bar.
+    const want = mouthAt(talker.speech.track, talker.speech.elapsed);
+    const set = (bar, v) => {
+      const h = Math.max(0.008, v * 0.13);
+      bar.scale.y = h;
+      bar.position.y = -h / 2;
+    };
+    set(talker.bars[0], want.open);
+    set(talker.bars[1], shape.open);
+    set(talker.bars[2], shape.round);
+    set(talker.bars[3], shape.close);
+    set(talker.bars[4], shape.spread);
+
+    // A head that never moves reads as a mask with a mouth cut in it. The nod
+    // rides the jaw a little, because an open jaw drops the chin.
+    talker.rig.bones.Head.rotation.x = Math.sin(t * 0.9 + i) * 0.05 - shape.open * 0.06;
+    talker.rig.bones.Head.rotation.z = Math.sin(t * 0.6 + i * 2) * 0.04;
+  });
+
+  // Head-and-shoulders, close enough that a lip seal is legible. It is not
+  // legible from across a room, which is exactly why lip-reading is hard — and
+  // the first screenshot of this scene was taken from across a room.
+  game.camera.position.set(Math.sin(t * 0.25) * 0.14, 1.6, 1.05);
+  game.camera.lookAt(0, 1.58, 0);
+});
+
+window.speechDebug = () => {
+  const at = (talker) => {
+    const e = talker.speech.elapsed;
+    const seg = talker.speech.track.find((s) => e >= s.at && e < s.at + s.duration);
+    return seg ? seg.key : '.';
+  };
+  return {
+    // The scene's own clock — a headless run is about a third of real time, and
+    // a mouth nobody has started looks exactly like one that never moves.
+    clock: Number(t.toFixed(1)),
+    jawSpeed: JAW_SPEED,
+    jawTravel: JAW_TRAVEL,
+    phonemes: Object.keys(PHONEMES).length,
+    talkers: talkers.map((talker, i) => ({
+      line: talker.keys,
+      length: Number(talker.speech.length.toFixed(3)),
+      phoneme: at(talker),
+      viseme: visemeOf(at(talker)),
+      // THE POINT OF THE SCENE: the left mouth seals and the right one cannot.
+      bilabial: talker.bilabial,
+      sealedFrames: sealedFrames[i],
+      seal: Number(talker.speech.shape.close.toFixed(3)),
+      jaw: Number(talker.speech.shape.open.toFixed(3)),
+      // ...and the undershoot, as two numbers: asked for, against reached.
+      wanted: Number(mouthAt(talker.speech.track, talker.speech.elapsed).open.toFixed(3)),
+      syllables: talker.speech.track.filter((s) => PHONEMES[s.key].kind === 'vowel').length,
+    })),
+    draws: game.renderer.info.render.calls,
+  };
+};
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

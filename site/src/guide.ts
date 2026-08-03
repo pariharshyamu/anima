@@ -30,6 +30,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'javelin', title: 'Javelin: the four centimetres of 1986' },
   { id: 'armour', title: 'The armour handshake: the one that finishes' },
   { id: 'fencing', title: 'Fencing: the armed bout, and it moves' },
+  { id: 'speech', title: 'Speech: the IPA is already a viseme table' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

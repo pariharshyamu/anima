@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, nineteen gates
+    name: typecheck, tests, build, twenty gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -102,6 +102,14 @@ jobs:
       # won. The tempo is √(2θI/τ) — the blade's own inertia against the couple
       # its hilt allows — so nothing in the weapon table says "speed".
       - run: npm run fencing
+      # The twentieth checks that a mouth is still a mouth. The viseme table is
+      # the IPA vowel chart, published in 1888, so openness must stay monotone
+      # in the chart's own height and two vowels differing only in rounding must
+      # come out differing only in rounding. Then the one that matters: a
+      # BILABIAL MUST CLOSE THE LIPS — closure is a maximum over the neighbours,
+      # never an average — and the seal never claims more gap than the lips have
+      # length, which is LIP_BRIDGE against JAW_TRAVEL and not a chosen budget.
+      - run: npm run speech
 
   browser:
     name: every example renders

@@ -20,6 +20,62 @@ release found.
 
 ## Releases
 
+## [0.61.0] — 2026-08-03
+
+### Added
+
+- **`Speech` — visemes, and the observation that the table already exists.**
+  Every lipsync system starts by inventing a list of mouth shapes and a mapping
+  from sounds onto them. That list has been published since 1888: it is the IPA
+  vowel chart, and its two axes are exactly the two things a mouth visibly does
+  — vowel HEIGHT is how far the jaw is down, and ROUNDEDNESS is what the lips
+  are doing. `mouthOf` is two lookups and a subtraction, and there is no viseme
+  table in the file because the IPA is one. 31 phonemes collapse onto 9 visemes,
+  3.4 to one, which is why lipsync is tractable and lip-reading is hard.
+- **The one that matters: a bilabial closes the lips.** `/p/`, `/b/` and `/m/`
+  are three sounds and one picture. Coarticulation blends everything else —
+  Cohen and Massaro's dominance functions, and the visible shape LEADS the sound
+  by a measured tenth of a second — but closure is taken as a MAXIMUM over the
+  neighbours and never an average, because a seal is a contact: the lips are
+  shut or they are not, and averaging shut with open does not give half-shut, it
+  gives wrong. "mama", "papa" and "baba" reach 100%; "halo" 5% and "sisi" 15%.
+- **`JAW_SPEED`, `JAW_TRAVEL`, `LIP_BRIDGE`** — three published lengths and
+  speeds, and everything awkward falls out of them. A jaw peaks at 200 mm/s and
+  the raw blend swings it at over a metre a second, so the blend is the target
+  and the controller rate-limits the face; the difference is UNDERSHOOT, which
+  Lindblom measured in 1963 and which nobody here wrote down. The lips are not
+  limited — they are light and shut in 50 ms — but they are only 24 mm long, so
+  the seal is capped at `LIP_BRIDGE / (open × JAW_TRAVEL)` and COMPLETES WHEN
+  THE JAW ARRIVES. That predicts, unprompted, that fast speech loses its
+  closures.
+- **`createMouth(rig)`** — a moving mouth as an overlay parented to the Head,
+  because the face `createHumanoid` builds is baked into the skinned mesh: no
+  jaw bone, no morph target.
+- **The twentieth gate, `npm run speech`,** and the playground example
+  `talking`: two heads, one saying "mama papa mama" and one saying "halo sisi
+  halo", with the seal and the jaw drawn as bars under them.
+
+### Fixed
+
+- The mouth snapped shut at the end of every line — 49% of the jaw's range in
+  one 120 Hz frame, because the dominance accumulator emptied the instant no
+  segment was in reach, which the anticipatory lead guarantees. The blend is now
+  seeded with `REST` at a standing weight: a mouth returns to rest, it does not
+  fall to it.
+- The jaw was FOLLOWING the lips. `open` was gated by `(1 − seal)`, so every
+  `/m/` slammed the blended opening to zero over 50 ms — 1099 mm/s against a
+  jaw's 200. You can hum with your mouth open; that is what a nasal is.
+- The gate's own budget encoded that same bug. "A sealed mouth is not also an
+  open one" was written at 15%, which is the jaw-follows-lips assumption stated
+  as a number. It is now `LIP_BRIDGE / JAW_TRAVEL` — a division of two
+  anatomical lengths.
+- A "100% sealed" mouth was drawn 23 mm apart, found by a screenshot rather than
+  a number: every value in the report was right and the picture was a bilabial
+  whose lips did not meet. The prop now has the lips travel toward each other,
+  up to their own span and no further.
+- The controller sealed across 25 mm of gap with 24 mm of lip, caught by the
+  derived budget the moment it stopped being a chosen one.
+
 ## [0.60.0] — 2026-08-03
 
 ### Added

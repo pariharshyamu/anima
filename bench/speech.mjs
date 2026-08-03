@@ -28,7 +28,7 @@
  * closure is averaged like the other channels instead of taken as a maximum.
  */
 import {
-  ANTICIPATION, DOMINANCE, JAW_SPEED, JAW_TRAVEL, PHONEMES, PHONEME_KEYS, Speech,
+  ANTICIPATION, DOMINANCE, JAW_SPEED, JAW_TRAVEL, LIP_BRIDGE, PHONEMES, PHONEME_KEYS, Speech,
   VISEMES, VISEME_NAMES,
   createHumanoid, createMouth, mouthAt, mouthOf, syllableRate, utterance,
   utteranceLength, visemeOf,
@@ -118,19 +118,75 @@ for (const word of ['halo', 'sisi', 'tata']) {
   if (!(shut < 0.35)) fail(`"${word}" has no bilabial and still sealed to ${(shut * 100).toFixed(0)}%`);
 }
 // A sealed mouth is not WIDELY open — but it is allowed to be a bit open, and
-// the difference matters. Lips can bridge a small gap; that is what humming is,
-// and a nasal is voiced through a closed mouth with the jaw wherever it likes.
+// the difference matters. Lips can bridge a gap; that is what humming is, and a
+// nasal is voiced through closed lips with the jaw wherever it likes.
 //
-// This budget was 15% and it was wrong: it encoded the assumption that the jaw
-// follows the lips, which is what made the jaw slam shut at thirty times the
-// speed a jaw can move. The lips are light and the jaw is a bone, and the two
-// are not the same channel.
-const mama = utterance('mama');
-for (let x = 0; x <= utteranceLength(mama); x += 0.004) {
-  const m = mouthAt(mama, x);
-  if (m.close > 0.9 && m.open > 0.45) {
-    fail(`at ${x.toFixed(2)}s the lips are ${(m.close * 100).toFixed(0)}% sealed across a ${(m.open * 100).toFixed(0)}% open jaw`);
+// The budget is the LIPS' OWN SPAN, and it is a division rather than a choice:
+// they can close LIP_BRIDGE of gap and the jaw's whole travel is JAW_TRAVEL, so
+// past that ratio there is no seal available and a bilabial drawn there is a
+// lie. Two anatomical lengths, one division, no knob.
+//
+// It was 15% before, and 15% was wrong in the other direction: it encoded the
+// assumption that the jaw FOLLOWS the lips, which is what made the jaw slam
+// shut at thirty times the speed a jaw can move. The lips are light and the jaw
+// is a bone, and they are not the same channel.
+const BRIDGEABLE = LIP_BRIDGE / JAW_TRAVEL;
+let widestSeal = 0;
+for (const word of ['mama', 'papa', 'baba', 'mam', 'ama', 'mAmA', 'mama.papa.mama.', 'halo.mama']) {
+  const t = utterance(word);
+  for (let x = 0; x <= utteranceLength(t); x += 0.002) {
+    const m = mouthAt(t, x);
+    if (m.close > 0.9) widestSeal = Math.max(widestSeal, m.open);
   }
+}
+if (!(widestSeal <= BRIDGEABLE)) {
+  fail(
+    `the blend sealed the lips across a ${(widestSeal * 100).toFixed(0)}% open jaw, and lips ` +
+      `${LIP_BRIDGE * 1000} mm long can only bridge ${(BRIDGEABLE * 100).toFixed(0)}%`
+  );
+}
+// ...and now the same claim about the FACE, which is the tighter one and is
+// stated in millimetres because that is what it is about.
+//
+// The lips are not rate-limited and the jaw is, so the blend switches a seal on
+// while the jaw is still coming up from the vowel. The invariant is that the
+// seal never claims more gap than the lips have length:
+//
+//   close × open × JAW_TRAVEL  ≤  LIP_BRIDGE
+//
+// Both sides are millimetres of lip. This is the assertion that found the
+// controller sealing across twenty-five of them with twenty-four to work with —
+// a bilabial whose lips do not meet, drawn from a report that read 100%.
+let claimed = 0;
+let widestDrawn = 0;
+for (const line of ['mama.papa.mama.', 'mam', 'halo.mama.sisi', 'baba', 'ampa']) {
+  const s = new Speech(line);
+  while (!s.done) {
+    const m = s.update(1 / 120);
+    claimed = Math.max(claimed, m.close * m.open * JAW_TRAVEL);
+    if (m.close > 0.99) widestDrawn = Math.max(widestDrawn, m.open);
+  }
+}
+if (!(claimed <= LIP_BRIDGE + 1e-9)) {
+  fail(
+    `the seal claimed ${(claimed * 1000).toFixed(1)} mm of gap and the lips are ` +
+      `${LIP_BRIDGE * 1000} mm long`
+  );
+}
+if (!(widestDrawn <= BRIDGEABLE + 1e-9)) {
+  fail(
+    `a fully sealed mouth was drawn ${(widestDrawn * 100).toFixed(0)}% open, and lips can ` +
+      `only bridge ${(BRIDGEABLE * 100).toFixed(0)}%`
+  );
+}
+// And the seal still COMPLETES — the cap delays it until the jaw arrives, it
+// does not cancel it. A "mama" whose lips only ever get 90% shut is the failure
+// this whole file is about.
+{
+  const s = new Speech('mama');
+  let best = 0;
+  while (!s.done) best = Math.max(best, s.update(1 / 120).close);
+  if (!(best > 0.999)) fail(`the controller only ever got "mama" ${(best * 100).toFixed(0)}% sealed`);
 }
 // And the vowel between the two /m/s has to actually open, or "mama" is a hum.
 if (!(peak('mama', 'open') > 0.6)) fail(`"mama" never opens past ${(peak('mama', 'open') * 100).toFixed(0)}%`);
@@ -225,6 +281,32 @@ mouth.apply({ open: 0, round: 0, close: 1, spread: 0 });
 const shut = mouth.group.children[2].position.y;
 if (!(shut > wide)) fail('the lower lip does not drop when the mouth opens');
 
+// AND THE DRAWN LIPS HAVE TO MEET.
+//
+// This is the check the module went without, and the screenshot found what it
+// missed: `close` and `open` are separate channels, the jaw is deliberately not
+// gated by the seal, and the prop cheerfully drew a "100% sealed" mouth
+// twenty-three millimetres apart. Every number in the report was right and the
+// picture was the exact failure the module exists to prevent.
+//
+// A seal is a CONTACT. So measure it as one, in metres, off the two lip meshes.
+const lipGap = () => mouth.group.children[1].position.y - mouth.group.children[2].position.y;
+mouth.apply({ open: widestDrawn, round: 0, close: 1, spread: 0 });
+if (!(lipGap() < 0.0005)) {
+  fail(`sealed lips were drawn ${(lipGap() * 1000).toFixed(1)} mm apart at the widest jaw a seal happens on`);
+}
+// ...and past their own span they cannot, which is the honest half of it: the
+// lips bridge, they do not stretch without limit. The rig is 1.75 m to within
+// its own seeded variation, so the two lengths scale with it.
+const scale = rig.height / 1.75;
+mouth.apply({ open: 1, round: 0, close: 1, spread: 0 });
+const beyond = lipGap();
+if (!(beyond > 0.02 * scale)) {
+  fail(`the lips closed a fully open jaw — ${(beyond * 1000).toFixed(1)} mm — which is not a bridge, it is a rule`);
+}
+close(beyond, (JAW_TRAVEL - LIP_BRIDGE) * scale, 1e-9,
+  'the drawn gap is not the jaw travel less the lips’ own span');
+
 // ---------------------------------------------------------------- report
 
 if (json) {
@@ -264,6 +346,14 @@ if (json) {
   console.log(
     `\n  the visible shape leads the sound by ${(ANTICIPATION * 1000).toFixed(0)} ms, ` +
       `and "mama" runs at ${syllableRate(utterance('mama')).toFixed(1)} syllables/s`
+  );
+  console.log(
+    `  lips ${LIP_BRIDGE * 1000} mm long bridge ${(BRIDGEABLE * 100).toFixed(0)}% of the jaw's ` +
+      `${JAW_TRAVEL * 1000} mm travel;`
+  );
+  console.log(
+    `  the blend asks for a seal across at most ${(widestSeal * 100).toFixed(0)}% and the ` +
+      `rate-limited face draws ${(widestDrawn * 100).toFixed(0)}% — both inside it`
   );
 }
 
