@@ -20,6 +20,108 @@ release found.
 
 ## Releases
 
+## [0.57.0] — 2026-08-03
+
+### Added
+
+- **`Bind` — two blades in contact stop being two objects.** They become one
+  linkage with a hand at each end and a sliding joint in the middle that
+  neither fencer put there. The joint is where two lines cross, and that is all
+  it is.
+- **`npm run bind`, the sixteenth gate.**
+
+### The lever, which is the oldest idea in the art
+
+The distance from your hand to the crossing is your lever arm. The force you
+can put on the contact is `τ/a`. Contact near your own hilt is a short lever
+and an enormous force; contact out near your point is a long lever and almost
+none. That is the *strong* and the *weak* of the blade, and it is `τ = F·r`
+rearranged — nothing here has been told about forte or foible.
+
+The same weapon on both sides, crossing at 20% of one blade and 80% of the
+other, wins by exactly **4.00×**.
+
+### The finding: two mechanisms, pointing opposite ways
+
+**Friction says a shallow crossing STICKS.** Press across another blade and the
+force splits normal and tangential in the ratio `tan θ`, so below `atan(µ)` the
+tangential part cannot overcome friction. Steel on steel, µ = 0.2: **11.31°**,
+a published coefficient run through an arctangent.
+
+**Geometry says a shallow crossing is UNSTABLE.** Rotate your blade by `dα` and
+the contact runs along theirs by `a·dα/sin θ` — the conditioning of a line
+intersection, which diverges as the lines approach parallel.
+
+    crossing   grips?     contact runs, per degree (0.5 m lever)
+       2.00°   grips        250.1 mm
+       5.00°   grips        100.1 mm
+      11.31°   slips         44.5 mm
+      30.00°   slips         17.5 mm
+      90.00°   slips          8.7 mm
+
+The steepest crossing that still grips is **5.10×** as twitchy as a
+perpendicular one, which is `1/sin(atan µ)` — two constants that were never
+introduced to each other. Sweeping every degree from 1 to 89 there is no angle
+that does both, and the gate asserts it degree by degree.
+
+### Winding is what an intersection does
+
+    turn      A's lever    B's lever    ratio
+     -8°         635 mm       475 mm    1.59
+      0°         577 mm       577 mm    2.13
+      8°         539 mm       664 mm    2.62
+
+Turn one way and the contact walks back toward your hilt and out along theirs,
+monotonically, and your advantage grows. Turn the other way and it reverses.
+There is no technique in the code — that is a line being moved.
+
+### The one chosen number, and the check that it does not matter
+
+`HAND_FORCE` is the only value in the module somebody picked. Every claim is a
+ratio or an angle, so it divides out. The gate runs every comparison at that
+force and again at **ten times** it: the geometry comes back BIT-IDENTICAL, the
+force ratio within four ulps, and the contact force — the one thing that should
+move — scales by ten.
+
+Two hands on a longsword hilt sit **170 mm** apart, not 250: hand *centres* are
+inset by half a palm each. That subtraction makes the two-handed couple
+**2.13×** the arming sword's one-handed one, which is the whole mechanical case
+for a long grip.
+
+### Bugs this found
+
+- **The gate's winding check was a formula checked against itself.** It
+  recomputed `bindSensitivity` locally instead of reading the report's own
+  field, so a mutant that dropped the crossing angle from `measureBind`
+  entirely walked straight through. It was the only one of eleven that
+  survived. Now it reads `report.sensitivity`, and it dies.
+- **The first "forte beats foible" test was a division by nearly zero.** The
+  geometry put B's hand exactly on the crossing, reported a 335867× win, and
+  looked like a spectacular result. Rebuilt backwards from where the contact
+  has to be: 20% along one blade, 80% along the other, 4.00×.
+- **The example's blades never actually crossed.** With the hands at arm's
+  length the contact ran 11 metres down a 1.1 metre sword for the whole sweep,
+  so `onBoth` was false throughout and neither the grip nor the slip state ever
+  occurred — a demo of a bind with no bind in it. Two nearly-parallel lines
+  whose origins are far apart meet a long way away, and the hand spacing is
+  what decides how shallow a crossing can land on both blades. At 200 mm — where
+  a real pair of hands is in a bind — the shallowest is 5.5°, which straddles
+  the friction limit.
+
+Mutation-tested eleven ways: invert the conditioning, drop the arctangent,
+invert grip and slip, stop folding obtuse crossings to acute, span the whole
+hilt with two hands, make the contact force `τ·r`, shift a lever arm by 20 mm,
+make the couple quadratic in the span, drop the crossing angle from the report,
+decide the winner by torque alone, hand parallel blades a fake crossing. All
+eleven die.
+
+### Also
+
+- `crossing` playground example: one blade sweeps, the other never moves, and
+  the contact leaves a dot every tenth of a second. Where the dots are stretched
+  metres apart the bead is green and the crossing grips; where they bunch into a
+  knot it is grey and slipping. The two states never coincide.
+
 ## [0.56.0] — 2026-08-03
 
 ### Added

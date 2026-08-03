@@ -26,6 +26,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'tameshiwari', title: 'The tameshiwari handshake: two libraries, one physics' },
   { id: 'blade', title: 'Blade: a weapon is a mass distribution' },
   { id: 'cut', title: 'Cut: sharpness starts it, toughness pays for it' },
+  { id: 'bind', title: 'Bind: two blades in contact become one linkage' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

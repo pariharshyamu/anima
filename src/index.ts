@@ -479,3 +479,26 @@ export {
   type ThrustInput,
   type ThrustReport,
 } from './cut';
+
+// Bind — two blades in contact stop being two objects.
+export {
+  HAND_FORCE,
+  PALM_SPAN,
+  STEEL_FRICTION,
+  TWO_HAND_SPAN,
+  bindForce,
+  bindSensitivity,
+  bindsOrSlips,
+  crossing,
+  frictionAngle,
+  gripSpan,
+  handCouple,
+  leverage,
+  measureBind,
+  wind,
+  type BindOptions,
+  type BindReport,
+  type BladeLine,
+  type Crossing,
+  type Point as BindPoint,
+} from './bind';

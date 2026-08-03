@@ -1,6 +1,6 @@
 {
   "name": "anima3d",
-  "version": "0.56.0",
+  "version": "0.57.0",
   "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,7 +28,7 @@
     "skate": "node bench/skate.mjs",
     "climb": "node bench/climb.mjs",
     "parkour": "node bench/parkour.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut && npm run bind",
     "dev:portrait": "vite examples/portrait",
     "dev:hoops": "vite examples/basketball",
     "dev:village": "vite examples/village",
@@ -56,7 +56,8 @@
     "sparring": "node bench/sparring.mjs",
     "tameshiwari": "node bench/tameshiwari.mjs",
     "blade": "node bench/blade.mjs",
-    "cut": "node bench/cut.mjs"
+    "cut": "node bench/cut.mjs",
+    "bind": "node bench/bind.mjs"
   },
   "repository": {
     "type": "git",

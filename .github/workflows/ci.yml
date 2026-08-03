@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, fifteen gates
+    name: typecheck, tests, build, sixteen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -77,6 +77,12 @@ jobs:
       # numbers ever converge, somebody has fitted one to the other, and that
       # is what the budget is guarding.
       - run: npm run cut
+      # The sixteenth checks that two mechanisms keep DISAGREEING. Whether a
+      # crossing grips is Coulomb friction; whether it stays put is the
+      # conditioning of a line intersection. They point opposite ways and there
+      # is no angle that does both — and the one chosen constant in the module
+      # is run at ten times its value to prove nothing rests on it.
+      - run: npm run bind
 
   browser:
     name: every example renders

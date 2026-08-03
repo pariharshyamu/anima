@@ -6168,6 +6168,213 @@ window.provingDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'crossing',
+    title: 'The crossing: shallow grips and will not hold still',
+    group: 'Scale',
+    code: `// TWO BLADES IN CONTACT STOP BEING TWO OBJECTS.
+//
+// They become one linkage with a hand at each end and a sliding joint in the
+// middle that neither fencer put there. The joint is where two lines cross,
+// and that is all it is.
+//
+// The left blade sweeps. The right one never moves. Watch the ORANGE BEAD —
+// the contact — and watch the trail of dots it leaves behind, one every tenth
+// of a second.
+//
+// When the blades are nearly parallel the dots are stretched metres apart:
+// the contact is bolting along both blades, because two nearly-parallel lines
+// meet somewhere hypersensitive to both of them. Rotate one a degree and the
+// meeting point runs
+//
+//   ds = a · dα / sin θ
+//
+// which is the conditioning of a line intersection, and it diverges. When the
+// blades are near square the same dots bunch into a knot: the contact barely
+// moves at all.
+//
+// And the bead's COLOUR is a completely different physics. Press across
+// another blade and the force splits normal and tangential in the ratio tan θ,
+// so below atan(µ) friction holds it. Steel on steel, µ = 0.2, that is 11.31°.
+// Green means the crossing grips. Grey means one blade is skating along the
+// other.
+//
+// So the two states never coincide. Where the dots are stretched, it grips.
+// Where it holds still, it slips. Nobody encoded that — one half is Coulomb
+// and the other half is 1/sinθ, and they were not consulted about each other.
+//
+// The bars from each hand to the bead are the LEVER ARMS. The bright one is
+// winning: force at the contact is torque over lever, so the short one wins.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, SphereGeometry } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { BLADES, STEEL_FRICTION, frictionAngle, gripSpan, handCouple,
+         measureBind } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 7 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const PLANE_Y = 1.5;                 // the crossing plane, held at chest height
+const OPTS = { hands: [2, 1], hilts: [BLADES.longsword.cross, BLADES.arming.cross] };
+
+// Two hands, and neither of them moves for the whole demo.
+// The hands sit 200 mm apart, which is where a real pair of hands is in a
+// bind. It also has to be: two nearly-parallel lines whose origins are far
+// apart meet a long way away, so with the hands at arm's length the crossing
+// runs 11 metres down a 1.1 metre sword and there is no bind to look at. The
+// spacing is what decides how shallow a crossing can land ON both blades, and
+// at 200 mm the shallowest is about 5.5°, which straddles the 11.31° where
+// friction gives up.
+const A = { hand: { x: -0.1, y: -0.30 }, angle: 0, length: 1.11 };
+const B = { hand: { x: 0.1, y: -0.34 }, angle: (150 * Math.PI) / 180, length: 0.89 };
+
+// A blade is a cylinder from a hand along an angle. Both are the real reach
+// past the hand out of BLADES, so the lengths are not made up either.
+function bar(len, radius, colour, emissive) {
+  const m = new Mesh(
+    new CylinderGeometry(radius, radius, 1, 10),
+    new MeshStandardMaterial({ color: colour, emissive, metalness: 0.3, roughness: 0.4 })
+  );
+  scene.add(m);
+  return m;
+}
+// Place a cylinder so it runs from (hand) to (hand + len along angle), in the
+// crossing plane. Cylinders point up the Y axis, so it is a rotation about Z.
+function lay(mesh, hand, angle, len, z) {
+  mesh.scale.y = Math.max(0.001, len);
+  mesh.position.set(hand.x + (Math.cos(angle) * len) / 2, PLANE_Y + hand.y + (Math.sin(angle) * len) / 2, z);
+  mesh.rotation.z = angle - Math.PI / 2;
+}
+
+const bladeA = bar(1, 0.011, 0x9aa3ad, 0x1a1f24);
+const bladeB = bar(1, 0.011, 0x9aa3ad, 0x1a1f24);
+const leverA = bar(1, 0.022, 0x3a8fd0, 0x0b2438);
+const leverB = bar(1, 0.022, 0x3a8fd0, 0x0b2438);
+
+for (const h of [A, B]) {
+  const knuckle = new Mesh(
+    new SphereGeometry(0.045, 12, 10),
+    new MeshStandardMaterial({ color: 0x4a3a30, roughness: 0.9 })
+  );
+  knuckle.position.set(h.hand.x, PLANE_Y + h.hand.y, 0);
+  scene.add(knuckle);
+}
+
+const bead = new Mesh(
+  new SphereGeometry(0.05, 16, 12),
+  new MeshStandardMaterial({ color: 0xd8862a, emissive: 0x3a1c06 })
+);
+scene.add(bead);
+
+// The trail. One dot every tenth of a second — so the SPACING between dots is
+// the speed the contact is running at, which is the conditioning, drawn.
+const TRAIL = 90;
+const dots = [];
+for (let i = 0; i < TRAIL; i++) {
+  const d = new Mesh(
+    new SphereGeometry(0.024, 8, 6),
+    new MeshStandardMaterial({ color: 0xe8dfd2, emissive: 0x3a352d })
+  );
+  d.visible = false;
+  scene.add(d);
+  dots.push(d);
+}
+let head = 0;
+let lastDot = 0;
+
+const LIMIT = frictionAngle(STEEL_FRICTION);
+let t = 0;
+let report = null;
+let grippedFor = 0;
+let slippedFor = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+
+  // Sweep A from nearly parallel with B to nearly square with it, and back.
+  // Nothing else in the scene changes for the whole demo.
+  const phase = (Math.sin(t * 0.35) + 1) / 2;                 // 0..1
+  // 60° to 144° of A. At one end the blades are nearly square; at the other
+  // they lie almost along each other, and the crossing is still on both.
+  A.angle = ((60 + phase * 84) * Math.PI) / 180;
+
+  report = measureBind(A, B, OPTS);
+  lay(bladeA, A.hand, A.angle, A.length, 0);
+  lay(bladeB, B.hand, B.angle, B.length, 0);
+
+  const x = report.crossing;
+  if (x && x.onBoth) {
+    bead.visible = true;
+    bead.position.set(x.point.x, PLANE_Y + x.point.y, 0.03);
+    // Green grips, grey slips. This is friction, and it has nothing to do with
+    // how fast the bead is moving.
+    bead.material.color.setHex(report.binds ? 0x46b361 : 0x6d757d);
+    bead.material.emissive.setHex(report.binds ? 0x11331a : 0x1a1d20);
+    if (report.binds) grippedFor += dt; else slippedFor += dt;
+
+    // The lever arms, hand to contact. The winner is the bright one, and the
+    // winner is whoever has the SHORTER bar, because force is torque over it.
+    lay(leverA, A.hand, A.angle, x.alongA, 0.015);
+    lay(leverB, B.hand, B.angle, x.alongB, 0.015);
+    leverA.material.emissive.setHex(report.winner === 0 ? 0x1e5f9c : 0x0b2438);
+    leverB.material.emissive.setHex(report.winner === 1 ? 0x1e5f9c : 0x0b2438);
+    leverA.visible = leverB.visible = true;
+
+    if (t - lastDot > 0.1) {
+      lastDot = t;
+      const d = dots[head % TRAIL];
+      d.position.copy(bead.position);
+      d.position.z = 0.01;
+      d.visible = true;
+      head++;
+    }
+  } else {
+    // The crossing has run off the end of a blade. That is not a bind.
+    bead.visible = leverA.visible = leverB.visible = false;
+  }
+});
+
+// The contact lives between the two hands and about half a metre up-left of
+// them, so the frame is put there rather than on the origin.
+game.camera.position.set(-0.22, 1.42, 1.9);
+game.camera.lookAt(-0.22, 1.42, 0);
+
+window.crossingDebug = () => {
+  const x = report && report.crossing;
+  return {
+    // The scene's own clock — headless runs at about a third of real time, and
+    // a sweep that has not started looks exactly like one that never does.
+    clock: Number(t.toFixed(1)),
+    frictionLimit: Number(((LIMIT * 180) / Math.PI).toFixed(3)),
+    angle: x ? Number(((x.angle * 180) / Math.PI).toFixed(2)) : null,
+    alongA: x ? Number(x.alongA.toFixed(4)) : null,
+    alongB: x ? Number(x.alongB.toFixed(4)) : null,
+    onBoth: x ? x.onBoth : false,
+    binds: report ? report.binds : false,
+    ratio: report ? Number(report.ratio.toFixed(3)) : null,
+    winner: report ? report.winner : -1,
+    // Metres the contact runs per radian. The trail spacing IS this number.
+    sensitivity: report ? Number(report.sensitivity[0].toFixed(4)) : null,
+    // Both states have to actually happen, or the demo shows one of them.
+    grippedFor: Number(grippedFor.toFixed(1)),
+    slippedFor: Number(slippedFor.toFixed(1)),
+    couples: [handCouple(gripSpan(OPTS.hilts[0], 2)), handCouple(gripSpan(OPTS.hilts[1], 1))],
+    draws: game.renderer.info.render.calls,
+  };
+};
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {
