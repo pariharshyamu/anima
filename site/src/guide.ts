@@ -27,6 +27,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'blade', title: 'Blade: a weapon is a mass distribution' },
   { id: 'cut', title: 'Cut: sharpness starts it, toughness pays for it' },
   { id: 'bind', title: 'Bind: two blades in contact become one linkage' },
+  { id: 'javelin', title: 'Javelin: the four centimetres of 1986' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

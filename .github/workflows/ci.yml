@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, sixteen gates
+    name: typecheck, tests, build, seventeen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -83,6 +83,13 @@ jobs:
       # is no angle that does both — and the one chosen constant in the module
       # is run at ten times its value to prove nothing rests on it.
       - run: npm run bind
+      # The seventeenth is checked against a RULE CHANGE. On 1 April 1986 the
+      # IAAF moved the javelin's centre of mass 4 cm forward to take about 10%
+      # off the distances; the model reproduces the direction in all 27 release
+      # conditions and about a seventh of the size, and both halves of that are
+      # budgets. A cost that suddenly reaches 10% means somebody fitted a lift
+      # coefficient to the only external check in the file.
+      - run: npm run javelin
 
   browser:
     name: every example renders

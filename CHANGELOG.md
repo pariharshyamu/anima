@@ -20,6 +20,103 @@ release found.
 
 ## Releases
 
+## [0.58.0] — 2026-08-03
+
+### Added
+
+- **`Javelin` — the object whose rules were changed to make it fly worse.** On
+  1 April 1986 the IAAF moved the men's javelin's centre of mass **four
+  centimetres forward**, to take about ten percent off distances that had
+  reached Uwe Hohn's 104.80 m — still the only throw past a hundred metres
+  there has ever been. This is the only module in the library checked against a
+  committee's stated intention rather than a measurement.
+- **`npm run javelin`, the seventeenth gate.**
+- **`shiftBalance(spec, metres)` on `Blade`** — moves the balance point by an
+  exact distance WITHOUT changing the mass, by taking metal off the heaviest
+  segment on one side and putting it on the heaviest on the other. Closed form,
+  because a first moment is linear in the mass you move.
+
+### The experiment, with one variable
+
+The real rule change was not one variable — manufacturers rebuilt the whole
+object. `shiftBalance` makes it one: the weight, the external shape, the
+enclosed volume, the planform, the wetted area and every drag term come back
+bit-identical, and the only difference in the universe is where the mass sits.
+
+### What comes out of the geometry
+
+    speed  angle  attack |    new      old    cost | vacuum   surplus  | landing attitude
+    30 m/s   32°     0°  |   87.4    89.0   1.8% |  85.2     4.4%  |  51.4° vs 48.7°
+    30 m/s   36°     0°  |   90.1    91.4   1.5% |  89.7     2.0%  |  58.0° vs 57.0°
+    32 m/s   40°     0°  |  102.5   103.6   1.0% | 104.9    -1.2%  |  62.4° vs 64.0°
+
+- **All 27 releases**: the pre-1986 javelin flies further.
+- **All 27**: it holds a larger angle of attack — being less stable, it
+  under-follows the descending flight path and keeps making lift.
+- **All 18 at 32-36°**: it lands FLATTER, which is the thing the rule was
+  written to stop.
+
+Nothing was told which way the rule went, or that there was a rule. The static
+margin moved by `0.04 / 2.6` and everything else followed.
+
+At 40° the landing-attitude ordering reverses in all nine cases, and that is
+asserted too: up there the surplus over a cannonball has gone negative, both
+javelins are simply falling, and claiming "all twenty-seven" would have been
+claiming something false.
+
+### What does not
+
+The cost comes out at **1.3%**. The rule was worth about **10%**.
+
+The reason is legible in the same table: this flight beats a cannonball by
+1-5%, where real throws beat one by 10-17%. The model's total lift is about a
+quarter of the real thing, because Allen-Perkins crossflow under-predicts a
+javelin and the published aerodynamics uses wind-tunnel coefficient tables this
+library does not have. They have not been invented for the occasion: the 1986
+change is the external check, and fitting a lift coefficient until it
+reproduced ten percent would delete the only falsifiable thing in the file.
+
+The gate budgets the shortfall from BOTH sides — the cost must exceed 0.3% and
+must stay under 4%. If it ever reaches ten, either somebody found a measured
+lift curve or somebody fitted one.
+
+### Bugs this found
+
+- **THE PITCHING MOMENT SIGN WAS INVERTED**, and it did not look like a crash.
+  `M = N·(x_cp − x_cm)`; I wrote `−N·(…)`, which is divergent instead of
+  restoring. The javelin tumbled through 180° of angle of attack, wound its
+  pitch past 464°, and landed at 44 m — half what a cannonball manages — and
+  `flyJavelin` returned a perfectly well-formed report about it. The gate now
+  asserts three things a divergent moment cannot satisfy: peak angle of attack
+  under 45°, range beating the vacuum trajectory, and arriving point-first.
+- **A RECOMPUTED VALUE HID A MUTANT, FOR THE SECOND RELEASE RUNNING.** The
+  report computed its release drag with its own copy of the drag formula rather
+  than the one the integrator used, so swapping wetted-area skin friction for
+  bluff-body drag on the frontal area changed the flight and not the report.
+  Same mistake as `bind`'s winding check one release ago. It is now a closure
+  with one definition, used by both.
+- **A BLIND FIRST-OCCURRENCE EDIT BROKE TWO OTHER EXAMPLES.** Removing the fog
+  from the new playground scene matched the first `applyFog` in a 6000-line
+  file rather than the intended one, which stripped `mood`'s import and
+  `archery`'s call. Both threw `ReferenceError` at runtime and both were caught
+  by `npm run verify:playgrounds`, which is the entire reason that check
+  listens for page errors on every frame.
+
+Mutation-tested seven ways: invert the pitching moment, flip the static-margin
+convention, drop the Munk moment, make crossflow linear in α instead of
+quadratic, make `shiftBalance` add mass instead of moving it, inflate the
+enclosed volume, compute drag on the frontal area. All seven die.
+
+### Also
+
+- `thrown` playground example: two javelins released identically, 35 g of mass
+  moved between segments, and a pale dotted cannonball trajectory for scale.
+  The blue one noses over and arrives point-first; the amber one sails and
+  lands flat.
+- `aeroOf`, `staticMargin`, `flyJavelin`, `ballisticRange`, and an `AeroBody`
+  that is structural — so an object that could not be built can still be asked
+  whether it would be stable.
+
 ## [0.57.0] — 2026-08-03
 
 ### Added

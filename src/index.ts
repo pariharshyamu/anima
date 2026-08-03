@@ -444,6 +444,7 @@ export {
   percussion,
   sectionAt,
   segmentMass,
+  shiftBalance,
   tubeFill,
   vibrationNodes,
   withPommel,
@@ -502,3 +503,18 @@ export {
   type Crossing,
   type Point as BindPoint,
 } from './bind';
+
+// Javelin — the object whose rules were changed to make it fly worse.
+export {
+  AIR_DENSITY,
+  CROSSFLOW_DRAG,
+  SKIN_FRICTION,
+  aeroOf,
+  ballisticRange,
+  flyJavelin,
+  staticMargin,
+  type AeroBody,
+  type ThrowOptions as JavelinThrowOptions,
+  type ThrowReport as JavelinThrowReport,
+  type ThrowState,
+} from './javelin';

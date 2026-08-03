@@ -6375,6 +6375,188 @@ window.crossingDebug = () => {
 game.start();
 `,
   },
+  {
+    id: 'thrown',
+    title: 'Thrown: the four centimetres that ended the hundred-metre javelin',
+    group: 'Scale',
+    code: `// TWO JAVELINS, RELEASED IDENTICALLY, AND THE ONLY DIFFERENCE IS 4 cm OF BALANCE.
+//
+// On 1 April 1986 the IAAF moved the men's javelin's centre of mass four
+// centimetres forward. Uwe Hohn had thrown 104.80 m two years before — still
+// the only throw past a hundred metres there has ever been — and javelins were
+// landing flat, sliding, and becoming impossible to judge.
+//
+// The BLUE one is today's. The AMBER one is the same javelin with 35 grams
+// moved from its fore-shaft into its tail: same weight, same length, same
+// external shape, same volume, same drag. \`shiftBalance\` moves mass WITHIN
+// the object rather than adding any, so this is a one-variable experiment,
+// which the real rule change was not.
+//
+// The pale dotted line is a cannonball from the same release — the vacuum
+// trajectory, no air at all. Everything above it is lift.
+//
+// Watch the ATTITUDE, not the distance. The amber javelin is the less stable
+// one: its mass sits nearer its centre of pressure, so it under-follows the
+// descending flight path, holds a bigger angle of attack, keeps making lift,
+// and comes down flat. The blue one noses over and arrives point-first, which
+// is precisely and only what the rule was written to produce.
+//
+// The distance gap here is about 1.5%. The real rule was worth about 10%, and
+// the reason for the difference is in the scene: these flights beat the
+// cannonball by a couple of percent where real throws beat it by ten to
+// seventeen. Slender-body theory under-predicts a javelin's lift, and the
+// wind-tunnel tables that would fix it are not in this library — the 1986
+// change is the check, so fitting to it would delete the check.
+import { CylinderGeometry, Mesh, MeshStandardMaterial, PlaneGeometry,
+         SphereGeometry, BoxGeometry } from 'three';
+import { createLightingRig, createSky, createSurface, PALETTES } from 'scena3d';
+import { BLADES, shiftBalance, aeroOf, staticMargin, flyJavelin,
+         ballisticRange, balancePoint } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+// NO FOG. A throw is ninety metres long, and atmospheric perspective at that
+// range turns both trajectories into the same grey smear — which erases the
+// only thing this scene exists to show.
+const floor = new Mesh(new PlaneGeometry(400, 400), createSurface('grass', { seed: 4 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const SPEED = 30, ANGLE = (34 * Math.PI) / 180, ATTACK = (5 * Math.PI) / 180;
+const RELEASE = { speed: SPEED, angle: ANGLE, attack: ATTACK, height: 1.9 };
+
+// Today's javelin, and the same object with its balance 40 mm further back.
+const modern = BLADES.javelin;
+const older = shiftBalance(modern, -0.04);
+const bodies = [
+  { name: '1986 rules', spec: modern, colour: 0x3a8fd0, glow: 0x0b2438, z: -1.2 },
+  { name: 'pre-1986', spec: older, colour: 0xd8862a, glow: 0x3a1c06, z: 1.2 },
+].map((b) => {
+  const body = aeroOf(b.spec);
+  const flight = flyJavelin(body, RELEASE);
+
+  // The javelin itself, drawn from its own segment table so the thing in the
+  // air is the thing being flown.
+  // Drawn six times thick. A javelin is 26 mm across and this shot is a
+  // hundred metres wide, so at true scale it is a third of a pixel. The LENGTH
+  // and the ATTITUDE are honest — those are what is being compared.
+  const shaft = new Mesh(
+    new CylinderGeometry(0.05, 0.085, body.length, 8),
+    new MeshStandardMaterial({ color: b.colour, emissive: b.glow, metalness: 0.3, roughness: 0.4 })
+  );
+  scene.add(shaft);
+
+  // Where the mass is — the whole difference between these two, made visible.
+  const bead = new Mesh(
+    new SphereGeometry(0.16, 12, 10),
+    new MeshStandardMaterial({ color: 0xe8dfd2, emissive: 0x3a352d })
+  );
+  scene.add(bead);
+
+  // A dot every twentieth of a second along the path.
+  const dots = [];
+  for (let i = 0; i < 110; i++) {
+    const d = new Mesh(
+      new SphereGeometry(0.14, 6, 5),
+      new MeshStandardMaterial({ color: b.colour, emissive: b.glow })
+    );
+    d.visible = false;
+    scene.add(d);
+    dots.push(d);
+  }
+
+  // ...and a post where it lands.
+  const post = new Mesh(
+    new BoxGeometry(0.35, 3.2, 0.35),
+    new MeshStandardMaterial({ color: b.colour, emissive: b.glow })
+  );
+  post.position.set(flight.range, 1.6, b.z);
+  scene.add(post);
+
+  return { ...b, body, flight, shaft, bead, dots, laid: 0 };
+});
+
+// The cannonball, for scale. No air in it at all.
+const vacuum = ballisticRange(SPEED, ANGLE, RELEASE.height);
+for (let i = 0; i <= 60; i++) {
+  const f = i / 60;
+  const t = (f * 2 * SPEED * Math.sin(ANGLE)) / 9.81;
+  const g = new Mesh(
+    new SphereGeometry(0.1, 5, 4),
+    new MeshStandardMaterial({ color: 0xb8bfc6, emissive: 0x24282c })
+  );
+  g.position.set(SPEED * Math.cos(ANGLE) * t, RELEASE.height + SPEED * Math.sin(ANGLE) * t - 4.905 * t * t, 0);
+  if (g.position.y >= 0) scene.add(g);
+}
+
+let t = 0;
+const REPLAY = 0.75;   // three-quarter speed, so the attitude is readable
+
+game.onUpdate((frame) => {
+  t += Math.min(0.05, frame.delta) * REPLAY;
+  const longest = Math.max(...bodies.map((b) => b.flight.duration));
+  if (t > longest + 2.5) {
+    t = 0;
+    for (const b of bodies) { b.laid = 0; for (const d of b.dots) d.visible = false; }
+  }
+
+  for (const b of bodies) {
+    // The path is already integrated; this walks it. Nothing is being
+    // simulated per frame, so the picture cannot disagree with the flight.
+    const path = b.flight.path;
+    const i = Math.min(path.length - 1, Math.floor((t / b.flight.duration) * (path.length - 1)));
+    const p = path[Math.max(0, i)];
+    b.shaft.position.set(p.x, Math.max(0, p.y), b.z);
+    // Cylinders point up Y, so a pitch of 0 (level, nose along +x) is -90°.
+    b.shaft.rotation.z = p.pitch - Math.PI / 2;
+    // The centre of mass, at its own distance along the shaft from the butt.
+    const d = balancePoint(b.spec) - b.body.length / 2;
+    b.bead.position.set(p.x + Math.cos(p.pitch) * d, Math.max(0, p.y) + Math.sin(p.pitch) * d, b.z);
+
+    const want = Math.min(b.dots.length, Math.floor(t * 20));
+    while (b.laid < want) {
+      const j = Math.min(path.length - 1, Math.floor((b.laid / 20 / b.flight.duration) * (path.length - 1)));
+      const q = path[Math.max(0, j)];
+      const dot = b.dots[b.laid];
+      dot.position.set(q.x, Math.max(0, q.y), b.z);
+      dot.visible = true;
+      b.laid++;
+    }
+  }
+});
+
+// Far enough back that the whole flight fits, low enough that the arcs read
+// against the sky rather than down the length of the field.
+game.camera.position.set(46, 18, 104);
+game.camera.lookAt(46, 11, 0);
+
+window.thrownDebug = () => ({
+  clock: Number(t.toFixed(2)),
+  vacuum: Number(vacuum.toFixed(2)),
+  javelins: bodies.map((b) => ({
+    name: b.name,
+    fromTip: Number((b.body.length - b.body.balance).toFixed(4)),
+    margin: Number((staticMargin(b.body) * 100).toFixed(3)),
+    range: Number(b.flight.range.toFixed(2)),
+    surplus: Number(((b.flight.range / vacuum - 1) * 100).toFixed(2)),
+    peakAttack: Number(((b.flight.peakAttack * 180) / Math.PI).toFixed(1)),
+    landingAttitude: Number(((b.flight.landingAttitude * 180) / Math.PI).toFixed(1)),
+    pointFirst: b.flight.pointFirst,
+    dragFraction: Number((b.flight.releaseDragFraction * 100).toFixed(2)),
+    laid: b.laid,
+  })),
+  // Same mass to the microgram, and that is what makes this an experiment.
+  sameMass: Math.abs(bodies[0].body.mass - bodies[1].body.mass) < 1e-9,
+  cost: Number((100 * (1 - bodies[0].flight.range / bodies[1].flight.range)).toFixed(2)),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

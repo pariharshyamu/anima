@@ -598,6 +598,63 @@ export function measureBlade(name: BladeName): BladeReport {
  * air. Nobody has to be told that trade exists; it is two sums over one table
  * pointing in opposite directions.
  */
+/**
+ * Move the balance point by an exact distance, without changing the mass.
+ *
+ * `withPommel` adds metal; this MOVES it. Mass comes off the heaviest segment
+ * on one side of the balance and goes onto the heaviest on the other, so the
+ * total, the external shape, the drag and the volume are all untouched and the
+ * only thing that differs is where the mass sits.
+ *
+ * That distinction is the whole point. Comparing two objects that differ in
+ * balance AND weight AND shape tells you nothing about balance. This is the
+ * one-variable version, and it is what the 1986 javelin rule change was:
+ *
+ *   δ = shift · m / (c_to − c_from)
+ *
+ * closed form, because the balance point is a first moment and a first moment
+ * is linear in the mass you move.
+ *
+ * Returns the spec unchanged if there is not enough mass to move.
+ */
+export function shiftBalance(spec: BladeSpec, metres: number): BladeSpec {
+  const total = bladeMass(spec);
+  const at = balancePoint(spec);
+  if (!(total > 0) || Math.abs(metres) < 1e-12) return spec;
+
+  // The heaviest thing behind the balance, and the heaviest thing in front.
+  let back = -1;
+  let front = -1;
+  for (let i = 0; i < spec.segments.length; i++) {
+    const m = segmentMass(spec.segments[i]);
+    const c = segmentCentre(spec.segments[i]);
+    if (c < at && (back < 0 || m > segmentMass(spec.segments[back]))) back = i;
+    if (c > at && (front < 0 || m > segmentMass(spec.segments[front]))) front = i;
+  }
+  if (back < 0 || front < 0) return spec;
+
+  const from = metres > 0 ? back : front;
+  const to = metres > 0 ? front : back;
+  const lever = segmentCentre(spec.segments[to]) - segmentCentre(spec.segments[from]);
+  if (Math.abs(lever) < 1e-9) return spec;
+
+  const move = (metres * total) / lever;
+  const available = segmentMass(spec.segments[from]);
+  if (move <= 0 || move >= available) return spec;
+
+  return {
+    ...spec,
+    segments: spec.segments.map((s, i) => {
+      if (i === from) return { ...s, fill: s.fill * ((available - move) / available) };
+      if (i === to) {
+        const had = segmentMass(s);
+        return had > 0 ? { ...s, fill: s.fill * ((had + move) / had) } : s;
+      }
+      return s;
+    }),
+  };
+}
+
 export function withPommel(spec: BladeSpec, grams: number): BladeSpec {
   const pommel = spec.segments[0];
   const add = Math.max(0, grams) / 1000;
