@@ -31,6 +31,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'armour', title: 'The armour handshake: the one that finishes' },
   { id: 'fencing', title: 'Fencing: the armed bout, and it moves' },
   { id: 'speech', title: 'Speech: the IPA is already a viseme table' },
+  { id: 'motion', title: 'Motion matching: the weights were units' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

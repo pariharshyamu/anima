@@ -6959,6 +6959,203 @@ window.speechDebug = () => {
 game.start();
 `,
   },
+  {
+    id: 'matching',
+    title: 'Motion matching: the weights were units all along',
+    group: 'Character',
+    code: `// A CONTROLLER THAT IS A SEARCH, NOT A BLEND TREE.
+//
+// Motion matching holds a database of poses, each described by a feature
+// vector; every frame it builds a query out of what the character is doing and
+// what it has been asked to do, and plays whichever frame is nearest. No state
+// machine, no blend graph. The data is the controller.
+//
+// THE PART EVERYBODY HAS A TABLE FOR
+//
+// The cost function adds foot positions to foot velocities to trajectory
+// points, and those are metres, metres per second and metres. You cannot add
+// them, so every implementation puts a table of weights beside the sum:
+//
+//   w_footPosition = 1.0     w_footVelocity = 0.4     w_trajectory = 1.5
+//
+// Nobody can say why. They are tuned by eye and re-tuned per character.
+//
+// They are not preferences. They are UNIT CONVERSIONS. A velocity becomes a
+// length when multiplied by a time; a trajectory point already is one. So the
+// table collapses to a single time constant, every term is in square metres,
+// and every weight is 1.
+//
+// And the time constant is measured rather than chosen: it is
+// σ(foot position) / σ(foot velocity) over the database's own samples — the
+// time that makes both halves span the same range of numbers.
+//
+// WHAT THIS SCENE IS FOR
+//
+// Two identical people. The near one is driven by the matcher, the far one by
+// ANIMA's ordinary blend tree, and BOTH ARE GIVEN THE SAME COMMAND — the amber
+// bar overhead. Each then travels at the speed its own feet are actually doing,
+// which is the honest way to move a character with in-place clips.
+//
+// So watch the gap OPEN AND SHUT. The blend tree smooths the commanded speed
+// and then stride-matches to the smoothed number, which makes it late by
+// construction; the search just picks a frame that is already going that fast.
+//
+// On a command to speed up, the matcher is away first and pulls ahead. On a
+// command to slow down it slows first and drops behind. Over a symmetric run
+// the two very nearly cancel — the matcher is not FASTER, it is EARLIER, and
+// the lead in the readout swings either side of zero for exactly that reason.
+// What the search buys is the 0.13 s answer against the blend tree's 0.27.
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial, PlaneGeometry, Vector3 } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface, PALETTES } from 'scena3d';
+import { Locomotion, MotionMatcher, buildMotionDatabase, createHumanoid } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(400, 40), createSurface('concrete', { seed: 4 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// A mark every four metres, so travel is legible without a HUD.
+for (let i = -10; i < 60; i++) {
+  const stripe = new Mesh(
+    new BoxGeometry(0.14, 0.02, 11),
+    new MeshStandardMaterial({ color: i % 5 === 0 ? 0xd8c8a0 : 0x55555c })
+  );
+  stripe.position.set(i * 4, 0.011, 0);
+  scene.add(stripe);
+}
+
+// The same person twice: same seed, same body, same clips.
+const near = createHumanoid({ seed: 21, height: 1.75 });
+const far = createHumanoid({ seed: 21, height: 1.75 });
+near.object.position.set(0, 0, 2.6);
+far.object.position.set(0, 0, -2.6);
+near.object.rotation.y = Math.PI / 2;
+far.object.rotation.y = Math.PI / 2;
+scene.add(near.object, far.object);
+
+const database = buildMotionDatabase(near);
+const matcher = new MotionMatcher(near, { database });
+const blend = new Locomotion(far);
+
+const WALK = database.clips.walkSpeed;
+const RUN = database.clips.runSpeed;
+// A square wave of commands, because a step change is the only thing that tells
+// two controllers apart. In the steady state they agree almost exactly.
+const COMMANDS = [0.0, WALK, RUN, WALK * 0.6, RUN, 0.0, WALK];
+const HOLD = 3.2;
+
+// The command, and what each controller is actually doing about it, as bars.
+const bar = (colour, z) => {
+  const m = new Mesh(
+    new BoxGeometry(0.44, 1, 0.44),
+    new MeshStandardMaterial({ color: colour, emissive: colour, emissiveIntensity: 0.4 })
+  );
+  m.position.z = z;
+  scene.add(m);
+  return m;
+};
+// All three at the SAME depth, side by side, or perspective does the comparing
+// instead of the numbers: with each bar standing over its own runner, the near
+// one read as taller while being the slower of the two.
+const commandBar = bar(0xd8a83a, -7.6);
+const matcherBar = bar(0x54b070, -7.6);
+const blendBar = bar(0x3a8fd0, -7.6);
+
+// A post dropped wherever the matcher jumped, so the pops are countable.
+const pops = new Group();
+scene.add(pops);
+let seenJumps = 0;
+
+let t = 0;
+let travelNear = 0;
+let travelFar = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  const want = COMMANDS[Math.floor(t / HOLD) % COMMANDS.length];
+
+  matcher.update(dt, want);
+  blend.update(dt, want);
+
+  // EACH TRAVELS AT THE SPEED ITS OWN FEET ARE DOING. The clips are in-place
+  // and stride-matched, so this is exactly the ground the feet are covering —
+  // no sliding, and no cheating the comparison by moving both at the command.
+  travelNear += matcher.speed * dt;
+  travelFar += blend.speed * dt;
+  near.object.position.x = travelNear;
+  far.object.position.x = travelFar;
+
+  if (matcher.jumps > seenJumps) {
+    seenJumps = matcher.jumps;
+    const post = new Mesh(
+      new BoxGeometry(0.08, 0.4, 0.08),
+      new MeshStandardMaterial({ color: 0xcc4422, emissive: 0x3a1408 })
+    );
+    // Behind the lanes: a pop is a footnote, not the subject.
+    post.position.set(travelNear, 0.2, -4.6);
+    pops.add(post);
+  }
+
+  // Each bar stands over the runner it belongs to, so it is that runner's
+  // speed and not a chart. The amber one out in front is the command both were
+  // given.
+  const set = (m, v, x) => {
+    const h = Math.max(0.04, (v / RUN) * 3.2);
+    m.scale.y = h;
+    m.position.set(x, h / 2, m.position.z);
+  };
+  const lead = Math.max(travelNear, travelFar);
+  // green matcher, amber command, blue blend tree — in that order, left to
+  // right, so the two controllers flank what they were both asked for.
+  set(matcherBar, matcher.speed, lead - 1.3);
+  set(commandBar, want, lead);
+  set(blendBar, blend.speed, lead + 1.3);
+
+  // Follow from the side, close enough to see two people and the gap between
+  // them. The first framing of this scene was from thirty metres and showed
+  // two dots on a grid.
+  game.camera.position.set(lead - 2.0, 2.3, 8.2);
+  game.camera.lookAt(lead + 0.2, 1.15, 0);
+});
+
+window.matchingDebug = () => ({
+  // The scene's own clock — headless runs at about a third of real time, and a
+  // controller nobody has started looks exactly like one that never moves.
+  clock: Number(t.toFixed(1)),
+  commanded: Number((COMMANDS[Math.floor(t / HOLD) % COMMANDS.length]).toFixed(3)),
+  // Fifteen features, and every one of them a length in metres.
+  features: database.frames[0].feature.length,
+  frames: database.frames.length,
+  // MEASURED from the data, not chosen: σ(position) / σ(foot velocity).
+  tauFoot: Number(database.tauFoot.toFixed(4)),
+  horizons: database.horizons.map((h) => Number(h.toFixed(3))),
+  matcher: {
+    speed: Number(matcher.speed.toFixed(3)),
+    clip: matcher.frame.clip,
+    rate: matcher.frame.rate,
+    travelled: Number(travelNear.toFixed(2)),
+    jumps: matcher.jumps,
+    searches: matcher.searches,
+  },
+  blend: {
+    speed: Number(blend.speed.toFixed(3)),
+    travelled: Number(travelFar.toFixed(2)),
+  },
+  // Signed, and it swings: ahead after a command to go faster, behind after a
+  // command to slow down. Being earlier is not the same as being faster.
+  lead: Number((travelNear - travelFar).toFixed(2)),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

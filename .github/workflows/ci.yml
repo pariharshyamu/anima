@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, twenty gates
+    name: typecheck, tests, build, twenty-one gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -110,6 +110,14 @@ jobs:
       # never an average — and the seal never claims more gap than the lips have
       # length, which is LIP_BRIDGE against JAW_TRAVEL and not a chosen budget.
       - run: npm run speech
+      # The twenty-first is the one about units. Motion matching's cost function
+      # adds foot positions to foot velocities to trajectory points, and every
+      # published implementation puts a table of hand-tuned weights beside that
+      # sum. The weights are unit conversions: a velocity becomes a length when
+      # multiplied by a time. So there are none here, and the check is that a
+      # change of unit is not a change of opinion — which the control, a
+      # hand-weighted cost, fails.
+      - run: npm run motion
 
   browser:
     name: every example renders

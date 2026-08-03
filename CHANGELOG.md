@@ -20,6 +20,73 @@ release found.
 
 ## Releases
 
+## [0.62.0] — 2026-08-03
+
+### Added
+
+- **`MotionMatcher` — a controller that is a search, and the weights turn out to
+  be units.** Motion matching holds a database of poses, builds a query every
+  frame out of what the character is doing and what it was asked for, and plays
+  the nearest frame. Every published implementation carries a table of
+  hand-tuned weights beside its cost function, because that function adds foot
+  positions in metres to foot velocities in metres per second to trajectory
+  points in metres, and a sum of those is not a quantity at all. The weights are
+  what makes it finite, which means each one is silently carrying a UNIT
+  CONVERSION — and a conversion is fixed by dimensional analysis: a velocity
+  becomes a length when multiplied by a time, an angle when multiplied by a
+  radius. The table collapses, every term is in square metres, and every weight
+  is 1.
+- **The check a weighted cost cannot pass.** Writing the velocities in a
+  different unit — the same velocities, a different name — must not change which
+  frame is nearest. Run on the real database against the two frames that
+  genuinely disagree, a hand-weighted cost picks differently in m/min than in
+  m/s. The gate asserts the control FAILS, because a check whose control passes
+  is proving nothing.
+- **Constants measured rather than chosen.** `τ_foot = σ(position) / σ(foot
+  velocity) = 0.1595 s`, a length over a length per second, so it is identical
+  on a 1.4 m body and a 2.1 m one to nine decimal places while every other
+  feature scales with them. The trajectory needs no conversion — `speed × time`
+  is already a distance — and its horizons are thirds of a step, because a step
+  is the interval over which a walker can act on an instruction. One conversion
+  per quantity, not one shared between two different velocities.
+- **`buildMotionDatabase`, `matchFrame`, `queryFeature`, `froudeNumber`** and
+  the twenty-first gate, `npm run motion`, plus the playground example
+  `matching`: the same command given to a matcher and to a blend tree, each
+  travelling at the speed its own feet are actually doing.
+
+### Fixed
+
+- One shared time constant for foot velocity and travel speed left the travel
+  term too quiet to overcome pose continuity: the character stood in idle
+  through every command, at a mean speed error of 1.27 m/s.
+- The search was built from the pose left over at the end of the previous frame
+  while the clock had moved on, so it described where the character HAD BEEN.
+  85 of 85 threshold-crossing searches came back backwards, by a median of 0.018
+  of a cycle — 1/60 s at a one-second cycle, exactly the frame it was stale by.
+  A 29% pop rate that no amount of blending would have fixed.
+- Two attempts at hiding a jump each made a second seam, both caught by a
+  joint-speed budget derived from the clips' own peak rate: a per-bone
+  quaternion offset (2.17 rad of forearm in one frame) and a live cross-fade
+  between two frames, which has no honest source when a second jump lands
+  mid-fade (1.48 rad). Refusing the second jump closed the hole and cost the
+  responsiveness the search exists for — 0.13 s became 0.33 and lost to the
+  blend tree outright. What shipped freezes the pixels instead.
+- The query was reading its own smoothing, which put the controller in a loop
+  with itself: 15 pops a second, 76% of every search, and it never once answered
+  a command.
+- The pop rate depended on the frame rate. What counts as a jump was a fixed
+  fraction of a cycle, but one frame advances the phase by `dt × rate /
+  duration`, so the same controller reported 1% at 60 Hz and 39% in a headless
+  browser at 20.
+
+### Reported, not yet gated
+
+- ANIMA's step time is a flat 0.50 s at every body size, so the Froude number
+  `v²/gL` spreads by 46% across the height range instead of being constant.
+  Alexander (1976) says geometrically similar walkers move alike at equal Froude
+  number; cadence should go as `√(L/g)` and does not. It matters here because a
+  motion database is built per body.
+
 ## [0.61.0] — 2026-08-03
 
 ### Added

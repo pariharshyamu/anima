@@ -539,6 +539,25 @@ export {
   type Touch,
 } from './fencing';
 
+// Motion matching — and the weights turn out to be unit conversions.
+export {
+  FACING_RADIUS,
+  MotionMatcher,
+  buildMotionDatabase,
+  froudeNumber,
+  matchFrame,
+  queryFeature,
+} from './motion';
+export type {
+  MotionClipName,
+  MotionDatabase,
+  MotionDatabaseOptions,
+  MotionFrame,
+  MotionMatch,
+  MotionMatcherOptions,
+  MotionQuery,
+} from './motion';
+
 // Speech — visemes, and the observation that the IPA already is a viseme table.
 export {
   ANTICIPATION,
