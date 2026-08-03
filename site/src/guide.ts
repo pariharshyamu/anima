@@ -28,6 +28,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'cut', title: 'Cut: sharpness starts it, toughness pays for it' },
   { id: 'bind', title: 'Bind: two blades in contact become one linkage' },
   { id: 'javelin', title: 'Javelin: the four centimetres of 1986' },
+  { id: 'armour', title: 'The armour handshake: the one that finishes' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

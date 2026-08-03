@@ -20,6 +20,73 @@ release found.
 
 ## Releases
 
+## [0.59.0] — 2026-08-03
+
+### Added
+
+- **`npm run armour`, the eighteenth gate — and the second that imports two
+  libraries.** It crosses ANIMA's bows, strikes and contact geometry with SCENA
+  0.109.0's armour plate, and neither package imports the other.
+
+### The handshake that finishes, and why this one could
+
+`npm run tameshiwari` could not finish. Settling whether a strike breaks a board
+needed one number neither library had — **how compliant a fist is** — and that
+was never invented.
+
+A plate is a different mechanism. It fails when a hole has been opened all the
+way through it, and the work that takes is the metal's indentation pressure over
+**the point's own frontal area**, through the thickness. So the comparison needs
+a **contact diameter**, not a compliance — and a contact diameter is a ruler
+measurement that `Cut` has had since 0.56.0, because `tipArea` is πr².
+
+### What the finished half settles
+
+The energy required goes as the SQUARE of the contact diameter:
+
+    bodkin        9 mm       76 J
+    spear point  20 mm      377 J
+    sword tip    30 mm      848 J
+    fist         60 mm     3393 J
+    foot        100 mm     9425 J
+
+    compound arrow     75 J behind   9 mm    99% of what it needs
+    roundhouse kick   800 J behind 100 mm     8% of what it needs
+
+**The kick carries eleven times the arrow's energy and is twelve times further
+from getting through.** Comparing joules to joules would have said the opposite,
+and that is exactly the mistake tameshiwari was left unable to rule out.
+
+Nothing in the library defeats 2 mm of steel plate, which is the historical
+answer.
+
+### And the half that still does not
+
+    one riveted ring     3.05 J
+    20 layers of linen   2.2 J
+    together             5.2 J     against a measured 120 J
+
+The first draft of this gate asserted that the padding is what stops the arrow —
+the standard explanation — and the derivation came back at 2.2 J and **the
+assertion failed**. It was the assertion that was wrong: what stops an arrow in
+a gambeson is not the textile being CUT, it is the textile stretching, dragging
+on the shaft and spreading the load. None of those is a fracture toughness.
+
+So the gate finishes one half and NAMES the missing number in the other, and it
+is not the number tameshiwari lacked.
+
+### Bugs this found
+
+- **The first four mutation tests all passed, and none of them should have.**
+  ANIMA resolves `scena3d` from `node_modules`, so mutating SCENA's source
+  changed nothing the gate could see. Dropping Tabor's factor entirely, putting
+  the force on the perimeter instead of the frontal area, taking the energy over
+  a fixed stroke, and making a mail ring a hundred times stronger all "passed".
+  A cross-repository mutation test has to mutate **the artefact that is actually
+  imported**; with the built dist copied into place, all four die.
+
+Mutation-tested four ways against the resolved build.
+
 ## [0.58.0] — 2026-08-03
 
 ### Added

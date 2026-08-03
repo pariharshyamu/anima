@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, seventeen gates
+    name: typecheck, tests, build, eighteen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -90,6 +90,12 @@ jobs:
       # budgets. A cost that suddenly reaches 10% means somebody fitted a lift
       # coefficient to the only external check in the file.
       - run: npm run javelin
+      # The eighteenth is the second that imports two libraries, and the one
+      # that finishes. Tameshiwari needed the compliance of a fist and never got
+      # it; a plate needs a CONTACT DIAMETER, which is a ruler measurement, so
+      # the comparison completes — and it turns out a 800 J kick is twelve times
+      # further from holing plate than a 75 J arrow.
+      - run: npm run armour
 
   browser:
     name: every example renders
