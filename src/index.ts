@@ -442,6 +442,7 @@ export {
   measureBlade,
   pendulumPeriod,
   percussion,
+  sectionAt,
   segmentMass,
   tubeFill,
   vibrationNodes,
@@ -452,3 +453,29 @@ export {
   type BladeSpec,
   type Material,
 } from './blade';
+
+// Cut — a hit is a pressure, and a pressure is a force over an area.
+export {
+  EDGES,
+  EDGE_NAMES,
+  TARGETS,
+  TARGET_NAMES,
+  bluntestThatBites,
+  cutDepth,
+  edgeArea,
+  engagedLength,
+  griffith,
+  initiationForce,
+  measureCut,
+  measureThrust,
+  pressure,
+  propagationForce,
+  tipArea,
+  type CutInput,
+  type CutReport,
+  type EdgeName,
+  type TargetName,
+  type TargetSpec,
+  type ThrustInput,
+  type ThrustReport,
+} from './cut';

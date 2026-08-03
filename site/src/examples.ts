@@ -5987,6 +5987,187 @@ window.armouryDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'proving',
+    title: 'The proving ground: sharpness starts it, toughness pays for it',
+    group: 'Scale',
+    code: `// FIVE EDGES OF THE SAME STEEL, ONE PUSH, AND A LINE THEY EITHER CLEAR OR DO NOT.
+//
+// The five blades below are identical objects. The only thing that differs is
+// the radius of the apex — the last hundredth of a millimetre, a dimension
+// nobody can see, and the single most consequential number about a blade:
+//
+//   razor    0.10 µm      sharp    0.50 µm      service  3.00 µm
+//   blunt   30.00 µm      dull   200.00 µm
+//
+// Each one is pushed with the SAME 300 N. The column above it is the pressure
+// that develops, on a log scale, because the range is four orders of magnitude
+// and a linear axis would show one bar and four stubs.
+//
+// The moving plane is the material's ultimate tensile strength. A column that
+// clears it cuts. A column under it does not — it bruises, and no amount of
+// pushing harder changes what KIND of thing is happening. Watch the plane
+// climb through the ladder as the target cycles: skin, muscle, linen, leather,
+// pine both ways, mail.
+//
+// And watch what does NOT happen. Nothing here gets sharper or blunter. The
+// blades never move. All that changes is what they are being pushed into, and
+// the same five objects go from all-cutting to none-cutting and back.
+//
+// The bead on each column is where that edge sits. The plane is where the
+// material sits. Pressure is force over area, and that is the whole file.
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial,
+         PlaneGeometry, SphereGeometry, DoubleSide } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { EDGES, EDGE_NAMES, TARGETS, TARGET_NAMES, BLADES, sectionAt,
+         measureCut, propagationForce } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 11 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const PUSH = 300;          // newtons, the same for every blade
+const CONTACT = 0.15;      // metres of edge laid across the target
+const SPACING = 0.75;
+// log10(Pa) mapped onto metres of column. 5 is 100 kPa, 11 is 100 GPa, and
+// everything in this library lives between them.
+const LO = 5, HI = 11, TALL = 3.2;
+const height = (pa) => Math.max(0.02, ((Math.log10(Math.max(1, pa)) - LO) / (HI - LO)) * TALL);
+
+// The blade the section comes from — real steel, read where a cut would land.
+const section = sectionAt(BLADES.arming, 0.7);
+
+const bench = new Mesh(
+  new BoxGeometry(EDGE_NAMES.length * SPACING + 0.5, 0.12, 0.5),
+  new MeshStandardMaterial({ color: 0x4a5158, roughness: 0.7 })
+);
+bench.position.y = 0.06;
+scene.add(bench);
+
+const rigs = EDGE_NAMES.map((name, i) => {
+  const x = (i - (EDGE_NAMES.length - 1) / 2) * SPACING;
+
+  // The blade itself: the same arming-sword section, five times over.
+  const blade = new Mesh(
+    new BoxGeometry(section.width, 0.42, section.thick * 3),
+    new MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.3, roughness: 0.35,
+                               emissive: 0x1a1f24 })
+  );
+  blade.position.set(x, 0.33, 0);
+  scene.add(blade);
+
+  // ...and the pressure it develops, as a column.
+  const column = new Mesh(
+    new CylinderGeometry(0.055, 0.055, 1, 14),
+    new MeshStandardMaterial({ color: 0x3a8fd0, emissive: 0x0b2438 })
+  );
+  column.position.x = x;
+  scene.add(column);
+
+  const bead = new Mesh(
+    new SphereGeometry(0.075, 14, 10),
+    new MeshStandardMaterial({ color: 0xd8862a, emissive: 0x3a1c06 })
+  );
+  bead.position.x = x;
+  scene.add(bead);
+
+  return { name, radius: EDGES[name], blade, column, bead, top: 0, bites: false };
+});
+
+// The line the material draws. Everything above it cuts; everything below it
+// does not, and pushing harder only moves the columns, never the plane.
+const line = new Mesh(
+  new BoxGeometry(EDGE_NAMES.length * SPACING + 1.2, 0.035, 1.1),
+  new MeshStandardMaterial({ color: 0xcc4422, emissive: 0x3a1408,
+                             transparent: true, opacity: 0.75, side: DoubleSide })
+);
+scene.add(line);
+
+let t = 0;
+let index = 0;
+let target = TARGETS[TARGET_NAMES[0]];
+let planeY = 0;
+// Whether the plane has arrived where the current material puts it. Anything
+// reading this scene and comparing a column against the line has to wait for
+// it: mid-ease, the line is somewhere no material is.
+let settled = false;
+
+function retarget() {
+  target = TARGETS[TARGET_NAMES[index % TARGET_NAMES.length]];
+  for (const r of rigs) {
+    // The library does the whole of it. Nothing here decides anything.
+    const cut = measureCut(
+      { energy: 60, force: PUSH, radius: r.radius, width: section.width, contact: CONTACT },
+      target
+    );
+    r.top = height(cut.pressure);
+    r.bites = cut.bites;
+    r.column.material.color.setHex(cut.bites ? 0x3a8fd0 : 0x555b63);
+    r.column.material.emissive.setHex(cut.bites ? 0x0b2438 : 0x121417);
+  }
+}
+retarget();
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  // Four seconds a material, so there is time to see which columns cleared.
+  const want = Math.floor(t / 4);
+  if (want !== index) { index = want; retarget(); }
+
+  for (const r of rigs) {
+    const h = r.top;
+    r.column.scale.y = h;
+    r.column.position.y = 0.12 + h / 2;
+    r.bead.position.y = 0.12 + h;
+  }
+  // The plane eases to the new strength rather than jumping, so the eye can
+  // follow which columns it crossed on the way.
+  const wantY = 0.12 + height(target.strength);
+  planeY += (wantY - planeY) * Math.min(1, dt * 3);
+  settled = Math.abs(wantY - planeY) < 0.004;
+  line.position.y = planeY;
+});
+
+game.camera.position.set(0, 1.9, 5.4);
+game.camera.lookAt(0, 1.7, 0);
+
+window.provingDebug = () => ({
+  // The scene's own clock: headless runs at about a third of real time, and a
+  // bench that has not cycled yet looks exactly like one that never will.
+  clock: Number(t.toFixed(1)),
+  target: TARGET_NAMES[index % TARGET_NAMES.length],
+  strength: target.strength,
+  planeY: Number(planeY.toFixed(3)),
+  settled,
+  // What it takes to KEEP cutting, which is the other criterion entirely and
+  // has nothing to do with any of the columns.
+  toContinue: Number(propagationForce(target, section.width).toFixed(1)),
+  width: Number(section.width.toFixed(4)),
+  edges: rigs.map((r) => ({
+    edge: r.name,
+    micron: Number((r.radius * 1e6).toFixed(2)),
+    pressure: measureCut(
+      { energy: 60, force: PUSH, radius: r.radius, width: section.width, contact: CONTACT },
+      target
+    ).pressure,
+    bites: r.bites,
+    // The column top against the plane — the picture and the physics agreeing.
+    top: Number((0.12 + r.top).toFixed(3)),
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

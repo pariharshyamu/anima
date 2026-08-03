@@ -129,7 +129,52 @@ export interface BladeSpec {
   /** Where the guard sits, metres from the butt. Catalogues quote the balance
    * point from here, so it has to be a number rather than an idea. */
   cross: number;
+  /**
+   * Radius of curvature of the edge, metres. `Infinity` for a straight blade.
+   *
+   * A ruler measurement like every other number here, and it is here rather
+   * than in whatever consumes it because a sabre's curve is a fact about the
+   * sabre. It carries no mass consequence — the segments are still summed
+   * along the axis, and a 0.9 m curve over a 0.8 m blade moves the centroid by
+   * under a millimetre off-axis, which is a rotation this file does not model
+   * and does not claim to.
+   */
+  curve?: number;
   segments: BladeSegment[];
+}
+
+/**
+ * The cross-section at a point along the weapon, metres.
+ *
+ * Which segment is there, and how wide and thick it is at exactly that
+ * distance from the butt, interpolated along the taper. A blade is 48 mm at
+ * the cross and 22 mm at the tip, and anything asking "how wide is the wound"
+ * or "how much edge is there" needs the width WHERE IT TOUCHED rather than an
+ * average of the whole thing.
+ *
+ * Returns zeroes past the tip or before the butt: there is no material there.
+ */
+export function sectionAt(spec: BladeSpec, x: number): { width: number; thick: number } {
+  let best: BladeSegment | null = null;
+  for (const s of spec.segments) {
+    if (x < s.from || x > s.to) continue;
+    // Overlapping segments happen — a javelin's cord wraps its own shaft — and
+    // the outermost one is the one a target meets.
+    const f = (x - s.from) / Math.max(1e-9, s.to - s.from);
+    const w = s.width[0] + (s.width[1] - s.width[0]) * f;
+    if (!best || w > lerpWidth(best, x)) best = s;
+  }
+  if (!best) return { width: 0, thick: 0 };
+  const f = (x - best.from) / Math.max(1e-9, best.to - best.from);
+  return {
+    width: best.width[0] + (best.width[1] - best.width[0]) * f,
+    thick: best.thick[0] + (best.thick[1] - best.thick[0]) * f,
+  };
+}
+
+function lerpWidth(s: BladeSegment, x: number): number {
+  const f = (x - s.from) / Math.max(1e-9, s.to - s.from);
+  return s.width[0] + (s.width[1] - s.width[0]) * f;
 }
 
 /** Volume of one tapered segment, cubic metres. */
@@ -403,10 +448,14 @@ export const BLADES: Record<BladeName, BladeSpec> = {
     ],
   },
 
+  // Curved, and the curve is the point: a curved edge meets a flat target on
+  // a CHORD rather than along its whole length, so the same push lands on a
+  // shorter contact. `sectionAt` and the curve are what a cut is computed from.
   sabre: {
     label: 'Sabre',
     grip: 0.07,
     cross: 0.15,
+    curve: 0.9,
     segments: [
       { label: 'pommel', material: 'brass', from: 0, to: 0.04, width: [0.035, 0.035], thick: [0.03, 0.03], fill: 0.8 },
       { label: 'grip', material: 'grip', from: 0.04, to: 0.13, width: [0.032, 0.028], thick: [0.024, 0.02], fill: 0.9 },
@@ -419,6 +468,7 @@ export const BLADES: Record<BladeName, BladeSpec> = {
     label: 'Messer',
     grip: 0.06,
     cross: 0.14,
+    curve: 2.4,
     segments: [
       { label: 'tang cap', material: 'steel', from: 0, to: 0.02, width: [0.03, 0.03], thick: [0.02, 0.02], fill: 0.8 },
       { label: 'grip', material: 'oak', from: 0.02, to: 0.13, width: [0.034, 0.03], thick: [0.024, 0.022], fill: 1 },
@@ -473,6 +523,9 @@ export const BLADES: Record<BladeName, BladeSpec> = {
     label: 'Axe',
     grip: 0.15,
     cross: 0.78,
+    // The most curved edge in the table by a factor of seven, and the reason
+    // an axe cuts at all with an edge nobody would call sharp.
+    curve: 0.12,
     segments: [
       { label: 'haft', material: 'ash', from: 0, to: 0.8, width: [0.03, 0.034], thick: [0.022, 0.026], fill: SOLID_ROUND },
       { label: 'head', material: 'steel', from: 0.78, to: 0.86, width: [0.045, 0.045], thick: [0.06, 0.06], fill: 0.55 },

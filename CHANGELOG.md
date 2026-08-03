@@ -20,6 +20,120 @@ release found.
 
 ## Releases
 
+## [0.56.0] — 2026-08-03
+
+### Added
+
+- **`Cut` — a hit is a pressure, and a pressure is a force over an area.**
+  `Striking` measures what a blow arrives with. `Blade` measures what the
+  object is. Neither knows what happens when the two meet, because that needs
+  a third number — **how small an area the force lands on** — and that is what
+  this module is.
+- **`npm run cut`, the fifteenth gate**, and the first that checks a
+  DISAGREEMENT rather than an agreement.
+- `sectionAt(spec, x)` on `Blade`: how wide and thick the weapon is exactly
+  where it touched, interpolated along the taper. A wound is the width of the
+  blade at the point of entry, not an average of the whole thing.
+- `curve` on `BladeSpec` — a sabre's 0.9 m, a messer's 2.4 m, an axe bit's
+  0.12 m. A ruler measurement of the same object, and it belongs with the
+  object rather than with whatever consumes it.
+
+### The finding: two criteria, four orders of magnitude apart
+
+Everybody's intuition about cutting is a STRESS criterion — press until the
+pressure reaches the material's strength:
+
+    F_start = σ · A     20 MPa × π(10 µm)²  =  6.3 MILLI-NEWTONS
+
+Six milli-newtons. The weight of a paperclip. Instrumented knives put the force
+to push a sharp blade through human skin in the region of ten to fifty newtons,
+so the stress criterion is out by four orders of magnitude, and it is the one
+that is wrong about the world.
+
+What costs is making new SURFACE. A cut is a crack, a crack has two faces, and
+every square metre costs the material's work of fracture:
+
+    E = R·w·d           F_keep = dE/dd = R·w
+
+For skin at 3 kJ/m² that is **12 N across the first 4 mm of blade and 60 N at
+full width** — both ends of the measured band out of one derivation, because a
+wound is narrow at entry and widens as the blade goes in.
+
+**Sharpness decides whether a cut STARTS. Toughness decides what it COSTS.**
+They are not the same question and they do not have the same answer, and the
+gate budgets the gap between them at 1000× precisely so that closing it
+requires an argument.
+
+### Seven targets, and strength and toughness stay independent
+
+Four toughnesses are derived, `R = K²/E`, from a published fracture toughness
+and modulus. Skin and muscle are measured directly, because linear elastic
+fracture mechanics does not describe them — they dissipate most of the energy
+in a process zone far larger than any crack tip, and `K²/E` there would be
+arithmetic on an assumption that does not hold.
+
+Mail is **16×** leather's strength and **1.25×** its toughness. Skin is **67×**
+muscle's strength and **3×** its toughness, which is Knight's 1975 forensic
+finding restated: the skin is the resistance and what is under it is not. Pine
+is the same timber entered twice and costs **11× more across the grain than
+along it**, which is the whole argument for a splitting maul.
+
+### Curvature is a pressure multiplier
+
+A curved edge meets a flat target on a chord, `L = 2√(2Rδ)`. Same edge, same
+200 N, same leather:
+
+    straight blade      engages 200 mm    1000 MPa
+    sabre,  R = 0.9 m   engages  85 mm    2357 MPa    2.4x, for free
+    axe,    R = 0.12 m  engages  31 mm     108 MPa    on a 30 µm edge
+
+Nobody has to be told a sabre is curved; the chord of a circle says it. And the
+axe is the honest case — the shortest contact in the table, and **still nine
+times worse on pressure than the sharp straight sword**. An axe is not a sharp
+thing. It is a heavy thing, which is the same mass-at-the-far-end that made it
+slow to swing in 0.55.0.
+
+### What this does not know, stated rather than fitted
+
+`cutDepth` returns a BOUND and is named one: `d ≤ E/(R·w)`, every joule into
+new crack surface and nothing into friction, wedging or pushing the target. A
+113 J hammerfist through a 30 mm blade bounds at **1502 mm into pine**, which
+is not a thing that happens. Atkins gives the missing plasticity and friction
+terms and both need a measurement of how a blade's flanks load the material,
+which this library does not have and has not invented. The gate asserts the
+bound IS enormous, because a number fitted until it looked plausible would be a
+number about the fit.
+
+### Bugs this found
+
+- **The first draft called the bound a depth.** It reported 1.5 m into pine as
+  `depth` and would have been read as one. Renamed to `depthBound` in both
+  reports, with the gap documented where the function is rather than in a note
+  somewhere — the honesty is structural or it is decorative.
+- **The playground probe compared a moving plane against a settled claim.** It
+  sampled the first frame after the target cycled, while the threshold plane
+  was still easing to the new material, and reported a column that clears as
+  one that does not. The scene now publishes whether the plane has arrived, and
+  the probe only reads settled frames.
+
+Mutation-tested eleven ways: halve the edge area, turn a point into a
+circumference, make the chord linear in curvature, drop the square from
+Griffith, take skin's toughness off the measured band, fudge the stress
+criterion up to meet the energy one, quietly fit the bound until pine looks
+plausible, straighten the axe bit, lose the factor of two in the closed-form
+inversion, make the grain stop mattering, let everything bite regardless of
+pressure. All eleven die.
+
+### Also
+
+- `proving` playground example: five edges of the same steel under the same
+  300 N, their pressures as columns on a log scale, and the material's strength
+  as a plane they either clear or do not. Nothing gets sharper or blunter —
+  only the target changes, and the same five objects go from all-cutting to
+  none-cutting and back.
+- `bluntestThatBites(target, force, contact)`, the closed-form inversion of the
+  stress criterion, checked against `measureCut` rather than believed.
+
 ## [0.55.0] — 2026-08-01
 
 ### Added

@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, fourteen gates
+    name: typecheck, tests, build, fifteen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -71,6 +71,12 @@ jobs:
       # against a rule book rather than a range: 800 g, and the centre of mass
       # 0.90-1.06 m from the tip, neither of them typed in.
       - run: npm run blade
+      # The fifteenth is the one that checks a DISAGREEMENT rather than an
+      # agreement. A stress criterion puts a sharp point through skin at six
+      # milli-newtons and instrumented knives say tens of newtons; if those two
+      # numbers ever converge, somebody has fitted one to the other, and that
+      # is what the budget is guarding.
+      - run: npm run cut
 
   browser:
     name: every example renders
