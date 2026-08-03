@@ -26,7 +26,7 @@ env:
 
 jobs:
   check:
-    name: typecheck, tests, build, eighteen gates
+    name: typecheck, tests, build, nineteen gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -96,6 +96,12 @@ jobs:
       # the comparison completes — and it turns out a 800 J kick is twelve times
       # further from holing plate than a 75 J arrow.
       - run: npm run armour
+      # The nineteenth is the armed bout, and the first assertion in it is that
+      # the fencers MOVED. A bout where nobody walked is what this release
+      # exists to stop shipping, and it is checked before anything about who
+      # won. The tempo is √(2θI/τ) — the blade's own inertia against the couple
+      # its hilt allows — so nothing in the weapon table says "speed".
+      - run: npm run fencing
 
   browser:
     name: every example renders

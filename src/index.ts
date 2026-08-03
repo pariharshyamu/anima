@@ -518,3 +518,23 @@ export {
   type ThrowReport as JavelinThrowReport,
   type ThrowState,
 } from './javelin';
+
+// Fencing — the armed bout, and it does not stand still.
+export {
+  Fence,
+  Fencer,
+  bladeTorque,
+  cutTime,
+  fencerBalance,
+  fencerCard,
+  footSpeed,
+  measureOf,
+  poseSwordArm,
+  stepLength,
+  stepTime,
+  type FenceOptions,
+  type FencePhase,
+  type FencerCard,
+  type FencerOptions,
+  type Touch,
+} from './fencing';

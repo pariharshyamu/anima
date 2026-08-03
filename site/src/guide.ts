@@ -29,6 +29,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'bind', title: 'Bind: two blades in contact become one linkage' },
   { id: 'javelin', title: 'Javelin: the four centimetres of 1986' },
   { id: 'armour', title: 'The armour handshake: the one that finishes' },
+  { id: 'fencing', title: 'Fencing: the armed bout, and it moves' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
 

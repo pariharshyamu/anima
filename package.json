@@ -1,6 +1,6 @@
 {
   "name": "anima3d",
-  "version": "0.59.0",
+  "version": "0.60.0",
   "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,7 +28,7 @@
     "skate": "node bench/skate.mjs",
     "climb": "node bench/climb.mjs",
     "parkour": "node bench/parkour.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut && npm run bind && npm run javelin && npm run armour",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut && npm run bind && npm run javelin && npm run armour && npm run fencing",
     "dev:portrait": "vite examples/portrait",
     "dev:hoops": "vite examples/basketball",
     "dev:village": "vite examples/village",
@@ -59,7 +59,8 @@
     "cut": "node bench/cut.mjs",
     "bind": "node bench/bind.mjs",
     "javelin": "node bench/javelin.mjs",
-    "armour": "node bench/armour.mjs"
+    "armour": "node bench/armour.mjs",
+    "fencing": "node bench/fencing.mjs"
   },
   "repository": {
     "type": "git",

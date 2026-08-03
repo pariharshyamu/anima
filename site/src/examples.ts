@@ -6557,6 +6557,199 @@ window.thrownDebug = () => ({
 game.start();
 `,
   },
+  {
+    id: 'fence',
+    title: 'The bout: two fencers, and they do not stand still',
+    group: 'Scale',
+    code: `// AN ARMED BOUT, AND THE FEET ARE HALF OF IT.
+//
+// The unarmed bout in this playground stands two fighters at a fixed gap and
+// lets them trade. That is a measurement rig, not a fight — and with weapons
+// it would be worse, because the interesting half of any fight with a sword in
+// it is the FOOTWORK. Two unarmed fighters are in range or they are not. Two
+// armed ones spend the whole exchange arguing about where the line is.
+//
+// So everything here moves. They close, they break, they circle, they lunge
+// into the cut and step back out of it, and the blade in the hand sweeps
+// because the ARM sweeps — solveLimb puts the hand on an arc and the steel
+// follows, with no clip anywhere.
+//
+// Nothing about the timing was chosen. How long a cut takes is
+//
+//   t = √(2θ·I / τ)
+//
+// the blade's second moment about the grip, from BLADES, against the couple two
+// hands can make on that hilt, from Bind. A longsword is twice an arming sword
+// to turn and has twice the couple on it, so the two nearly cancel — which is
+// the entire reason a hand-and-a-half grip is worth the extra steel.
+//
+// The rings are each fencer's MEASURE: arm reach plus blade past the hand.
+// Watch the band between them. When the gap sits inside the blue ring and
+// outside the amber one, the longsword can reach and the arming sword cannot,
+// and that is where it attacks from. Nobody encoded that — it is a subtraction
+// of two numbers, one from a bone length and one from a blade length.
+//
+// Blades meeting is Bind: the crossing is where two lines meet and whoever has
+// the shorter lever arm owns it. A parry that lands forte-on-foible throws the
+// attack aside; one that lands the other way round does not.
+import { CylinderGeometry, Group, Mesh, MeshStandardMaterial, PlaneGeometry,
+         RingGeometry, Vector3, DoubleSide } from 'three';
+import { applyFog, createLightingRig, createSky, createSurface,
+         PALETTES } from 'scena3d';
+import { BLADES, Fence, Fencer, createHumanoid, fencerCard,
+         poseSwordArm } from 'anima3d';
+import { Game } from 'gama3d';
+
+const palette = PALETTES.urban;
+const game = new Game();
+const scene = game.world.scene;
+scene.add(createSky({ palette }).mesh, createLightingRig('day').group);
+applyFog(scene, 'haze', palette);
+const floor = new Mesh(new PlaneGeometry(200, 200), createSurface('floortile', { seed: 9 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// The blade, built from the SAME segment table the physics sums — so the steel
+// on screen is the steel whose inertia is setting the tempo.
+const COLOUR = { steel: 0x9aa3ad, alloy: 0xb9c3cd, ash: 0xc8a06a,
+                 oak: 0x8a6a42, grip: 0x4a3a30, brass: 0xc9a227 };
+function buildBlade(name) {
+  const spec = BLADES[name];
+  const g = new Group();
+  for (const s of spec.segments) {
+    const len = Math.max(0.004, s.to - s.from);
+    const metal = s.material === 'steel' || s.material === 'brass';
+    const bar = new Mesh(
+      new CylinderGeometry(
+        Math.max(0.004, (s.width[1] + s.thick[1]) / 3),
+        Math.max(0.004, (s.width[0] + s.thick[0]) / 3),
+        len, 8
+      ),
+      new MeshStandardMaterial({
+        color: COLOUR[s.material] ?? 0x9aa3ad,
+        metalness: metal ? 0.35 : 0.05,
+        roughness: metal ? 0.4 : 0.85,
+        emissive: metal ? 0x1a1f24 : 0x120d08,
+      })
+    );
+    // The socket sits at the palm, so the blade runs out along +Y from the grip.
+    bar.position.y = (s.from + s.to) / 2 - spec.grip;
+    g.add(bar);
+  }
+  return g;
+}
+
+const LONG = 'longsword';
+const SHORT = 'arming';
+
+const a = new Fencer(createHumanoid({ seed: 42 }), {
+  blade: LONG, hands: 2, style: 'karate', skill: 0.85,
+  prop: buildBlade(LONG), at: new Vector3(-1.9, 0, 0),
+});
+const b = new Fencer(createHumanoid({ seed: 7 }), {
+  blade: SHORT, hands: 1, style: 'boxing', skill: 0.85,
+  prop: buildBlade(SHORT), at: new Vector3(1.9, 0, 0),
+});
+scene.add(a.rig.object, b.rig.object);
+
+const bout = new Fence(a, b, { roundSeconds: 45 });
+
+// Each fencer's measure, drawn on the floor. The BAND between the two rings is
+// where one of them can reach and the other cannot.
+const rings = [a, b].map((f, i) => {
+  const ring = new Mesh(
+    new RingGeometry(f.measure - 0.03, f.measure, 64),
+    new MeshStandardMaterial({
+      color: i === 0 ? 0x3a8fd0 : 0xd8862a,
+      emissive: i === 0 ? 0x0b2438 : 0x3a1c06,
+      side: DoubleSide, transparent: true, opacity: 0.55,
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  scene.add(ring);
+  return ring;
+});
+
+// A post each: what has landed on them.
+const posts = [a, b].map((f, i) => {
+  const post = new Mesh(
+    new CylinderGeometry(0.06, 0.06, 1, 10),
+    new MeshStandardMaterial({ color: 0xcc4422, emissive: 0x3a1408 })
+  );
+  post.position.set(i === 0 ? -3.4 : 3.4, 0.5, -1.6);
+  scene.add(post);
+  return post;
+});
+
+let t = 0;
+
+game.onUpdate((frame) => {
+  const dt = Math.min(0.05, frame.delta);
+  t += dt;
+  if (!bout.done) bout.update(dt);
+
+  // THE ARMS. The hand travels a real arc through the phase and solveLimb
+  // solves the elbow for it, so the blade sweeps because the arm swept.
+  poseSwordArm(a);
+  poseSwordArm(b);
+
+  for (const [i, f] of [a, b].entries()) {
+    rings[i].position.set(f.at.x, 0.02, f.at.z);
+    const h = 0.08 + f.taken * 0.16;
+    posts[i].scale.y = h;
+    posts[i].position.y = h / 2;
+  }
+
+  // Track the midpoint of the engagement, easing so the camera does not jitter.
+  const mx = (a.at.x + b.at.x) / 2;
+  const mz = (a.at.z + b.at.z) / 2;
+  look.lerp(new Vector3(mx, 1.1, mz), Math.min(1, dt * 2));
+  eye.lerp(new Vector3(mx, 3.4, mz + 6.4), Math.min(1, dt * 2));
+  game.camera.position.copy(eye);
+  game.camera.lookAt(look);
+});
+
+// The camera FOLLOWS. A bout that circles drifts across the floor, and a fixed
+// camera watches it walk out of frame — which is what the first screenshot of
+// this scene showed.
+const eye = new Vector3(0, 3.4, 6.4);
+const look = new Vector3(0, 1.1, 0);
+game.camera.position.copy(eye);
+game.camera.lookAt(look);
+
+window.fenceDebug = () => ({
+  // The scene's own clock — headless runs at about a third of real time, and a
+  // bout nobody has started looks exactly like one that never moves.
+  clock: Number(t.toFixed(1)),
+  gap: Number(bout.gap.toFixed(3)),
+  contested: Number(bout.contested.toFixed(1)),
+  arrivals: bout.touches.length,
+  parried: bout.touches.filter((x) => x.parried).length,
+  fencers: [a, b].map((f) => ({
+    blade: f.blade,
+    // Derived, every one: mass and inertia from the segment table, couple from
+    // the hilt, tempo from those two, measure from a bone length plus steel.
+    measure: Number(f.measure.toFixed(3)),
+    tempo: Number(f.tempo.toFixed(4)),
+    torque: Number(f.torque.toFixed(1)),
+    speed: Number(f.speed.toFixed(3)),
+    phase: f.phase,
+    attacks: f.attacks,
+    parries: f.parries,
+    inBand: f.inBand,
+    touches: f.touches,
+    taken: f.taken,
+    // THE POINT OF THE RELEASE: metres of floor covered.
+    travelled: Number(f.travelled.toFixed(2)),
+    at: [Number(f.at.x.toFixed(2)), Number(f.at.z.toFixed(2))],
+  })),
+  draws: game.renderer.info.render.calls,
+});
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

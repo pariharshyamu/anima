@@ -20,6 +20,56 @@ release found.
 
 ## Releases
 
+## [0.60.0] — 2026-08-03
+
+### Added
+
+- **`Fencing` — the armed bout, and it does not stand still.** `Sparring` put
+  two fighters at a fixed gap and let them trade; that is a measurement rig, and
+  an armed bout cannot be one, because the interesting half of a fight with a
+  sword in it is the FOOTWORK.
+- **`npm run fencing`, the nineteenth gate**, whose first assertion is that the
+  fencers MOVED.
+- `fence` playground example: two fencers who close, break, circle, lunge and
+  recover, with the blade sweeping because the ARM sweeps — `poseSwordArm` puts
+  the hand on a real arc and `solveLimb` solves the elbow. No clip anywhere.
+
+### Tempo, from the blade's own inertia
+
+    τ = F · span        the couple two hands make on the hilt   (Bind)
+    t = √(2θ·I / τ)     the time to sweep θ                     (Blade)
+
+Nothing in the weapon table says "speed". It says how thick the blade is.
+
+A longsword is **2.0×** an arming sword to turn and has **2.1×** the couple on
+it, so the two nearly cancel — which is the entire reason a hand-and-a-half grip
+is worth the extra steel, and it falls out of dividing `Blade` by `Bind`.
+
+### Measure, the band, and a leg as a pendulum
+
+`measure = strikeReach + bladeExtension`. Two fencers have different ones, and
+between them is a band where one can reach and the other cannot — a subtraction
+of a bone length and a blade length. A spear beats an arming sword **10-0**.
+
+Footwork is `t_step = π√(L/g)`, the classic walking-cadence derivation, over the
+stance's own fore-aft stagger. A taller fencer steps slower AND further.
+
+### Bugs this found, all four visible only in motion
+
+- **A standoff.** The first opening test was "attack when they are busy", and
+  two fencers who are both waiting are never busy: ONE attack in thirty seconds.
+- **The blade line came off a bone axis.** `Fencer.line()` read the direction
+  from the hand socket's local +Y — an axis of the skeleton that points nowhere
+  in particular — so every crossing handed to `Bind` was arbitrary and a
+  thirty-second bout resolved ZERO parries.
+- **A parry made from the hip never reaches.** With the hand left where it
+  stands, the crossing falls centimetres PAST the attacker's point, `onBoth`
+  comes back false, and `Bind` is never consulted: seven parries attempted, zero
+  resolved.
+- **Two swordsmen chest to chest.** The lunge had nothing stopping it, so a long
+  bout ended with the fencers inside each other and the two measure rings
+  concentric. Only the screenshot showed it.
+
 ## [0.59.0] — 2026-08-03
 
 ### Added
