@@ -577,6 +577,7 @@ export {
   mouthOf,
   syllableRate,
   utterance,
+  shapedUtterance,
   utteranceLength,
   visemeOf,
   type MouthProp,

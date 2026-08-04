@@ -253,6 +253,22 @@ export interface Segment {
   /** Seconds from the start of the utterance. */
   at: number;
   duration: number;
+  /**
+   * A mouth shape supplied from OUTSIDE, overriding `PHONEMES[key]`.
+   *
+   * This is the seam, and it is the reason the trilogy has three packages. A
+   * synthesizer that knows about vocal tracts knows what shape a mouth is in
+   * — it has to, because F1 IS mouth opening — but its phoneme alphabet is not
+   * this one and never will be. It has consonants this file has no viseme for
+   * and this file has visemes it has no sound for.
+   *
+   * So nothing is shared except the SHAPE. Hand this class `{ open, round,
+   * close, spread }` per segment and it drives a jaw with it, through the same
+   * dominance blend, the same speed limit and the same lip bridge as its own
+   * phonemes get. It does not ask where the numbers came from and it cannot
+   * import whatever produced them.
+   */
+  shape?: MouthShape;
 }
 
 /**
@@ -271,6 +287,27 @@ export function utterance(keys: string[] | string, rate = 1): Segment[] {
     if (!spec) continue;
     const duration = spec.duration / Math.max(0.1, rate);
     out.push({ key, at: t, duration });
+    t += duration;
+  }
+  return out;
+}
+
+/**
+ * Lay out a track of mouth shapes supplied from outside.
+ *
+ * The durations are given rather than looked up, because whatever produced the
+ * shapes also knows how long each one lasts — a speech synthesizer has already
+ * decided that, and deciding it twice is how a face and a voice drift apart.
+ */
+export function shapedUtterance(
+  shapes: ReadonlyArray<{ shape: MouthShape; seconds: number }>,
+  rate = 1
+): Segment[] {
+  const out: Segment[] = [];
+  let t = 0;
+  for (let i = 0; i < shapes.length; i++) {
+    const duration = Math.max(0, shapes[i].seconds) / Math.max(0.1, rate);
+    out.push({ key: `#${i}`, at: t, duration, shape: shapes[i].shape });
     t += duration;
   }
   return out;
@@ -320,7 +357,10 @@ export function mouthAt(track: Segment[], time: number): MouthShape {
     if (d >= half) continue;
     // Raised cosine: 1 at the centre, 0 at the edges, smooth at both.
     const weight = 0.5 * (1 + Math.cos((Math.PI * d) / half));
-    const m = mouthOf(seg.key);
+    // A supplied shape wins. Everything downstream — the blend, the seal
+    // maximum, the jaw speed limit, the lip bridge — treats it identically to
+    // one this file looked up, because it is the same kind of thing.
+    const m = seg.shape ?? mouthOf(seg.key);
     w += weight;
     open += m.open * weight;
     round += m.round * weight;
@@ -373,6 +413,20 @@ export class Speech {
 
   say(keys: string[] | string): void {
     this.track = utterance(keys, this.rate);
+    this.elapsed = 0;
+  }
+
+  /**
+   * Speak a track of shapes decided somewhere else.
+   *
+   * The face does not need to know the alphabet, only the geometry. GAMA's
+   * `visemeTrack` produces exactly this and imports nothing from here; this
+   * imports nothing from there; the two agree because **F1 is mouth opening**
+   * and a jaw that drops raises the first formant, in the geometry and in the
+   * air.
+   */
+  follow(shapes: ReadonlyArray<{ shape: MouthShape; seconds: number }>): void {
+    this.track = shapedUtterance(shapes, this.rate);
     this.elapsed = 0;
   }
 

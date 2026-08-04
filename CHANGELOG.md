@@ -20,6 +20,56 @@ release found.
 
 ## Releases
 
+## [0.63.0] — 2026-08-04
+
+### Added
+
+- **`Speech.follow()` — a face driven from outside, and the far half of a
+  handshake.** `Segment` gained an optional `shape`, and `shapedUtterance` lays
+  out a track of `{ open, round, close, spread }` with durations decided
+  elsewhere. Everything downstream treats a supplied shape identically to one
+  this package looked up: the same dominance blend, the same seal maximum, the
+  same jaw speed limit, the same lip bridge.
+- **`npm run lipsync` — the gate, and it imports nothing from the other side.**
+  A spoken line is written out as mouth geometry in the bench file itself,
+  because a gate that fetched the shapes would be testing the import. The jaw
+  gap is then measured **in metres off the rig** — not off the shape the
+  controller reports, because a controller that returns a beautiful shape and a
+  prop that ignores it look identical from the controller's side.
+
+```
+aligned:                 r = 0.834   over 259 frames at 120 Hz
+the track 100 ms early:  r = 0.029   ← the control
+fastest the jaw moved:   0.200 m/s   against a published 0.200
+a 227 ms opening reaches 54% of itself
+a  49 ms opening reaches 12%   ← Lindblom's undershoot, still free
+```
+
+- **The seam is a fact, not a type.** A synthesizer that knows about vocal
+  tracts knows what shape a mouth is in — it has to, because **F1 is mouth
+  opening** — but its phoneme alphabet is not this one and never will be. So
+  nothing is shared except the shape. GAMA measures **r = 0.832** between the
+  same `open` and the first formant of the audio it renders; this measures
+  **0.834** against the jaw. Compose them and the mouth and the sound are one
+  event, with neither package having heard of the other.
+
+### Fixed
+
+- **The gate's control beat the thing it was controlling for.** `mouthAt`
+  deliberately leads the sound by `ANTICIPATION` — a real mouth reaches its
+  shape before the sound arrives — and the first version of this gate compared
+  against a track shifted by exactly 100 ms, which CANCELLED the anticipation.
+  The control scored **0.834** against the aligned case's **0.353**. A control
+  that beats its subject is not a weak control; it is a sign the alignment is
+  wrong.
+- **The jaw speed check was measuring the lips.** The visible aperture is the
+  gap between the two lips, and the lips are deliberately not rate-limited — a
+  bilabial that had to wait for the jaw would stop being one. Measuring it
+  reported 1.19 m/s against a jaw limit of 0.20.
+- **And then it was measuring frame zero.** Seeding the previous gap at zero
+  made the first step look like the jaw crossed the whole rest posture in one
+  frame: 0.452 m/s, an artefact, with the limiter never violated.
+
 ## [0.62.0] — 2026-08-03
 
 ### Added
