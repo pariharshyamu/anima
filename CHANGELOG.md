@@ -20,6 +20,56 @@ release found.
 
 ## Releases
 
+## [0.64.0] — 2026-08-04
+
+**A face driven by a voice that has not decided yet.** GAMA moved its dialogue
+onto the platform's `SpeechSynthesis`, which reports word boundaries as it
+reaches them and starts whenever it starts. `follow()` bakes a timeline at the
+moment it is called and cannot serve that.
+
+### Added
+
+- **`Speech.attach(source, options)`** — a `MouthSource` is
+  `(seconds) => MouthShape | null`, re-read every frame. GAMA's
+  `SpokenLine.mouthAt` has that signature; neither package imports the other,
+  and what makes them agree is still that **F1 is mouth opening**.
+- **`options.clock`** — the AUTHORITATIVE clock. A face counting its own frames
+  is ahead by the platform's start latency for the rest of the utterance.
+- **`options.done`**, `Speech.live`, `Speech.detach()`, and `LIVE_WINDOW`.
+- **A playground example, `aloud`** — the first scene in the trilogy where an
+  ANIMA face and a real browser voice are one event, with the word ticks
+  lighting up as the engine reports them.
+
+### Fixed
+
+- **A live source was handed to the jaw as a square wave.** `mouthAt` overlaps
+  each segment's raised-cosine dominance so the target is already smooth; a
+  point-sampled source has no segments, and the first version of `attach` passed
+  the raw step straight to the rate limiter — which is a jaw with mass, not a
+  filter. It scored **0.55** against the baked path's 0.83 on a source it was
+  tracking perfectly. `attach` now samples across `LIVE_WINDOW`, which is the
+  median published phoneme duration times `DOMINANCE` — a number that moves when
+  `PHONEMES` does, rather than one anybody chose.
+- **A live source is clamped at the seam.** A baked track is checked once when
+  it is handed over; a live source is a function someone else wrote, called
+  sixty times a second, and one `NaN` reaches a bone position and stays there.
+
+### Known — three ways the gate was wrong first
+
+- **The simulator moved the whole timeline instead of pinning the past.** A
+  re-anchor stretches what has not been said and leaves what has alone;
+  `anchorTrack` is monotonic and passes through the boundaries already observed.
+  Scaling everything jumped the mouth backwards at the revision, and the live
+  path scored 0.553 for faithfully following a source that had contradicted
+  itself. A simulator that asks for something impossible is not a hard test.
+- **The external clock carried no information.** It advanced in lockstep with
+  the frame clock, so deleting `options.clock` scored 0.821 against the correct
+  code's 0.790 — BETTER. A parameter a mutation can improve on is not being
+  tested. The simulated platform now starts 350 ms late, and that mutation
+  scores −0.447.
+- **The nonsense-source case found the missing clamp**, which is the only reason
+  it is in the gate rather than the changelog of a later release.
+
 ## [0.63.0] — 2026-08-04
 
 ### Added

@@ -199,6 +199,104 @@ if (!(rShifted < rAligned * 0.75)) {
   var physics = { worstSpeed: aligned.worstSpeed, limit, long, short, gapAtClose };
 }
 
+// ------------------ 2b. AND WHEN THE SOURCE CHANGES ITS MIND, THE FACE HEARS
+
+/**
+ * A timeline that MOVES, which is the case `follow()` cannot serve.
+ *
+ * A platform speech synthesizer reports word boundaries as it reaches them, and
+ * every one re-anchors the track behind it. So the shape at 1.2 seconds is not
+ * the same shape at frame 10 as it is at frame 200 — and a face that baked the
+ * timeline when it was told to speak is animating a plan the audio has left.
+ *
+ * This simulates that: the source's own rate is revised part-way through, once,
+ * by a factor no face could guess. `attach()` re-reads the source every frame
+ * and follows it; `follow()` baked at the start and cannot. THAT IS THE CONTROL
+ * and it has to lose, or the live path is code with no reason to exist.
+ *
+ * The control is not a shifted copy of the subject. The last time this file
+ * used one of those it cancelled ANTICIPATION exactly and beat the thing it was
+ * controlling for; here the control is the OTHER API, doing the job it was
+ * built for, on a problem it was not.
+ */
+let live = { subject: 0, control: 0, revisedAt: 0, factor: 0 };
+{
+  const REVISE_AT = 0.9;
+  const FACTOR = 1.45;
+  // THE PLATFORM STARTS LATE. `speakAloud` returns the instant it is called and
+  // the engine's `start` event arrives whenever it arrives; until then the
+  // line's clock reads −1 and nothing has been said. A face counting its own
+  // frames is ahead by exactly this much for the rest of the utterance.
+  //
+  // Without it the two clocks advanced in lockstep and the external one carried
+  // no information at all: deleting `options.clock` and using the face's own
+  // `elapsed` scored 0.821 against 0.790 — BETTER than the correct code. A
+  // parameter a mutation can improve on is not being tested.
+  const START_DELAY = 0.35;
+  const total = LINE.reduce((a, s) => a + s.seconds, 0);
+
+  // The source's idea of the mouth at a wall-clock time, under whichever rate
+  // is current.
+  //
+  // THE PAST IS PINNED. A re-anchor stretches what has not been said yet and
+  // leaves what has alone — `anchorTrack` is monotonic and passes exactly
+  // through the boundaries already observed. The first version of this
+  // simulator scaled the WHOLE timeline instead, which jumped the mouth
+  // backwards at the revision, and the live path scored 0.553 for following a
+  // source that had contradicted itself. A simulator that asks for something
+  // impossible is not a hard test, it is a wrong one.
+  const shapeAt = (seconds, factor) => {
+    const plan = seconds <= REVISE_AT ? seconds : REVISE_AT + (seconds - REVISE_AT) / factor;
+    let acc = 0;
+    for (const s of LINE) {
+      if (plan >= acc && plan < acc + s.seconds) return s.shape;
+      acc += s.seconds;
+    }
+    return null;
+  };
+
+  const run = (attached) => {
+    const rig = createHumanoid({ height: 1.75, seed: 4 });
+    const mouth = createMouth(rig);
+    const speech = new Speech('', {});
+    let wall = 0;
+    // The source's own clock: nothing until the platform starts.
+    const clock = () => Math.max(0, wall - START_DELAY);
+    let factor = 1;
+    if (attached) speech.attach((t) => shapeAt(t, factor), { clock });
+    else speech.follow(LINE);
+    const samples = [];
+    while (wall < START_DELAY + total * FACTOR) {
+      // The revision, and it is a revision the face is never told about: the
+      // source simply starts answering differently.
+      if (clock() >= REVISE_AT) factor = FACTOR;
+      const shape = speech.update(RATE);
+      mouth.apply(shape);
+      const want = shapeAt(clock() + ANTICIPATION, factor);
+      if (want) samples.push({ want: want.open, got: shape.open });
+      wall += RATE;
+    }
+    return samples;
+  };
+
+  const subject = run(true);
+  const control = run(false);
+  live = {
+    subject: correlate(subject.map((s) => s.want), subject.map((s) => s.got)),
+    control: correlate(control.map((s) => s.want), control.map((s) => s.got)),
+    revisedAt: REVISE_AT,
+    factor: FACTOR,
+    startDelay: START_DELAY,
+    frames: subject.length,
+  };
+  if (!(live.subject > 0.75)) {
+    fail(`a live source revised mid-line drives the jaw at r = ${live.subject.toFixed(3)} — attach() is not re-reading it`);
+  }
+  if (!(live.control < live.subject * 0.75)) {
+    fail(`a track baked before the revision still scores r = ${live.control.toFixed(3)} against the live path's ${live.subject.toFixed(3)} — the revision is not big enough to tell the two apart, so this proves nothing`);
+  }
+}
+
 // ------------------------------------------- 3. the things it must not do
 
 {
@@ -234,12 +332,36 @@ if (!(rShifted < rAligned * 0.75)) {
   // A supplied shape must not leak into the phoneme table.
   speech.say('aba');
   if (speech.track.some((s) => s.shape)) fail('a phoneme utterance came back carrying supplied shapes');
+
+  // ATTACHING AND DETACHING ARE EXCLUSIVE WITH THE OTHER TWO. A face left half
+  // on a live source and half on a baked track would animate whichever the last
+  // caller happened to touch, which is the kind of bug that only shows up in
+  // someone else's game.
+  speech.attach(() => ({ open: 0.5, round: 0, close: 0, spread: 0 }));
+  if (!speech.live) fail('attach() did not take');
+  if (speech.track.length) fail('attach() left a baked track behind it');
+  speech.say('aba');
+  if (speech.live) fail('say() did not detach the live source');
+  speech.attach(() => null);
+  speech.follow(LINE);
+  if (speech.live) fail('follow() did not detach the live source');
+
+  // A source that returns nothing, throws nothing, and never agrees twice.
+  speech.attach((t) => (t < 0 ? null : { open: NaN, round: 1e9, close: -5, spread: 0 }));
+  for (let i = 0; i < 20; i++) {
+    const shape = speech.update(RATE);
+    for (const k of ['open', 'round', 'close', 'spread']) {
+      if (!Number.isFinite(shape[k])) { fail(`a nonsense live source produced ${shape[k]} for ${k}`); i = 99; break; }
+    }
+  }
+  speech.detach();
+  if (speech.live) fail('detach() did not detach');
 }
 
 // ------------------------------------------------------------------- report
 
 if (json) {
-  console.log(JSON.stringify({ failures, rAligned, rShifted, physics, frames: aligned.samples.length }, null, 2));
+  console.log(JSON.stringify({ failures, rAligned, rShifted, live, physics, frames: aligned.samples.length }, null, 2));
 } else {
   console.log('lipsync — a face driven from outside, and the far half of a handshake\n');
   console.log('  THE FACE FOLLOWS WHAT IT IS TOLD');
@@ -249,6 +371,17 @@ if (json) {
   console.log('  shape and a prop that ignores it look identical from the controller.\n');
   console.log(`    aligned:                 r = ${rAligned.toFixed(3)}   over ${aligned.samples.length} frames at 120 Hz`);
   console.log(`    the track 100 ms early:  r = ${rShifted.toFixed(3)}   ← the control\n`);
+
+  console.log('  AND WHEN THE SOURCE CHANGES ITS MIND, THE FACE HEARS');
+  console.log(`  A platform voice starts ${(live.startDelay * 1000).toFixed(0)} ms late and then revises its own rate by`);
+  console.log(`  ×${live.factor} part-way through, which is what a word boundary arriving does: it`);
+  console.log('  re-anchors everything after it and leaves everything before it alone.\n');
+  console.log(`    attach(), re-read every frame:   r = ${live.subject.toFixed(3)}   over ${live.frames} frames`);
+  console.log(`    follow(), baked before the revision: r = ${live.control.toFixed(3)}   ← the control\n`);
+  console.log('    The control is not a shifted copy of the subject — the last time this');
+  console.log('    file used one of those it cancelled ANTICIPATION exactly and BEAT the');
+  console.log('    thing it was controlling for. It is the other API, doing the job it was');
+  console.log('    built for, on a problem it was not.\n');
 
   console.log('  AND THROUGH THE SAME PHYSICS, NOT AROUND IT');
   console.log(`    fastest the jaw moved:   ${physics.worstSpeed.toFixed(3)} m/s   against a published ${physics.limit.toFixed(3)}`);

@@ -577,6 +577,7 @@ export {
   mouthOf,
   syllableRate,
   utterance,
+  LIVE_WINDOW,
   shapedUtterance,
   utteranceLength,
   visemeOf,
@@ -584,5 +585,7 @@ export {
   type MouthShape,
   type PhonemeSpec,
   type Segment,
+  type LiveOptions,
+  type MouthSource,
   type SpeechOptions,
 } from './speech';

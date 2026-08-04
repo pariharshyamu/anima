@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANTICIPATION, DOMINANCE, JAW_SPEED, JAW_TRAVEL, LIP_BRIDGE, PHONEMES, PHONEME_KEYS, REST,
-  REST_WEIGHT, Speech, VISEMES, VISEME_NAMES, createMouth, mouthAt, mouthOf,
+  LIVE_WINDOW, REST_WEIGHT, Speech, VISEMES, VISEME_NAMES, createMouth, mouthAt, mouthOf,
+  type MouthShape,
   syllableRate, utterance, utteranceLength, visemeOf,
 } from '../src/speech';
 import { createHumanoid } from '../src/humanoid';
@@ -378,5 +379,129 @@ describe('the mouth prop', () => {
     const small = createMouth(createHumanoid({ seed: 7, height: 1.4 }));
     const large = createMouth(createHumanoid({ seed: 7, height: 2.0 }));
     expect(large.group.position.z).toBeGreaterThan(small.group.position.z);
+  });
+});
+
+describe('a live source, for a voice that has not decided yet', () => {
+  const flat = (open: number): MouthShape => ({ open, round: 0, close: 0, spread: 0 });
+
+  it('is re-read every frame, so a source that changes is followed', () => {
+    const speech = new Speech('', {});
+    let want = 0.9;
+    speech.attach(() => flat(want));
+    for (let i = 0; i < 400; i++) speech.update(1 / 120);
+    const high = speech.shape.open;
+    want = 0.1;
+    for (let i = 0; i < 400; i++) speech.update(1 / 120);
+    expect(high).toBeGreaterThan(0.6);
+    expect(speech.shape.open).toBeLessThan(0.3);
+  });
+
+  it('reads the source at the AUTHORITATIVE clock, not its own frame count', () => {
+    // The platform starts late. A face on its own clock would be ahead by the
+    // latency for the rest of the line.
+    const asked: number[] = [];
+    let clock = 0;
+    const speech = new Speech('', {});
+    speech.attach((t) => { asked.push(t); return flat(0.5); }, { clock: () => clock });
+    for (let i = 0; i < 10; i++) speech.update(1 / 120);
+    // Every sample is around the clock plus the anticipation lead, and the
+    // clock has not moved.
+    expect(Math.max(...asked)).toBeLessThan(ANTICIPATION + LIVE_WINDOW);
+    clock = 5;
+    asked.length = 0;
+    speech.update(1 / 120);
+    expect(Math.min(...asked)).toBeGreaterThan(5);
+  });
+
+  it('leads the source by ANTICIPATION, because a mouth arrives before the sound', () => {
+    const asked: number[] = [];
+    const speech = new Speech('', {});
+    speech.attach((t) => { asked.push(t); return flat(0.5); }, { clock: () => 1 });
+    speech.update(1 / 120);
+    // The window is centred on the lead, so the mean of the taps is it.
+    const mean = asked.reduce((a, b) => a + b, 0) / asked.length;
+    expect(mean).toBeCloseTo(1 + ANTICIPATION, 6);
+  });
+
+  it('blends over a dominance window rather than stepping', () => {
+    // A source that is shut everywhere except one instant must not produce a
+    // fully shut jaw the moment it is sampled there: the blend is a window.
+    const speech = new Speech('', {});
+    let clock = 0;
+    speech.attach((t) => flat(t > 0.999 && t < 1.001 ? 1 : 0), { clock: () => clock });
+    clock = 1 - ANTICIPATION;
+    speech.update(1 / 120);
+    expect(speech.shape.open).toBeLessThan(0.5);
+    expect(LIVE_WINDOW).toBeGreaterThan(0.05);
+  });
+
+  it('clamps whatever the source returns, because a NaN never comes back', () => {
+    const speech = new Speech('', {});
+    for (const bad of [
+      { open: NaN, round: 0, close: 0, spread: 0 },
+      { open: 1e9, round: -4, close: 12, spread: NaN },
+      { open: -Infinity, round: Infinity, close: 0, spread: 0 },
+    ] as MouthShape[]) {
+      speech.attach(() => bad);
+      for (let i = 0; i < 20; i++) {
+        const shape = speech.update(1 / 120);
+        for (const v of Object.values(shape)) {
+          expect(Number.isFinite(v)).toBe(true);
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it('goes to rest when the source has nothing to say', () => {
+    const speech = new Speech('', {});
+    speech.attach(() => null);
+    for (let i = 0; i < 300; i++) speech.update(1 / 120);
+    expect(speech.shape.open).toBeCloseTo(REST.open, 2);
+    expect(speech.shape.close).toBe(0);
+  });
+
+  it('reports done from the source, not from a track it does not have', () => {
+    const speech = new Speech('', {});
+    let over = false;
+    speech.attach(() => flat(0.5), { done: () => over });
+    speech.update(0.5);
+    expect(speech.done).toBe(false);
+    over = true;
+    expect(speech.done).toBe(true);
+  });
+
+  it('is exclusive with say() and follow(), both ways', () => {
+    const speech = new Speech('', {});
+    speech.attach(() => flat(0.5));
+    expect(speech.live).toBe(true);
+    expect(speech.track.length).toBe(0);
+    speech.say('aba');
+    expect(speech.live).toBe(false);
+    expect(speech.track.length).toBeGreaterThan(0);
+    speech.attach(() => flat(0.5));
+    speech.follow([{ seconds: 0.1, shape: flat(0.4) }]);
+    expect(speech.live).toBe(false);
+    speech.attach(() => flat(0.5));
+    speech.detach();
+    expect(speech.live).toBe(false);
+  });
+
+  it('still obeys the jaw speed limit — a live source does not get to cheat', () => {
+    const speech = new Speech('', {});
+    let want = 0;
+    speech.attach(() => flat(want));
+    for (let i = 0; i < 200; i++) speech.update(1 / 120);
+    want = 1;
+    let worst = 0;
+    let last = speech.shape.open;
+    for (let i = 0; i < 200; i++) {
+      const shape = speech.update(1 / 120);
+      worst = Math.max(worst, Math.abs(shape.open - last) * JAW_TRAVEL * 120);
+      last = shape.open;
+    }
+    expect(worst).toBeLessThanOrEqual(JAW_SPEED + 1e-9);
   });
 });

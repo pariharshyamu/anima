@@ -390,11 +390,123 @@ export function mouthAt(track: Segment[], time: number): MouthShape {
   };
 }
 
+/**
+ * A mouth from somewhere else, asked for at a time.
+ *
+ * The SECOND half of the handshake, and the half that a baked track cannot do.
+ * `follow()` takes a timeline decided once; this takes a FUNCTION, and asks it
+ * again every frame. That matters the moment the source's own timing can move
+ * underneath it — which is exactly what a platform speech synthesizer does,
+ * because it reports word boundaries as it reaches them and the track between
+ * them is re-anchored each time one arrives.
+ *
+ * GAMA's `SpokenLine.mouthAt(seconds)` has this signature. It imports nothing
+ * from here, this imports nothing from there, and the two agree because **F1 is
+ * mouth opening** — a jaw that drops raises the first formant, in the geometry
+ * and in the air. Nothing in this file knows what a formant is.
+ *
+ * Returning `null` means "nothing to say", and the face goes to rest.
+ */
+export type MouthSource = (seconds: number) => MouthShape | null;
+
+/** What a live source needs to say about itself besides its shape. */
+export interface LiveOptions {
+  /**
+   * The AUTHORITATIVE clock, seconds. Omit to use this `Speech`'s own.
+   *
+   * A platform voice runs on its own clock and starts when it feels like it, so
+   * a face that counted its own frames would drift away from the audio over a
+   * sentence and there would be no way to notice from inside.
+   */
+  clock?: () => number;
+  /** Whether the source has finished. Omit and the face speaks until detached. */
+  done?: () => boolean;
+}
+
 export interface SpeechOptions {
   /** Speed multiplier on every published duration. */
   rate?: number;
   /** Loop the utterance. */
   loop?: boolean;
+}
+
+/**
+ * How wide a live source's dominance window is, seconds.
+ *
+ * A baked track knows each segment's duration and `mouthAt` weights it over
+ * `duration × DOMINANCE`. A source sampled at a point does not offer that, so
+ * the width comes from this file's own table: the MEDIAN published phoneme
+ * duration, times the same `DOMINANCE`. Not a number anyone chose — change a
+ * duration in `PHONEMES` and this moves with it.
+ */
+export const LIVE_WINDOW = (() => {
+  const ds = PHONEME_KEYS.map((k) => PHONEMES[k].duration).sort((a, b) => a - b);
+  return ds[ds.length >> 1] * DOMINANCE;
+})();
+
+/** How many points across that window a live source is asked for. Odd, so one lands on the lead. */
+const LIVE_TAPS = 7;
+
+/**
+ * The same blend `mouthAt` does, over a source instead of a track.
+ *
+ * WITHOUT THIS A LIVE SOURCE IS A SQUARE WAVE. `mouthAt` overlaps each
+ * segment's raised-cosine dominance (Cohen & Massaro) so the target the jaw
+ * chases is already smooth; `attach()` handed the jaw a step function instead
+ * and the rate limiter — which is a jaw with mass, not a filter — could not
+ * follow it. The gate scored the live path at 0.55 against the baked path's
+ * 0.83 on a source it was tracking perfectly, and the difference was entirely
+ * this.
+ *
+ * Sampling the source across the window with the same kernel is the same
+ * operation: for a source that is piecewise-constant over a segment, convolving
+ * with the dominance kernel and summing the segments' dominances agree.
+ *
+ * `close` is a MAXIMUM, not an average, and `spread` is gated by the seal —
+ * both exactly as in `mouthAt`, because a seal that is averaged away is not a
+ * bilabial and you cannot show a wide mouth through shut lips.
+ */
+function blendLive(source: MouthSource, t: number): MouthShape {
+  const half = LIVE_WINDOW / 2;
+  let w = REST_WEIGHT;
+  let open = REST.open * REST_WEIGHT;
+  let round = REST.round * REST_WEIGHT;
+  let spread = REST.spread * REST_WEIGHT;
+  let close = 0;
+  for (let i = 0; i < LIVE_TAPS; i++) {
+    const d = -half + (2 * half * i) / (LIVE_TAPS - 1);
+    const weight = 0.5 * (1 + Math.cos((Math.PI * d) / half));
+    if (!(weight > 0)) continue;
+    const m = source(t + d);
+    if (!m) continue;
+    const s = sane(m);
+    w += weight;
+    open += s.open * weight;
+    round += s.round * weight;
+    spread += s.spread * weight;
+    close = Math.max(close, s.close * (weight > 0.35 ? 1 : weight / 0.35));
+  }
+  const seal = Math.min(1, close);
+  return {
+    open: open / w,
+    round: round / w,
+    close: seal,
+    spread: (spread / w) * (1 - seal),
+  };
+}
+
+/**
+ * A shape from outside, made safe to draw.
+ *
+ * Every channel here is a FRACTION — nought to one — and a face is the last
+ * place to find out that something upstream disagreed. A baked track is checked
+ * once when it is handed over; a live source is a function someone else wrote,
+ * called sixty times a second, and a single NaN from it propagates into the rig
+ * and stays there, because a bone position that is NaN never comes back.
+ */
+function sane(shape: MouthShape): MouthShape {
+  const one = (v: number): number => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+  return { open: one(shape.open), round: one(shape.round), close: one(shape.close), spread: one(shape.spread) };
 }
 
 /** Drives an utterance in time and reports the mouth. */
@@ -411,7 +523,13 @@ export class Speech {
     this.say(keys);
   }
 
+  /** A live source, when one is attached. See `attach`. */
+  private source: MouthSource | null = null;
+  private clock: (() => number) | null = null;
+  private sourceDone: (() => boolean) | null = null;
+
   say(keys: string[] | string): void {
+    this.detach();
     this.track = utterance(keys, this.rate);
     this.elapsed = 0;
   }
@@ -426,8 +544,49 @@ export class Speech {
    * air.
    */
   follow(shapes: ReadonlyArray<{ shape: MouthShape; seconds: number }>): void {
+    this.detach();
     this.track = shapedUtterance(shapes, this.rate);
     this.elapsed = 0;
+  }
+
+  /**
+   * Drive the face from a source that is still making up its mind.
+   *
+   * `follow()` bakes a timeline at the moment it is called, which is right when
+   * the timeline is known and wrong when it is not. A platform speech
+   * synthesizer reports word boundaries as it reaches them, and every one of
+   * them re-anchors the track behind it — so a face that baked at the start is
+   * animating a plan the audio has already left. This asks the source again
+   * every frame instead.
+   *
+   * **The ANTICIPATION lead is applied here, to the source's own clock.** A
+   * mouth reaches its shape before the sound arrives; that is this library's
+   * fact about faces and it does not belong on the other side of the seam. The
+   * source is asked what the mouth should be a tenth of a second from now.
+   *
+   * Everything downstream is unchanged: the jaw is still held to `JAW_SPEED`,
+   * so a live source gets Lindblom's undershoot for free, and a seal the lips
+   * cannot span is still capped by `LIP_BRIDGE`. A supplied shape does not get
+   * to go around the physics, whether it was supplied once or every frame.
+   */
+  attach(source: MouthSource, options: LiveOptions = {}): void {
+    this.source = source;
+    this.clock = options.clock ?? null;
+    this.sourceDone = options.done ?? null;
+    this.track = [];
+    this.elapsed = 0;
+  }
+
+  /** Stop reading a live source. The face falls back to its own track. */
+  detach(): void {
+    this.source = null;
+    this.clock = null;
+    this.sourceDone = null;
+  }
+
+  /** Whether a live source is driving this face. */
+  get live(): boolean {
+    return this.source !== null;
   }
 
   get length(): number {
@@ -435,6 +594,7 @@ export class Speech {
   }
 
   get done(): boolean {
+    if (this.source) return this.sourceDone ? this.sourceDone() : false;
     return !this.loop && this.elapsed >= this.length;
   }
 
@@ -455,7 +615,15 @@ export class Speech {
     this.elapsed += step;
     const len = this.length;
     if (this.loop && len > 0) this.elapsed %= len;
-    const want = mouthAt(this.track, this.elapsed);
+    // A live source is asked at the AUTHORITATIVE clock plus the lead. With no
+    // clock of its own it gets this one, which is the case where a caller wants
+    // re-sampling but has nothing better to keep time by.
+    //
+    // `mouthAt` adds ANTICIPATION itself, so the two paths lead by the same
+    // amount and neither is a special case downstream.
+    const want = this.source
+      ? blendLive(this.source, (this.clock ? this.clock() : this.elapsed) + ANTICIPATION)
+      : sane(mouthAt(this.track, this.elapsed));
     const limit = (JAW_SPEED / this.jawTravel) * step;
     const d = want.open - this.shape.open;
     const open = this.shape.open + Math.max(-limit, Math.min(limit, d));

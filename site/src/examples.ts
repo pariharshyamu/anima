@@ -6751,6 +6751,151 @@ game.start();
 `,
   },
   {
+    id: 'aloud',
+    title: 'Aloud: the browser speaks, ANIMA moves the mouth',
+    group: 'Character',
+    code: `// THE SEAM, WITH A REAL VOICE ON THE OTHER SIDE OF IT.
+//
+// This is the first scene in the trilogy where a face and a voice are the same
+// event and the two packages that produce them have never heard of each other.
+//
+//   gama3d   speakAloud() hands the line to the BROWSER's speech synthesizer,
+//            and returns an object whose mouthAt(seconds) says what a mouth
+//            should be doing then. It knows nothing about rigs.
+//   anima3d  Speech.attach() takes that function and drives a jaw with it. It
+//            knows nothing about formants, lexicons or SpeechSynthesis.
+//
+// What they share is not a type and not an import. It is that F1 IS MOUTH
+// OPENING — a jaw that drops raises the first formant, in the geometry and in
+// the air — so a shape derived from a pronunciation and a shape drawn on a face
+// are descriptions of one thing.
+//
+// WHY attach() AND NOT follow()
+//
+// follow() bakes a timeline when you call it. SpeechSynthesis will not give you
+// one: it reports WORD boundaries as it reaches them, and each one re-anchors
+// everything after it. It also starts whenever it feels like starting. So the
+// face reads the source every frame, off the SOURCE's clock, not its own.
+//
+// Watch the readout. Every time a word boundary lands, the platform has told us
+// something the plan did not know, and the mouth's future moves.
+//
+// WITH NO PLATFORM VOICE INSTALLED — headless Chromium, a Linux box with no
+// speech-dispatcher — the line falls back to its own plan and the face still
+// talks. A missing voice costs you the audio, not the animation.
+//
+// Click the face to hear it.
+import { createHumanoid, createMouth, Locomotion, Speech, ANTICIPATION } from 'anima3d';
+import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
+// STUDIO already imports Mesh and MeshStandardMaterial.
+import { BoxGeometry } from 'three';
+${STUDIO}
+
+const LINE = 'the traveller stopped at the gate and asked for the keeper by name';
+
+// The body decides the voice. voiceOf derives a vocal tract from a height
+// through the same tube the formants come from, and speakAloud maps that onto
+// utterance.pitch as a RATIO — so a tall NPC is lower than a short one by the
+// same factor whatever the platform's neutral voice happens to be.
+const HEIGHT = 1.82;
+const VOICE = voiceOf({ height: HEIGHT });
+
+const rig = createHumanoid({
+  seed: 41, height: HEIGHT, accessories: 'none',
+  hair: { style: 'side-part' }, face: { facialHair: 'none' },
+});
+scene.add(rig.object);
+const idle = new Locomotion(rig);
+const mouth = createMouth(rig);
+const speech = new Speech('', {});
+
+// The word ticks: one block per word, lighting up as the platform reports it.
+// Nothing here schedules them — they arrive when the engine says so.
+const WORDS = LINE.split(' ');
+const ticks = WORDS.map((w, i) => {
+  const m = new Mesh(
+    new BoxGeometry(0.028, 0.02, 0.02),
+    new MeshStandardMaterial({ color: 0x475569, emissive: 0x475569, emissiveIntensity: 0.3 })
+  );
+  // Above the head, not below the chin: the preview pane is a head-and-
+//   shoulders framing and the first screenshot had the whole strip off the
+//   bottom edge, which is a readout nobody can read.
+  m.position.set((i - (WORDS.length - 1) / 2) * 0.034, 1.90, 0.12);
+  scene.add(m);
+  return m;
+});
+
+let line = null;
+let marks = 0;
+let said = 0;
+const say = () => {
+  if (line && !line.done) return;
+  marks = 0;
+  said++;
+  for (const t of ticks) t.material.emissiveIntensity = 0.3;
+  line = speakAloud(LINE, VOICE, {
+    onWord: (index) => {
+      marks++;
+      if (ticks[index]) ticks[index].material.emissiveIntensity = 1.6;
+    },
+  });
+  // THE WHOLE WIRING, and it is three arguments. The face asks the line what
+  // the mouth should be, at the line's own clock, until the line says it is
+  // done. anima3d adds its own ANTICIPATION lead to that clock, because a mouth
+  // arriving before the sound is a fact about faces and belongs on this side.
+  speech.attach(line.mouthAt, { clock: () => Math.max(0, line.elapsed()), done: () => line.done });
+};
+game.renderer.domElement.addEventListener('pointerdown', say);
+
+let idleFor = 0;
+game.onUpdate(({ delta }) => {
+  const dt = Math.min(0.05, delta);
+  idleFor += dt;
+  if (!line || (line.done && idleFor > 2.5)) { idleFor = 0; say(); }
+
+  idle.update(dt, { speed: 0 });
+  mouth.apply(speech.update(dt));
+
+  game.camera.position.set(0, 1.70, 1.30);
+  game.camera.lookAt(0, 1.70, 0);
+});
+
+window.aloudDebug = () => {
+  const s = speech.shape;
+  return {
+    // Whether the API exists — NOT whether it can speak. Headless Chromium has
+    // the API and zero voices, which is exactly the case fellBack covers.
+    platformApi: speechAvailable(),
+    fellBack: !!line && line.fellBack,
+    live: speech.live,
+    said,
+    words: WORDS.length,
+    // Word boundaries the engine has reported. Zero without a voice, and the
+    // face still moves, which is the point.
+    marks,
+    elapsed: line ? Number(Math.max(-1, line.elapsed()).toFixed(2)) : -1,
+    speaking: !!line && !line.done && line.elapsed() >= 0,
+    anticipation: ANTICIPATION,
+    mouth: {
+      open: Number(s.open.toFixed(3)),
+      close: Number(s.close.toFixed(3)),
+      round: Number(s.round.toFixed(3)),
+      spread: Number(s.spread.toFixed(3)),
+    },
+    // The jaw gap the RIG actually shows, in metres — not the number the
+    // controller reports, because a controller that returns a beautiful shape
+    // and a prop that ignores it look identical from the controller.
+    gap: Number(Math.max(0,
+      mouth.group.children[1].position.y - mouth.group.children[2].position.y - 0.0075 * HEIGHT
+    ).toFixed(4)),
+    draws: game.renderer.info.render.calls,
+  };
+};
+
+game.start();
+`,
+  },
+  {
     id: 'talking',
     title: 'Speech: two mouths, and only one of them shuts',
     group: 'Character',

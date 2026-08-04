@@ -206,3 +206,82 @@ saying "halo sisi halo". Watch the lips, not the jaws.
    budget was derived rather than chosen, the controller was found sealing
    across 25 mm with 24 mm of lip to do it with. The cap is now geometric, and
    the emergent consequence is that fast speech loses its closures.
+
+---
+
+## A voice that has not decided yet
+
+`follow()` bakes a timeline the moment you call it, which is right when the
+timeline is known. A platform speech synthesizer does not offer one. It reports
+**word** boundaries as it reaches them — never phone boundaries — and each one
+re-anchors everything after it; and it starts whenever it starts, which on a
+cold engine is a few hundred milliseconds after you ask.
+
+So there is a second way in, and it takes a function instead of a list:
+
+```ts
+const line = speakAloud('the traveller stopped at the gate', voiceOf({ height: 1.82 }));
+
+speech.attach(line.mouthAt, {
+  clock: () => Math.max(0, line.elapsed()),
+  done: () => line.done,
+});
+
+// every frame
+mouth.apply(speech.update(dt));
+```
+
+`MouthSource` is `(seconds: number) => MouthShape | null`. GAMA's
+`SpokenLine.mouthAt` has that signature. **It imports nothing from here, this
+imports nothing from there**, and the two agree because F1 is mouth opening.
+Nothing in `speech.ts` knows what a formant is.
+
+### Three things that had to be right
+
+**The clock is the SOURCE's, not the face's.** A face counting its own frames is
+ahead by the platform's start latency for the rest of the utterance. In the gate
+this is a 350 ms delay, and deleting `options.clock` takes the correlation from
+0.77 to **−0.45**.
+
+**The ANTICIPATION lead stays on this side.** A mouth reaches its shape before
+the sound arrives; that is a fact about faces and does not belong across the
+seam. `attach` asks the source what the mouth should be a tenth of a second from
+now, on the source's clock.
+
+**A live source gets the same blend, or it is a square wave.** `mouthAt` overlaps
+each segment's raised-cosine dominance, so the target the jaw chases is already
+smooth. A point-sampled source has no segments to overlap, so `attach` samples it
+across `LIVE_WINDOW` — the median published phoneme duration times `DOMINANCE`,
+which is a number that moves when the table does — and applies the same kernel.
+Without it the jaw was handed a step function and the rate limiter, which is a
+jaw with mass rather than a filter, scored **0.55** against the baked path's 0.83
+on a source it was tracking perfectly.
+
+Everything downstream is unchanged. The jaw is still held to `JAW_SPEED`, so a
+live source gets Lindblom's undershoot for free; a seal the lips cannot span is
+still capped by `LIP_BRIDGE`. **A supplied shape does not get to go around the
+physics**, whether it was supplied once or sixty times a second.
+
+### And it is clamped at the seam
+
+Every channel is a fraction. A baked track is checked once when it is handed
+over; a live source is a function someone else wrote, called every frame, and a
+single `NaN` from it reaches a bone position and stays there — a bone that is
+`NaN` never comes back. `attach` clamps.
+
+### What the gate measures
+
+```
+                                        r against what the source asked for
+attach(), re-read every frame                        0.773
+follow(), baked before the revision                  0.224   ← the control
+```
+
+Against a source that starts 350 ms late and then revises its own rate by ×1.45
+part-way through, pinning what it has already said and stretching only what it
+has not — which is exactly what a word boundary arriving does.
+
+**The control is not a shifted copy of the subject.** The last time this file
+used one of those, the shift cancelled `ANTICIPATION` exactly and the control
+*beat* the thing it was controlling for, 0.834 against 0.353. It is the other
+API, doing the job it was built for, on a problem it was not.
