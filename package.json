@@ -1,6 +1,6 @@
 {
   "name": "anima3d",
-  "version": "0.66.0",
+  "version": "0.67.0",
   "description": "ANIMA — professional humanoid characters and animation for three.js: seeded rigged bodies, procedural locomotion clips, and a blending locomotion controller. Pairs structurally with GAMA (agents) and SCENA (worlds).",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,7 +28,7 @@
     "skate": "node bench/skate.mjs",
     "climb": "node bench/climb.mjs",
     "parkour": "node bench/parkour.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut && npm run bind && npm run javelin && npm run armour && npm run fencing && npm run speech && npm run motion && npm run lipsync && npm run brows && npm run blink",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run skate && npm run mood && npm run lifting && npm run dining && npm run archery && npm run striking && npm run guard && npm run grappling && npm run fightstyle && npm run sparring && npm run tameshiwari && npm run blade && npm run cut && npm run bind && npm run javelin && npm run armour && npm run fencing && npm run speech && npm run motion && npm run lipsync && npm run brows && npm run blink && npm run saccades",
     "dev:portrait": "vite examples/portrait",
     "dev:hoops": "vite examples/basketball",
     "dev:village": "vite examples/village",
@@ -65,7 +65,8 @@
     "motion": "node bench/motion.mjs",
     "blink": "node bench/blink.mjs",
     "brows": "node bench/brows.mjs",
-    "lipsync": "node bench/lipsync.mjs"
+    "lipsync": "node bench/lipsync.mjs",
+    "saccades": "node bench/saccades.mjs"
   },
   "repository": {
     "type": "git",

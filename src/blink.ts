@@ -41,6 +41,7 @@
 
 import { Group, Mesh, MeshStandardMaterial, BoxGeometry } from 'three';
 import type { HumanoidRig } from './humanoid';
+import { irisOffset } from './saccades';
 
 /**
  * Spontaneous blink rate, blinks per minute, by what the face is doing.
@@ -114,6 +115,15 @@ export interface EyeShape {
   lid: number;
   /** Where the eye is looking, −1 (down) to 1 (up). Drives the lid too. */
   gaze: number;
+  /**
+   * Where the eye is looking left–right, −1 to 1. Moves the iris.
+   *
+   * Vertical gaze is already visible: `gaze` rides the whole eye up and down in
+   * its socket, lid included. Horizontal has nothing to ride, so this is the
+   * axis the iris itself travels on — and `Saccades.shape` hands over exactly
+   * this pair.
+   */
+  yaw?: number;
 }
 
 export interface BlinkOptions {
@@ -241,6 +251,13 @@ export interface EyeProp {
   apply(shape: EyeShape): void;
   /** The visible aperture of one eye, metres. Zero when shut. */
   aperture(): number;
+  /**
+   * How far the iris sits off centre, metres. Negative is the character's left.
+   *
+   * The measurable a saccade gate needs: it is what the MESH is showing, not
+   * what the controller reported, and those are different claims.
+   */
+  pupil(): number;
 }
 
 /**
@@ -259,16 +276,59 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   const group = new Group();
   // The skin the lid is made of, so a shut eye reads as a face and not a hole.
   const skin = rig.description.colors.skin;
+
+  // THE MOVING IRIS — which means REDRAWING the eye, not just the iris.
+  //
+  // `createHumanoid` bakes both the white and the iris into the skinned mesh, so
+  // the baked iris cannot move and cannot be erased. The overlay therefore lays
+  // down a fresh white over the whole eye and puts its own iris on that, at the
+  // baked iris's own size.
+  //
+  // The first version tried to do it in ONE layer, by making the moving iris
+  // large enough to cover the baked one across its whole travel. Two conditions
+  // — hide the baked iris everywhere it goes, never leave the white — have
+  // exactly one solution, `half = (baked + white) / 2`, and it is a real
+  // solution: it fits, it never clips, and the arithmetic is pretty. It also
+  // makes the iris 73% of the width of the eye, and every character in the
+  // library ends up with a black-eyed thousand-yard stare. A screenshot took
+  // four seconds to disprove what the algebra had made look inevitable.
+  const patchHalf = 0.01325 * H * face.eyes.size;
+  const irisHalf = 0.006 * H * face.eyes.size;
+  // Room to spare now: the globe only needs 2.9 mm and there is 7.3 mm of it.
+  const travel = patchHalf - irisHalf;
+  const white = (): Mesh =>
+    new Mesh(
+      new BoxGeometry(patchHalf * 2, 0.0205 * H * face.eyes.size, 0.001 * H),
+      new MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.75 })
+    );
+  const iris = (): Mesh =>
+    new Mesh(
+      new BoxGeometry(irisHalf * 2, 0.013 * H * face.eyes.size, 0.001 * H),
+      new MeshStandardMaterial({ color: face.eyes.color, roughness: 0.55 })
+    );
   const lid = (): Mesh =>
     new Mesh(
-      new BoxGeometry(w * 1.06, h, 0.006 * H),
+      new BoxGeometry(w * 1.06, h, 0.001 * H),
       new MeshStandardMaterial({ color: skin, roughness: 0.9 })
     );
+  // THREE THIN LAYERS, half a millimetre apart, rather than three thick ones.
+  // Stacked at the lid's old 6 mm depth the assembly stood 8 mm proud of the
+  // nose tip and the character had eyes on stalks; at 1 mm each the whole thing
+  // clears the baked iris and still sits behind the nose.
+  const leftWhite = white();
+  const rightWhite = white();
+  leftWhite.position.set(-ex, 0, 0);
+  rightWhite.position.set(ex, 0, 0);
+  const leftIris = iris();
+  const rightIris = iris();
+  leftIris.position.set(-ex, 0, 0.0015 * H);
+  rightIris.position.set(ex, 0, 0.0015 * H);
   const left = lid();
   const right = lid();
-  left.position.x = -ex;
-  right.position.x = ex;
-  group.add(left, right);
+  left.position.set(-ex, 0, 0.003 * H);
+  right.position.set(ex, 0, 0.003 * H);
+  // White, then iris, then lid — the only order in which a blink hides a pupil.
+  group.add(leftWhite, rightWhite, leftIris, rightIris, left, right);
   // IN FRONT OF THE PUPIL, not in front of the white.
   //
   // `createHumanoid` puts the whites at 0.0565 H and then the irises 0.004 H
@@ -277,10 +337,11 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   // rendered perfectly — behind both — and the eye stayed wide open through a
   // blink the readout said had closed to 0.954. Nothing but a screenshot finds
   // that: every number in the probe was right.
-  group.position.set(0, 0.078 * H, 0.0645 * H);
+  group.position.set(0, 0.078 * H, 0.0648 * H);
   rig.bones.Head.add(group);
 
   let shown = 0;
+  let looking = 0;
   return {
     group,
     apply(shape: EyeShape): void {
@@ -294,15 +355,34 @@ export function createEyes(rig: HumanoidRig): EyeProp {
       const y = h / 2 - cover / 2;
       left.position.y = y;
       right.position.y = y;
-      // The eye also rides up and down in its socket with the gaze.
+      // The eye also rides up and down in its socket with the gaze, lid and all
+      // — which is why the iris below only has to deal with left and right.
       const look = clamp(shape.gaze, -1, 1) * h * 0.15;
       group.position.y = 0.078 * H + look;
+      // AND THE IRIS TRAVELS BY R sin θ, because it is a spot on a ball.
+      //
+      // Not by "a fraction of the eye's width" — the globe is twelve
+      // millimetres in everybody, so a character drawn with big eyes does not
+      // get a bigger swing, they get the same swing across a wider white. The
+      // clamp is the drawing's limit, not the anatomy's, and on the default
+      // face it does not bind: 2.9 mm of travel into 3.5 mm of room.
+      const x = clamp(irisOffset(clamp(shape.yaw ?? 0, -1, 1), H), -travel, travel);
+      looking = x;
+      leftIris.position.x = -ex + x;
+      rightIris.position.x = ex + x;
+      // A shut eye has no visible iris or white, and a lid drawn over ones that
+      // are still there leaves a rim at some resolutions.
+      leftIris.visible = rightIris.visible = closed < 0.999;
+      leftWhite.visible = rightWhite.visible = closed < 0.999;
       // Nothing to draw when the eye is fully open; a zero-height panel still
       // rasterises a seam across the top of the white at some resolutions.
       left.visible = right.visible = closed > 1e-3;
     },
     aperture(): number {
       return Math.max(0, (1 - shown) * APERTURE * (H / 1.75));
+    },
+    pupil(): number {
+      return looking;
     },
   };
 }

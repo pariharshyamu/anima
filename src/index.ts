@@ -633,3 +633,29 @@ export {
 } from './blink';
 
 
+
+// Saccades — the eye is ballistic, and how fast it goes is not a choice.
+// Bahill, Clark & Stark (1975) named the main sequence: amplitude alone
+// predicts both the duration AND the peak velocity of a saccade. That is one
+// law more than is needed to build one, which is what makes it checkable — the
+// model uses the duration and the gate holds it to the velocity.
+// Where it looks is Yarbus (1967): the scanpath is the question, not the
+// picture, so the fixation times come out of Rayner's task table.
+export {
+  EYE_RADIUS,
+  MICROSACCADE_AMPLITUDE,
+  MICROSACCADE_RATE,
+  ORBITAL_RANGE,
+  PEAK_VELOCITY_MAX,
+  SACCADE_INTERCEPT,
+  SACCADE_SLOPE,
+  SCAN,
+  Saccades,
+  VELOCITY_CONSTANT,
+  irisOffset,
+  saccadeDuration,
+  type GazeAngles,
+  type SaccadeOptions,
+  type SaccadeState,
+  type ScanTask,
+} from './saccades';

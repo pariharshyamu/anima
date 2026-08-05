@@ -6786,7 +6786,8 @@ game.start();
 //
 // Click the face to hear it.
 import { createHumanoid, createMouth, createBrows, createEyes, Locomotion, Speech,
-         Brows, Blinking, ANTICIPATION, ACCENT_SEMITONES, BLINK_RATE } from 'anima3d';
+         Brows, Blinking, Saccades, ANTICIPATION, ACCENT_SEMITONES, BLINK_RATE,
+         ORBITAL_RANGE } from 'anima3d';
 import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
 // STUDIO already imports Mesh and MeshStandardMaterial.
 import { BoxGeometry } from 'three';
@@ -6838,6 +6839,22 @@ const face = new Brows();
 // often as they do in the pause between lines, and nothing here schedules that.
 const eyes = createEyes(rig);
 const lids = new Blinking({ task: 'rest', seed: 12 });
+
+// AND THE EYES THEMSELVES ARE NOT LERPED. THEY CANNOT BE.
+//
+// Bahill, Clark & Stark (1975) called it the main sequence, after the stellar
+// diagram, because saccades sit on a line instead of in a cloud: the amplitude
+// alone predicts BOTH how long the movement lasts and how fast it gets. Two
+// laws for one movement is one law more than is needed to build it — which is
+// the only reason any of this is checkable. This model was given the duration.
+// The peak velocity is a prediction, and npm run saccades holds it to it.
+//
+// The shape is the part nobody expects. Divide the published peak by the mean
+// the published duration implies and a pure number falls out — about 1.6 — and
+// that number IS the velocity profile. A half-sine is 1.571. The smoothstep in
+// every easing library is 2.0, and overshoots the published peak by a third.
+// Nothing here picked a half-sine; it is what is left when both laws hold.
+const gaze = new Saccades({ task: 'scene', seed: 4 });
 
 // The word ticks: one block per word, lighting up as the platform reports it.
 // Nothing here schedules them — they arrive when the engine says so.
@@ -6892,7 +6909,11 @@ game.onUpdate(({ delta }) => {
   // rate: 'conversing' and 'rest' are two rows of Bentivoglio's table, and the
   // six-fold swing in the counter is what the table says, not what this says.
   const speaking = !!line && !line.done && line.elapsed() >= 0;
-  eyes.apply(lids.update(dt, { task: speaking ? 'conversing' : 'rest' }));
+  // Two tables from two papers, and neither module has heard of the other. The
+  // lid rides the same gaze the eye is pointing along, so an eye that looks
+  // down is hooded without Blinking knowing what a saccade is.
+  gaze.update(dt, { task: speaking ? 'search' : 'scene' });
+  eyes.apply({ ...lids.update(dt, { task: speaking ? 'conversing' : 'rest', gaze: gaze.shape.gaze }), yaw: gaze.shape.yaw });
 
   game.camera.position.set(0, 1.70, 1.30);
   game.camera.lookAt(0, 1.70, 0);
@@ -6923,6 +6944,14 @@ window.aloudDebug = () => {
     blinkRate: BLINK_RATE[lids.task],
     blinks: lids.count,
     lid: Number(lids.shape.lid.toFixed(3)),
+    // The eyes: where they point, how many saccades, and whether one is in
+    // flight — which is also when vision is suppressed and nothing was seen.
+    scanTask: gaze.task,
+    saccades: gaze.count,
+    inFlight: gaze.moving,
+    yawDeg: Number(gaze.angles.yaw.toFixed(2)),
+    pitchDeg: Number(gaze.angles.pitch.toFixed(2)),
+    orbitalRange: ORBITAL_RANGE,
     aperture: Number(eyes.aperture().toFixed(5)),
     browY: Number(brows.group.children[0].position.y.toFixed(5)),
     mouth: {

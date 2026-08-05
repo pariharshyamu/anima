@@ -20,6 +20,96 @@ release found.
 
 ## Releases
 
+## [0.67.0] — 2026-08-05
+
+**The eye does not glide, and how fast it goes is not a choice.** Bahill, Clark
+& Stark (1975) named the main sequence after the stellar diagram, because
+saccades sit on a line rather than in a cloud: amplitude alone predicts both the
+duration and the peak velocity of a movement. **Two laws for one movement is one
+law more than is needed to build it**, which is the entire reason this release
+can be checked — the model was given the duration, and the peak velocity is a
+prediction.
+
+### Added
+
+- **`Saccades`** — ballistic eye movements with main-sequence kinematics, a
+  scanpath that comes out of the task, microsaccades, and a hand-over to the
+  head past the orbital range.
+- **The velocity profile is a half-sine, and nothing chose it.** Divide the
+  published peak by the mean the published duration implies and a pure number
+  falls out — about 1.6 — and that number IS the profile. A half-sine is 1.571.
+  The smoothstep in every easing library is 2.0 and overshoots by a third.
+- **`createEyes` now moves the iris**, by `R sin θ` off a twelve-millimetre
+  globe. A character drawn with bigger eyes gets the same swing across a wider
+  white, not a bigger one — which is the assertion that catches "travel is a
+  fraction of the eye's width".
+- **`SCAN`** — Rayner's (1998, 2009) fixation times and amplitudes for reading,
+  visual search and scene viewing. Yarbus (1967) again: the scanpath is a
+  property of the question, not of the picture.
+- **`headDemand`** — what the eye could not reach, in degrees, for `LookAt` to
+  finish. Clamping silently leaves an agent staring past what it was told to
+  look at.
+- **`npm run saccades`**, and the `aloud` playground scene now speaks, moves a
+  mouth, punctuates with brows, blinks AND scans — four papers, none of which
+  have heard of each other.
+
+### The gate holds the model to a law it never saw
+
+```
+amplitude   measured    Bahill    error
+     2°      124°/s     124°/s    -0.5%
+    10°      365°/s     380°/s    -3.9%
+    20°      483°/s     471°/s     2.5%
+
+worst 4.4% against a floor of 4.6%
+```
+
+- **The budget is the best any fixed shape could do**, computed from the two
+  published laws alone with nothing of the model in it. The peak-to-mean ratio
+  drifts from 1.63 at 5° to 1.53 at 20° because real large saccades are skewed,
+  so no fixed profile can sit on the curve everywhere; 4.6% is that floor. The
+  shipped shape scores 4.4% — as close as its own form permits, without fitting.
+- **The controls lose by a lot**: a parabola 8.7%, smoothstep 30.6%, constant
+  speed 39.2%.
+- **The gate greps the source** to prove the model never references
+  `PEAK_VELOCITY_MAX` or `VELOCITY_CONSTANT`. An argument that rests on the
+  model not having seen something should not rest on my having remembered.
+- Every velocity is **differenced off the angle trace** the controller produces,
+  frame by frame. A closed form checked against itself is not checked.
+- All seven mutations fail on the assertion meant to catch them: smoothstep,
+  per-axis diagonal amplitude, mid-flight steering, microsaccades counted as
+  fixations, iris travel as a fraction of eye width, a head that is never told,
+  and a model that peeks at the peak-velocity law.
+
+### Fixed
+
+- **A microsaccade is not a fixation.** It happens DURING one, so it must not
+  restart the dwell or get counted — otherwise a face fixates for 330 ms as
+  published, twitches at 200 ms, and starts a fresh 330 ms, which turns Rayner's
+  table into something else. It read 4.60 saccades a second against a published
+  3.99 before the fix.
+- **A diagonal saccade's amplitude is the hypotenuse.** Feeding the law one axis
+  at a time makes a 45° movement travel 1.41× as far in the time its horizontal
+  component was allotted, which is faster than an eye can go.
+
+### And two the arithmetic could not find
+
+- **The one-layer iris was correct and looked terrible.** `createHumanoid` bakes
+  both the white and the iris into the mesh, so a moving iris has to cover the
+  baked one across its whole travel while never leaving the white. Those two
+  conditions have exactly one solution — `half = (baked + white) / 2` — it fits,
+  it never clips, and the algebra is pretty. It also makes the iris 73% of the
+  width of the eye and gives every character in the library a black-eyed
+  thousand-yard stare. The overlay redraws the whole eye now, white and all, in
+  three 1 mm layers half a millimetre apart — which also brings the assembly
+  back BEHIND the nose tip instead of 8 mm proud of it. A screenshot took four
+  seconds to disprove what the algebra had made look inevitable.
+- **A swallowed error reads as a dead feature.** The headless probe caught and
+  discarded whatever the scene threw, so a `ReferenceError` in the debug readout
+  — a `const` inside the update body the hook could not see, the same scope slip
+  as 0.66.0's — printed as zero blinks, zero saccades and a dead jaw, on a scene
+  that was working. The probe reports what the scene throws now.
+
 ## [0.66.0] — 2026-08-05
 
 **The blink rate is not a constant. It is what the agent is doing.** Bentivoglio
