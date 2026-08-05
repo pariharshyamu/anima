@@ -20,6 +20,68 @@ release found.
 
 ## Releases
 
+## [0.66.0] — 2026-08-05
+
+**The blink rate is not a constant. It is what the agent is doing.** Bentivoglio
+et al. (1997) counted spontaneous blinks in ninety adults: 17 a minute at rest,
+**4.5 reading**, **26 in conversation**. Reading suppresses it to a quarter and
+talking nearly doubles it — a factor of six on nothing but the task. So a face
+here does not get a blink parameter; it says what it is doing, and the rate
+falls out of a table nobody chose.
+
+### Added
+
+- **`Blinking` and `createEyes(rig)`** — lids parented to the Head, a rate off
+  the task table, and a blink whose down phase is half the length of its up
+  phase because the lid falls with gravity behind it and is lifted against it.
+  An even split is the gate's control, and it loses.
+- **`LID_SPEED`, `BLINK_OPEN`, `BLINK_SECONDS`** — all derived. The aperture is
+  10 mm and the close is 90 ms, so the lid moves at 0.111 m/s; change either
+  published number and the rest move with it.
+- **The lid rides the eye.** Levator palpebrae and superior rectus share an
+  origin, so a downward gaze hoods the lid and an upward one widens it, and the
+  blink then takes it the rest of the way down rather than adding to it.
+- **`npm run blink`** — twelve seeds, thirty simulated minutes each, every rate
+  inside `4 × se + 0.05` of Bentivoglio, and everything below the rate table
+  measured off the **rig's own aperture in metres** rather than off the number
+  the model just produced.
+- The `aloud` playground scene now speaks, moves a mouth, punctuates with brows
+  AND blinks, switching between `conversing` and `rest` as the line starts and
+  ends. Nothing in the scene translates that into a rate.
+
+### Fixed
+
+- **The blink's duration comes OUT of the gap, not on top of it.** Bentivoglio
+  counted complete blinks per minute, so the CYCLE has to average `60 / rate`.
+  Drawing an exponential about the full mean and then spending 270 ms blinking
+  put every rate 15–20% low — 20.7 a minute against a published 26 — which in a
+  random process looks like noise and is arithmetic.
+- **`GAZE_LID` was applied twice**, so the lid moved a ninth of what the constant
+  says: 11% of the aperture across the whole gaze range instead of 33%. Caught
+  by asserting the model does what its own number says.
+- **A change of task re-draws the wait.** Without it a face that stops reading
+  and starts talking keeps counting down the four-a-minute interval it was
+  already on, and the rate catches up a blink late.
+- **The lids rendered behind the eyes.** At `0.0575 H` they sat level with the
+  baked whites, which is 0.6 mm behind the irises — `createHumanoid` sets those
+  proudest of all. Every number in the headless probe was right and the eye
+  stayed wide open through a blink the readout said had closed to 0.954. Only a
+  screenshot finds that.
+
+### Two of the four gate bugs were the gate
+
+- It **hung**: the asymmetry check waited for `lid > 0.05` to call the eye shut,
+  and at a downward gaze the RESTING lid is 0.111, so the condition was
+  permanently true. It watches maximum aperture over a window now.
+- The **speed check was wrong, not the model** — it read 0.093 against a derived
+  0.111 because a blink is a fixed duration, so the lid's speed depends on where
+  it started. Measured at full upward gaze now, the only place the travel is the
+  whole aperture.
+- The symmetry control compared against `BLINK_OPEN / BLINK_CLOSE`, **which moves
+  with the mutation it is controlling for**. It is a literal `2` now.
+- And a 16.3-versus-16.4 pair looked like a 4% systematic bias until
+  twenty-four seeds returned 16.88. The standard error on one seed is 3%.
+
 ## [0.65.0] — 2026-08-04
 
 **A brow raise is punctuation before it is emotion.** Ekman's *About Brows*

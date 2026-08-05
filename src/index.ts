@@ -609,3 +609,27 @@ export {
   type PitchSource,
 } from './brows';
 
+// Blinking — the rate is not a constant, it is what the agent is doing.
+// Bentivoglio et al. (1997) counted 17 blinks a minute at rest, 4.5 reading and
+// 26 in conversation: reading suppresses it to a quarter and talking nearly
+// doubles it. And a blink is not symmetric — the lid falls in half the time it
+// takes to come back up — and it rides the eye, because levator palpebrae and
+// superior rectus share an origin.
+export {
+  APERTURE,
+  BLINK_CLOSE,
+  BLINK_OPEN,
+  BLINK_RATE,
+  BLINK_SECONDS,
+  Blinking,
+  GAZE_LID,
+  LID_SPEED,
+  createEyes,
+  type BlinkOptions,
+  type BlinkState,
+  type BlinkTask,
+  type EyeProp,
+  type EyeShape,
+} from './blink';
+
+

@@ -6785,8 +6785,8 @@ game.start();
 // talks. A missing voice costs you the audio, not the animation.
 //
 // Click the face to hear it.
-import { createHumanoid, createMouth, createBrows, Locomotion, Speech, Brows,
-         ANTICIPATION, ACCENT_SEMITONES } from 'anima3d';
+import { createHumanoid, createMouth, createBrows, createEyes, Locomotion, Speech,
+         Brows, Blinking, ANTICIPATION, ACCENT_SEMITONES, BLINK_RATE } from 'anima3d';
 import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
 // STUDIO already imports Mesh and MeshStandardMaterial.
 import { BoxGeometry } from 'three';
@@ -6825,6 +6825,19 @@ const speech = new Speech('', {});
 // were falling asleep by the full stop.
 const brows = createBrows(rig);
 const face = new Brows();
+
+// AND THE BLINK RATE IS NOT A NUMBER SOMEBODY PICKED.
+//
+// Bentivoglio et al. (1997) counted spontaneous blinks in ninety adults: 17 a
+// minute at rest, 4.5 READING, and 26 IN CONVERSATION. Reading suppresses it to
+// a quarter and talking nearly doubles it — a factor of six from nothing but
+// the task. So this face does not have a blink parameter; it says what it is
+// doing, and the rate comes out of the table.
+//
+// Watch the counter. While it is speaking the eyes blink about six times as
+// often as they do in the pause between lines, and nothing here schedules that.
+const eyes = createEyes(rig);
+const lids = new Blinking({ task: 'rest', seed: 12 });
 
 // The word ticks: one block per word, lighting up as the platform reports it.
 // Nothing here schedules them — they arrive when the engine says so.
@@ -6875,6 +6888,11 @@ game.onUpdate(({ delta }) => {
   idle.update(dt, { speed: 0 });
   mouth.apply(speech.update(dt));
   brows.apply(face.update(dt));
+  // The task IS what the agent is doing. Nothing here translates it into a
+  // rate: 'conversing' and 'rest' are two rows of Bentivoglio's table, and the
+  // six-fold swing in the counter is what the table says, not what this says.
+  const speaking = !!line && !line.done && line.elapsed() >= 0;
+  eyes.apply(lids.update(dt, { task: speaking ? 'conversing' : 'rest' }));
 
   game.camera.position.set(0, 1.70, 1.30);
   game.camera.lookAt(0, 1.70, 0);
@@ -6900,6 +6918,12 @@ window.aloudDebug = () => {
     // The contour the face is punctuating with, and the lift it produced.
     pitch: line ? Number(line.pitchAt().toFixed(2)) : 0,
     brow: Number(face.shape.raise.toFixed(3)),
+    // The eyes: the rate the task asks for, and the lid the rig is showing.
+    blinkTask: lids.task,
+    blinkRate: BLINK_RATE[lids.task],
+    blinks: lids.count,
+    lid: Number(lids.shape.lid.toFixed(3)),
+    aperture: Number(eyes.aperture().toFixed(5)),
     browY: Number(brows.group.children[0].position.y.toFixed(5)),
     mouth: {
       open: Number(s.open.toFixed(3)),

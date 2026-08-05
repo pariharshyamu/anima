@@ -32,6 +32,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'fencing', title: 'Fencing: the armed bout, and it moves' },
   { id: 'speech', title: 'Speech: the IPA is already a viseme table' },
   { id: 'brows', title: 'Brows: a raise is punctuation before it is emotion' },
+  { id: 'blink', title: 'Blink: the rate is what the agent is doing' },
   { id: 'motion', title: 'Motion matching: the weights were units' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
@@ -71,6 +72,8 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-class-one-practice-many-bodies': 'yoga',
   'the-breath-turns-and-you-can-hear-them': 'yoga',
   'strikepose-the-single-frame-api': 'yoga',
+  'the-lid-rides-the-eye': 'aloud',
+  'the-duration-comes-out-of-the-gap': 'aloud',
 };
 
 const sidebar = document.getElementById('sidebar') as HTMLElement;
