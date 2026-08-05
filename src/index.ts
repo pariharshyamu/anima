@@ -659,3 +659,26 @@ export {
   type SaccadeState,
   type ScanTask,
 } from './saccades';
+
+// The smile — two muscles, and only one of them can be faked.
+// Duchenne de Boulogne (1862) put electrodes on faces and found that
+// zygomaticus major obeys the will while orbicularis oculi "only obeys the
+// sweet emotions of the soul". So there is no setSmile here: `pose()` reaches
+// AU12 and `feel()` reaches both, and there is deliberately no way to command
+// AU6 on its own — the moment there is, the marker stops marking anything.
+export {
+  CHEEK_LID,
+  CORNER_TRAVEL,
+  FELT_MAX,
+  FELT_MIN,
+  FELT_ONSET,
+  POSED_ASYMMETRY,
+  POSED_ONSET,
+  Smile,
+  createSmile,
+  readSmile,
+  type SmileEvidence,
+  type SmileOptions,
+  type SmileProp,
+  type SmileShape,
+} from './smile';

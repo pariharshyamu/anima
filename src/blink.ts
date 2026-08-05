@@ -42,6 +42,7 @@
 import { Group, Mesh, MeshStandardMaterial, BoxGeometry } from 'three';
 import type { HumanoidRig } from './humanoid';
 import { irisOffset } from './saccades';
+import { CHEEK_LID } from './smile';
 
 /**
  * Spontaneous blink rate, blinks per minute, by what the face is doing.
@@ -124,6 +125,14 @@ export interface EyeShape {
    * this pair.
    */
   yaw?: number;
+  /**
+   * AU6, the cheek raise, 0..1. Narrows the eye FROM BELOW.
+   *
+   * A blink comes down from above; orbicularis oculi is a sphincter and comes
+   * up from underneath, which is why a Duchenne smile crinkles an eye without
+   * ever looking like a half-blink. Two different muscles, two different edges.
+   */
+  cheek?: number;
 }
 
 export interface BlinkOptions {
@@ -315,6 +324,20 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   // Stacked at the lid's old 6 mm depth the assembly stood 8 mm proud of the
   // nose tip and the character had eyes on stalks; at 1 mm each the whole thing
   // clears the baked iris and still sits behind the nose.
+  // AU6'S OWN EDGE. Orbicularis oculi is a sphincter, so it closes the eye from
+  // UNDERNEATH — the cheek comes up and takes the lower lid with it. A blink
+  // comes down from above. Drawing both off one panel would make a Duchenne
+  // smile read as a half-blink, which is the thing it is most often mistaken
+  // for and the reason a squint and a crinkle look nothing alike.
+  const cheekLid = (): Mesh =>
+    new Mesh(
+      new BoxGeometry(w * 1.06, h, 0.001 * H),
+      new MeshStandardMaterial({ color: skin, roughness: 0.9 })
+    );
+  const leftCheek = cheekLid();
+  const rightCheek = cheekLid();
+  leftCheek.position.set(-ex, 0, 0.0022 * H);
+  rightCheek.position.set(ex, 0, 0.0022 * H);
   const leftWhite = white();
   const rightWhite = white();
   leftWhite.position.set(-ex, 0, 0);
@@ -328,7 +351,7 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   left.position.set(-ex, 0, 0.003 * H);
   right.position.set(ex, 0, 0.003 * H);
   // White, then iris, then lid — the only order in which a blink hides a pupil.
-  group.add(leftWhite, rightWhite, leftIris, rightIris, left, right);
+  group.add(leftWhite, rightWhite, leftIris, rightIris, leftCheek, rightCheek, left, right);
   // IN FRONT OF THE PUPIL, not in front of the white.
   //
   // `createHumanoid` puts the whites at 0.0565 H and then the irises 0.004 H
@@ -342,6 +365,7 @@ export function createEyes(rig: HumanoidRig): EyeProp {
 
   let shown = 0;
   let looking = 0;
+  let raised = 0;
   return {
     group,
     apply(shape: EyeShape): void {
@@ -374,12 +398,24 @@ export function createEyes(rig: HumanoidRig): EyeProp {
       // are still there leaves a rim at some resolutions.
       leftIris.visible = rightIris.visible = closed < 0.999;
       leftWhite.visible = rightWhite.visible = closed < 0.999;
+      // The cheek raise comes up from the bottom of the white by its own share
+      // of the aperture, and it stops well short of a closure.
+      raised = clamp(shape.cheek ?? 0, 0, 1);
+      const lifted = raised * CHEEK_LID * h;
+      leftCheek.scale.y = Math.max(1e-3, lifted / h);
+      rightCheek.scale.y = leftCheek.scale.y;
+      leftCheek.position.y = -h / 2 + lifted / 2;
+      rightCheek.position.y = leftCheek.position.y;
+      leftCheek.visible = rightCheek.visible = raised > 1e-3 && closed < 0.999;
       // Nothing to draw when the eye is fully open; a zero-height panel still
       // rasterises a seam across the top of the white at some resolutions.
       left.visible = right.visible = closed > 1e-3;
     },
     aperture(): number {
-      return Math.max(0, (1 - shown) * APERTURE * (H / 1.75));
+      // TWO LIDS, TWO EDGES, ONE GAP. The blink eats it from the top and the
+      // cheek raise from the bottom, so what is left is the product — and a
+      // Duchenne smile therefore narrows the eye without ever shutting it.
+      return Math.max(0, (1 - shown) * (1 - raised * CHEEK_LID) * APERTURE * (H / 1.75));
     },
     pupil(): number {
       return looking;

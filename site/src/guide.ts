@@ -34,6 +34,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'brows', title: 'Brows: a raise is punctuation before it is emotion' },
   { id: 'blink', title: 'Blink: the rate is what the agent is doing' },
   { id: 'saccades', title: 'Saccades: two laws for one movement' },
+  { id: 'smile', title: 'The smile: only one muscle can be faked' },
   { id: 'motion', title: 'Motion matching: the weights were units' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
@@ -77,6 +78,8 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-duration-comes-out-of-the-gap': 'aloud',
   'where-it-looks-is-the-task': 'aloud',
   'the-iris-is-a-spot-on-a-ball': 'aloud',
+  'the-observer': 'aloud',
+  'which-is-a-fact-about-an-api-not-just-about-a-face': 'aloud',
 };
 
 const sidebar = document.getElementById('sidebar') as HTMLElement;

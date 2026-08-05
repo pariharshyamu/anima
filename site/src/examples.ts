@@ -6786,8 +6786,8 @@ game.start();
 //
 // Click the face to hear it.
 import { createHumanoid, createMouth, createBrows, createEyes, Locomotion, Speech,
-         Brows, Blinking, Saccades, ANTICIPATION, ACCENT_SEMITONES, BLINK_RATE,
-         ORBITAL_RANGE } from 'anima3d';
+         Brows, Blinking, Saccades, Smile, createSmile, readSmile, ANTICIPATION,
+         ACCENT_SEMITONES, BLINK_RATE, ORBITAL_RANGE } from 'anima3d';
 import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
 // STUDIO already imports Mesh and MeshStandardMaterial.
 import { BoxGeometry } from 'three';
@@ -6856,6 +6856,35 @@ const lids = new Blinking({ task: 'rest', seed: 12 });
 // Nothing here picked a half-sine; it is what is left when both laws hold.
 const gaze = new Saccades({ task: 'scene', seed: 4 });
 
+// AND THE SMILE IS TWO MUSCLES, ONE OF WHICH CANNOT BE FAKED.
+//
+// Duchenne de Boulogne put electrodes on faces in the 1850s and found that
+// zygomaticus major — the lip corners — obeys the will, while orbicularis
+// oculi, the ring around the eye, "only obeys the sweet emotions of the soul".
+// You cannot contract it on purpose. That is why a posed smile reaches the
+// mouth and stops there, and why everyone can tell and nobody can say why.
+//
+// So there is no setSmile here. There are two verbs, and no third:
+//
+//    grin.pose(0.85)   deliberate — AU12 only, and the eye stays put
+//    grin.feel(0.85)   enjoyment  — both, together
+//
+// This face alternates between them every other line. Watch the eyes, not the
+// mouth: the mouth does the same thing both times.
+const cheeks = createSmile(rig);
+const grin = new Smile();
+// The observer's tape, plus the gap between each pair of samples — because
+// readSmile measures a duration against Ekman's published window, and a window
+// measured with the wrong ruler means whatever the frame rate felt like.
+const seen = [];
+const SAMPLE = 1 / 60;
+let tape = 0;
+let before = { corner: { left: 0, right: 0 }, cheek: 0 };
+let relaxed = false;
+let smileAge = 0;
+// Long enough to be seen, short enough to stay inside the published window.
+const SMILE_HOLD = 1.2;
+
 // The word ticks: one block per word, lighting up as the platform reports it.
 // Nothing here schedules them — they arrive when the engine says so.
 const WORDS = LINE.split(' ');
@@ -6879,6 +6908,12 @@ const say = () => {
   if (line && !line.done) return;
   marks = 0;
   said++;
+  // ALTERNATING, so the two are side by side. The mouth does the same thing
+  // both times; the eye is the whole difference.
+  relaxed = false;
+  smileAge = 0;
+  if (said % 2) grin.feel(0.85);
+  else grin.pose(0.85);
   for (const t of ticks) t.material.emissiveIntensity = 0.3;
   line = speakAloud(LINE, VOICE, {
     onWord: (index) => {
@@ -6901,6 +6936,20 @@ game.onUpdate(({ delta }) => {
   const dt = Math.min(0.05, delta);
   idleFor += dt;
   if (!line || (line.done && idleFor > 2.5)) { idleFor = 0; say(); }
+  // A SMILE IS NOT AS LONG AS A SENTENCE.
+  //
+  // The first version held it for the whole line and let it go at the end, and
+  // it failed its own observer: Ekman & Friesen put a FELT expression between
+  // half a second and four, and a four-second line puts the smile outside the
+  // window it is meant to be inside. So the smile runs on its own clock, which
+  // is what an expression does — it does not wait for the speaker to finish.
+  //
+  // And relax() is called ONCE. It restarts the release from wherever the face
+  // currently is, so calling it every frame pins the smile in place for ever:
+  // the cheek from the first felt line was still up during every posed line
+  // after it, which is the exact thing this release says cannot happen.
+  smileAge += dt;
+  if (!relaxed && smileAge > SMILE_HOLD) { grin.relax(); relaxed = true; }
 
   idle.update(dt, { speed: 0 });
   mouth.apply(speech.update(dt));
@@ -6913,7 +6962,45 @@ game.onUpdate(({ delta }) => {
   // lid rides the same gaze the eye is pointing along, so an eye that looks
   // down is hooded without Blinking knowing what a saccade is.
   gaze.update(dt, { task: speaking ? 'search' : 'scene' });
-  eyes.apply({ ...lids.update(dt, { task: speaking ? 'conversing' : 'rest', gaze: gaze.shape.gaze }), yaw: gaze.shape.yaw });
+  const grinned = grin.update(dt);
+  cheeks.apply(grinned);
+  // The observer sees only what the face did, never what it meant — and it sees
+  // it on an EVENLY SPACED tape, built by interpolation.
+  //
+  // readSmile looks for extra sign changes in the acceleration, which is what
+  // "stepped" means when all you have is a position track. That makes it a
+  // second difference, and a second difference assumes the samples are evenly
+  // spaced. Two ways of getting that wrong, both tried here first:
+  //
+  //   repeat the current value onto a 1/60 grid   a staircase, and every tread
+  //                                               is a sign change
+  //   push one sample per frame, average the dt   evenly spaced on paper only;
+  //                                               a headless frame jitters 30%,
+  //                                               which is the same size as the
+  //                                               curvature being measured
+  //
+  // Both scored the felt smile 3/4 on 'smooth' and blamed the model. Ticks land
+  // on a fixed grid and their values are interpolated between frames.
+  for (tape += dt; tape >= SAMPLE; ) {
+    tape -= SAMPLE;
+    const u = dt > 1e-9 ? Math.max(0, Math.min(1, (dt - tape) / dt)) : 1;
+    const mix = (a, b) => a + (b - a) * u;
+    seen.push({
+      corner: {
+        left: mix(before.corner.left, grinned.corner.left),
+        right: mix(before.corner.right, grinned.corner.right),
+      },
+      cheek: mix(before.cheek, grinned.cheek),
+    });
+    if (seen.length > 400) seen.shift();
+  }
+  before = { corner: { ...grinned.corner }, cheek: grinned.cheek };
+  eyes.apply({
+    ...lids.update(dt, { task: speaking ? 'conversing' : 'rest', gaze: gaze.shape.gaze }),
+    yaw: gaze.shape.yaw,
+    // AU6 narrows the eye from BELOW, where a blink comes down from above.
+    cheek: grinned.cheek,
+  });
 
   game.camera.position.set(0, 1.70, 1.30);
   game.camera.lookAt(0, 1.70, 0);
@@ -6952,6 +7039,19 @@ window.aloudDebug = () => {
     yawDeg: Number(gaze.angles.yaw.toFixed(2)),
     pitchDeg: Number(gaze.angles.pitch.toFixed(2)),
     orbitalRange: ORBITAL_RANGE,
+    // The smile: what it was asked for, and what an observer reading only the
+    // face would conclude. They agree, which is the whole release.
+    // OFF THE CONTROLLER, NEVER OFF A LOCAL. Three releases running, a debug
+    // field reached for a const inside the update body and threw where nothing
+    // could see it. grin.shape is the same numbers and is always in scope.
+    smileKind: grin.felt ? 'felt' : 'posed',
+    corner: Number(grin.shape.corner.left.toFixed(3)),
+    cheekRaise: Number(grin.shape.cheek.toFixed(3)),
+    lopsided: Number(Math.abs(grin.shape.corner.left - grin.shape.corner.right).toFixed(3)),
+    // The full evidence, not just the total: a score of 3 says nothing about
+    // WHICH of the four markers disagreed, and that is the only useful part.
+    duchenneMarks: readSmile(seen, SAMPLE),
+    duchenne: readSmile(seen, SAMPLE).score,
     aperture: Number(eyes.aperture().toFixed(5)),
     browY: Number(brows.group.children[0].position.y.toFixed(5)),
     mouth: {

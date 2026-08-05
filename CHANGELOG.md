@@ -20,6 +20,115 @@ release found.
 
 ## Releases
 
+## [0.68.0] — 2026-08-05
+
+**A smile is two muscles, and only one of them can be faked.** Duchenne de
+Boulogne put electrodes on faces in the 1850s and found that zygomaticus major —
+the lip corners — obeys the will, while orbicularis oculi, the ring around the
+eye, *"only obeys the sweet emotions of the soul"*. It cannot be contracted on
+purpose. That is why a posed smile reaches the mouth and stops there, why every
+viewer can tell, and why almost nobody can say what they noticed.
+
+### Which is a fact about an API
+
+Every smile in every rig is one number, and a one-number smile is *always* a
+posed smile — it cannot express the thing Duchenne found. So there is no
+`setSmile` here. There are two verbs and no third:
+
+```ts
+face.pose(0.8);   // deliberate: AU12, and AU6 stays where it is
+face.feel(0.8);   // enjoyment:  both, together
+```
+
+### Added
+
+- **`Smile`** — `pose()` and `feel()`, with the deliberate one arriving too fast
+  to be felt, lopsided, and stepped, all of which are published tells.
+- **`readSmile`** — an observer scoring a recorded expression against four
+  markers from four laboratories. It never asks the controller what it intended.
+- **`createSmile(rig)`** — lip corners that travel up AND out, and cheek pads
+  that only exist for AU6.
+- **`createEyes` gains `cheek`** — AU6 narrows the eye **from below**, where a
+  blink comes down from above. Two muscles, two edges, one gap: the aperture is
+  their product, so a blink during a smile still shuts the eye completely and a
+  full cheek raise never does.
+- **`npm run smile`**, and the `aloud` playground alternates felt and posed
+  smiles line by line. The mouth does the same thing both times.
+
+### The control is the release
+
+```
+                  AU6      window   symmetric  smooth   score
+a felt smile     felt     felt     felt       felt     4/4
+a posed smile    posed    felt     posed      posed    1/4
+
+separation 3
+the one-number control: felt 4/4, posed 4/4, separation 0
+```
+
+The claim is not that the model can produce a Duchenne smile — any model can, by
+setting two numbers. It is that the DIFFERENCE survives being looked at. A
+one-number smile scores identically whatever it is asked for, because it has no
+difference to express.
+
+Each marker is asserted separately, not just the total: scoring only the sum lets
+a model drop one tell and pass on the other three, which is how a gate quietly
+stops testing what it says it tests.
+
+### Two bugs, and both were in the claim rather than the model
+
+- **TypeScript's `private` is a compile-time courtesy.** The first version had a
+  `private begin(intensity, felt)`. The source read exactly as if the claim held,
+  and any JavaScript caller could have written `smile.begin(0.9, true)` for a
+  perfect posed Duchenne smile. It is `#begin` now, and the gate enumerates the
+  prototype at run time rather than reading the source text. Found by the unit
+  test that listed the class's own methods.
+- **The corner-travel check was circular.** It asserted the measured rise
+  against `CORNER_TRAVEL × intensity` — the number that produced it — so it held
+  for every value it was given. Setting the constant to 16 mm sailed through, and
+  it was the only one of seven mutations that survived. The face supplies real
+  bounds instead: under about 5 mm the smile is invisible, over about 19 mm the
+  corner reaches the nose base and becomes a snarl. **That bracket is wide, and
+  `CORNER_TRAVEL` is now labelled as the one judgement in the module the gate
+  cannot really pin** — rather than dressed up as a measurement.
+
+### And four in the scene, three of them about the tape
+
+The observer is only as good as the trace it is handed, and handing it one
+turned out to be where all the difficulty was.
+
+- **`relax()` was called every frame.** It restarts the release from wherever
+  the face currently is, so calling it per-frame pins the smile in place for
+  ever: the cheek raised by the first FELT line was still up during every posed
+  line after it — the exact thing this release says cannot happen.
+- **A smile is not as long as a sentence.** The scene held it for the whole
+  four-second line and failed its own observer, because Ekman & Friesen put a
+  felt expression between half a second and four. The expression runs on its own
+  clock now, which is what an expression does.
+- **Resampling by repetition manufactures the artefact.** Pushing the current
+  value onto a fixed 1/60 grid means every value lands twice at 30 fps; the
+  trace becomes a staircase and its second difference flips sign at every tread,
+  which is precisely the stepped onset the observer looks for. It scored the felt
+  smile 3/4 and blamed the model.
+- **...and one sample per frame is evenly spaced only on paper.** A headless
+  frame jitters about 30%, which is the same size as the curvature being
+  measured across an 18-sample onset. Ticks land on a fixed grid with
+  interpolated values now — uniform by construction rather than by assumption.
+
+**And the probe printed a failing number and passed anyway.** `cheek during a
+POSE 0.8500 (must be 0)` was in the output while the run said PASS, because the
+edit that added the assertions silently did not match. A gate that prints a value
+and does not check it is a decoration. Six assertions cover that readout now.
+
+### And a third time on the same rake
+
+A playground debug field reached for a `const` declared inside the update body —
+`grinned` this time, `speaking` in 0.66.0, `look` in 0.67.0. **The probe caught
+it and said so out loud**, which is the fix 0.67.0 shipped for exactly this, and
+the whole diagnosis took one run instead of four. The rule is now written where
+the fields are: a debug hook reads controller state, never an update-body local,
+because `grin.shape` is the same numbers and is always in scope.
+
 ## [0.67.0] — 2026-08-05
 
 **The eye does not glide, and how fast it goes is not a choice.** Bahill, Clark
