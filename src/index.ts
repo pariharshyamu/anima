@@ -704,3 +704,27 @@ export {
   type PupilOptions,
   type PupilState,
 } from './pupils';
+
+// The conversational floor — and gaze is how it changes hands.
+// Kendon (1967) filmed two people talking and counted: a LISTENER looks at the
+// other person 75% of the time, a SPEAKER 40%. Nearly twice as much, so a rig
+// that gives everyone one gaze rate is not modelling either half. His second
+// finding makes gaze a protocol rather than a decoration — a speaker looks away
+// while planning and back as they finish, and that terminal gaze is what tells
+// the listener the floor is free. Put two of these together and MUTUAL gaze
+// falls out at 0.75 × 0.40 = 30%, which is where Argyle & Ingham (1972) — a
+// different lab measuring a different thing — put it.
+export {
+  Dialogue,
+  Floor,
+  GAZE_LISTENING,
+  GAZE_SPEAKING,
+  LOOK_SECONDS,
+  PLANNING_AVERSION,
+  TERMINAL_GAZE,
+  awayFor,
+  type DialogueOptions,
+  type FloorOptions,
+  type FloorState,
+  type Role,
+} from './floor';

@@ -36,6 +36,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'saccades', title: 'Saccades: two laws for one movement' },
   { id: 'smile', title: 'The smile: only one muscle can be faked' },
   { id: 'pupils', title: 'Pupils: a light meter, not an emotion dial' },
+  { id: 'floor', title: 'The floor: gaze is how a turn changes hands' },
   { id: 'motion', title: 'Motion matching: the weights were units' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];

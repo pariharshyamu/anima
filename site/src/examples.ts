@@ -7517,6 +7517,206 @@ window.matchingDebug = () => ({
 game.start();
 `,
   },
+
+  {
+    id: 'floor',
+    title: 'The floor: gaze is how a turn changes hands',
+    group: 'Character',
+    code: `// TWO PEOPLE, AND A THIRD NUMBER NEITHER OF THEM WAS GIVEN.
+//
+// Every rig in this library used to give a character one gaze rate. Adam Kendon
+// filmed two people talking and counted (1967):
+//
+//    while LISTENING   75% of the time on the other person
+//    while SPEAKING    40%
+//
+// Nearly twice as much, because talking is expensive — you are planning a
+// sentence — and looking at a face is expensive too, so speakers buy one with
+// the other. Splitting the difference at 0.7 models neither half.
+//
+// THE PART THAT IS A PREDICTION. Those two numbers are about individuals. Put
+// two people together, each following only its own rule, and MUTUAL gaze falls
+// out as something nobody set:
+//
+//    0.75 x 0.40 = 0.30
+//
+// Argyle & Ingham (1972), a different lab measuring a different thing, put
+// mutual gaze in a two-person conversation at about 30%. Watch the readout —
+// the running figures below are measured off these two faces, and the number
+// 0.30 appears nowhere in the model.
+//
+// AND THE AGREEMENT ON ITS OWN PROVES ALMOST NOTHING, which is worth saying out
+// loud: a one-rate rig set to the mean of Kendon's two gives 0.575 squared =
+// 33%, also "about 30%". What a single rate cannot produce at any setting is
+// the ASYMMETRY, and that is the row to watch.
+//
+// AND THE ENDS OF UTTERANCES ARE NOT LIKE THE MIDDLES. A speaker looks away as
+// they begin — the planning load is highest there — and back at the listener as
+// they finish. That terminal gaze is a turn-yielding signal: the floor changes
+// hands when it lands AND the listener was looking. Toggle it off below and the
+// transitions get visibly slower.
+import { createHumanoid, createMouth, createEyes, Locomotion,
+         Blinking, Saccades, Dialogue, Floor,
+         GAZE_LISTENING, GAZE_SPEAKING, ORBITAL_RANGE } from 'anima3d';
+${STUDIO}
+
+const YIELD_ON_GAZE = true;   // <- turn this off and watch the handovers drag
+
+// Bodies angled three-quarters to the camera, heads turned to each other. That
+// is how two people actually stand, and it is also the only way you can see
+// both faces at once.
+const cast = [-1, 1].map((side, i) => {
+  const rig = createHumanoid({
+    seed: 41 + i * 7, height: 1.78 - i * 0.06, accessories: 'none',
+    hair: { style: i ? 'bob' : 'side-part' }, face: { facialHair: 'none' },
+  });
+  rig.object.position.set(side * -0.36, 0, 0);
+  // Face the other one, then swing back 35 degrees toward the lens.
+  const toPartner = side * Math.PI / 2;
+  rig.object.rotation.y = toPartner - side * 0.62;
+  scene.add(rig.object);
+  return {
+    rig,
+    idle: new Locomotion(rig),
+    mouth: createMouth(rig),
+    eyes: createEyes(rig),
+    lids: new Blinking({ task: 'rest', seed: 12 + i }),
+    // THE HANDSHAKE BETWEEN RUNG SIX AND RUNG THREE. Floor decides WHERE to
+    // look; Saccades decides HOW THE EYE GETS THERE, on Bahill's main sequence.
+    // A conversational rule has no business knowing about a duration law, and a
+    // ballistic eye movement has no business knowing whose turn it is.
+    gaze: new Saccades({ task: 'scene', seed: 4 + i }),
+    // THE NECK DOES NOT DO ALL OF IT, AND THAT IS NOT A STAGING TRICK.
+    //
+    // The body is swung 35 degrees back toward the lens, so something has to
+    // swing 35 degrees the other way for the gaze to land on the partner.
+    // Giving the neck all of it is what a rig usually does, and it puts both
+    // heads in exact profile — edge-on, no face, and the eyes this release is
+    // about become two pixels. People do not do that either: the head turns
+    // part of the way and the eyes cover the remainder, which is the whole
+    // reason eyes move inside a skull.
+    //
+    // So the neck takes 55% and the eyes are handed the rest as a standing
+    // offset. Floor's yaw of 0 still means AT THE PARTNER; it just is not zero
+    // degrees of eyeball any more.
+    headYaw: side * 0.62 * 0.55,
+    // IN DEGREES, because that is what Saccades speaks. Its angles are degrees
+    // clamped to ORBITAL_RANGE; only .shape is the normalised -1..1 pair the
+    // eye rig wants. Handing it the normalised number instead commands a
+    // fraction of one degree, and the eyes then sit almost still while every
+    // readout above them says the model is working perfectly.
+    eyeBias: side * 0.62 * 0.45 * 180 / Math.PI,
+    aim: { yaw: 0, pitch: 0 },
+    jaw: 0,
+  };
+});
+
+const talk = new Dialogue({ seed: 5, turn: 4.5, yieldOnGaze: YIELD_ON_GAZE });
+const floors = [talk.a, talk.b];
+
+// The observer's tally. Nothing here is fed back into the model.
+const seen = { listening: [0, 0], speaking: [0, 0], mutual: 0, held: 0, turns: 0 };
+
+// Close on the two faces. This scene is about where four eyes are pointing;
+// framed wide enough to show the shoes, none of it is visible.
+game.camera.position.set(0, 1.58, 1.30);
+game.camera.lookAt(0, 1.55, 0);
+
+game.onUpdate((t) => {
+  const dt = Math.min(t.delta, 1 / 30);
+  const before = talk.speaker;
+  talk.update(dt);
+  if (talk.speaker !== before) seen.turns++;
+
+  const speaking = floors.some((f) => f.role === 'speaking');
+  if (speaking) {
+    seen.held += dt;
+    if (talk.a.atPartner && talk.b.atPartner) seen.mutual += dt;
+  }
+
+  cast.forEach((c, i) => {
+    const floor = floors[i];
+    if (speaking) {
+      seen[floor.role][1] += dt;
+      if (floor.atPartner) seen[floor.role][0] += dt;
+    }
+    c.idle.update(dt, 0);
+    // After the idle, or the clip puts the head back where it wants it.
+    c.rig.bones.Head.rotation.y = c.headYaw;
+
+    // WHERE, not how. want.yaw is an offset FROM the partner, so the standing
+    // bias is added to it: zero lands on the partner and an aversion is
+    // measured out from there rather than from straight ahead.
+    //
+    // The target is handed over EVERY FRAME rather than pushed once with
+    // look(). Saccades left without one is free-viewing — it picks its own
+    // fixations on a dwell timer and walks the eye around the scene, which is
+    // the right behaviour for a face that is not in a conversation and which
+    // quietly overwrites anything a one-shot look() asked for. The eye still
+    // gets there ballistically, on Bahill's duration law; this only says where.
+    const want = floor.target;
+    c.aim = {
+      yaw: Math.max(-ORBITAL_RANGE, Math.min(ORBITAL_RANGE, c.eyeBias + want.yaw * ORBITAL_RANGE)),
+      pitch: want.pitch * ORBITAL_RANGE,
+    };
+    c.gaze.update(dt, { task: 'scene', target: c.aim });
+
+    // Blink rate is the task, not a constant — Bentivoglio et al. (1997) put
+    // conversation at 26 a minute against 17 at rest.
+    const blink = c.lids.update(dt, {
+      task: floor.role === 'speaking' ? 'conversation' : 'rest',
+    });
+
+    // shape is a GETTER on Saccades, and it hands over exactly the pair
+    // createEyes wants: vertical rides the whole eye, horizontal moves the iris.
+    const eye = c.gaze.shape;
+    c.eyes.apply({ lid: blink.lid, gaze: eye.gaze, yaw: eye.yaw });
+
+    // A mouth, so the talker reads as the talker. Not lipsync — that is the
+    // aloud scene's job — just enough jaw to tell them apart.
+    const target = floor.role === 'speaking'
+      ? 0.22 + 0.28 * Math.abs(Math.sin(t.elapsed * 9 + i))
+      : 0;
+    c.jaw += (target - c.jaw) * Math.min(1, dt * 14);
+    c.mouth.apply({ open: c.jaw, round: 0.15, close: 0, spread: 0.1 });
+  });
+});
+
+// DEBUG HOOKS READ THE CONTROLLERS, never a local from inside the update body —
+// a local that is stale, or scoped away, reports a working scene as a dead one.
+window.floorDebug = () => {
+  const rate = (p) => (p[1] > 0 ? Number((p[0] / p[1]).toFixed(3)) : 0);
+  const listening = rate(seen.listening);
+  const speaking = rate(seen.speaking);
+  return {
+    seconds: Number(seen.held.toFixed(1)),
+    turns: seen.turns,
+    // The two published rates, measured off the scene.
+    listening,
+    speaking,
+    published: { listening: GAZE_LISTENING, speaking: GAZE_SPEAKING },
+    // The asymmetry — the row a one-rate rig cannot reproduce at any setting.
+    asymmetry: Number((listening / Math.max(1e-9, speaking)).toFixed(2)),
+    // ...and the number neither face was given.
+    mutual: Number((seen.mutual / Math.max(1e-9, seen.held)).toFixed(3)),
+    predicted: Number((GAZE_LISTENING * GAZE_SPEAKING).toFixed(3)),
+    argyleIngham: 0.3,
+    speaker: talk.speaker,
+    atPartner: [talk.a.atPartner, talk.b.atPartner],
+    // What the eyes are actually DOING, read off the rig rather than off the
+    // request — the standing bias plus a clamp at the eye's mechanical limit
+    // means the two are not the same number.
+    eyeYaw: cast.map((c) => Number(c.gaze.shape.yaw.toFixed(3))),
+    eyeBias: cast.map((c) => Number(c.eyeBias.toFixed(3))),
+    yieldOnGaze: YIELD_ON_GAZE,
+    lastHandover: Number(talk.lastHandover.toFixed(2)),
+    draws: game.renderer.info.render.calls,
+  };
+};
+
+game.start();
+`,
+  },
 ];
 
 export function findExample(id: string): Example {

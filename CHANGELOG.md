@@ -20,6 +20,134 @@ release found.
 
 ## Releases
 
+## [0.70.0] — 2026-08-05
+
+**There is no such thing as one gaze rate.** `Conversation` in this library gave
+everyone in a group a `wander` of 0.3 — a listener looks at the speaker 70% of
+the time, and so does the speaker, and so does everybody. Adam Kendon filmed two
+people talking and counted (*Some functions of gaze-direction in social
+interaction*, 1967):
+
+```
+while LISTENING     75% of the time on the other person
+while SPEAKING      40%
+```
+
+Nearly twice as much. A rig that splits the difference is not modelling either
+half.
+
+### The part that is a prediction
+
+Kendon's two numbers are about individuals. Put two people together, each
+following only its own rule, and mutual gaze falls out as a third number nobody
+set — `0.75 × 0.40 = 0.30`. **Argyle & Ingham (1972), a different laboratory
+measuring a different thing, put mutual gaze in a two-person conversation at
+about 30%.** The gate measures 28.1% off two agents who were never told it, and
+`0.30` appears nowhere in `src/floor.ts`.
+
+### And that agreement on its own proves almost nothing
+
+Section 3 of the gate exists to say so. Take the one-rate rig this release
+argues against, set its single rate to the mean of Kendon's two, and mutual gaze
+comes out at 0.575² = **33%** — inside anybody's reading of "about 30%". The
+agreement is real and it does not discriminate.
+
+What discriminates is the asymmetry, which a single rate cannot produce at any
+setting:
+
+```
+model      78.7% listening / 40.3% speaking = 1.96x
+control    58.5% / 57.9%                    = 1.01x
+published                                     1.88x
+```
+
+A second emergent number, about grain rather than rate: two independent looks
+overlap only until whichever ends first ends, so a shared look is shorter than
+either look in it. Argyle & Ingham's own means, 2.95 s and 1.18 s, give 2.50×.
+The model, which knows neither, gives 3.27×.
+
+### Added
+
+- **`Floor`** — one participant's gaze, with the rate coming from what they are
+  doing and the ends of their utterances unlike the middles: a planning aversion
+  at the start and a terminal gaze at the end, which is Kendon's turn-yielding
+  signal.
+- **`Dialogue`** — two of them, and the floor changes hands when the signal
+  lands *and the listener was looking*. With it, 0.37 s; without, 1.20 s.
+- **`Floor.target`** — the handshake with rung three. This module decides
+  **where** to look and `Saccades` decides **how the eye gets there**, on
+  Bahill's duration law. Neither knows anything about the other.
+- **`npm run floor`**, `docs/floor.md`, and a two-face playground whose readout
+  is measured off the scene rather than printed from the constants.
+
+### The budget is re-allocated, not added to
+
+The easiest thing here to get wrong, and it does not look wrong. Hold the middle
+of an utterance at 40%, bolt a second of planning aversion onto the front and a
+second of terminal gaze onto the back — both halves defensible alone — and the
+speaker looks at the listener **55%** of the time. That is a new finding,
+invented by accident, and it would survive review. So the middle supplies
+whatever the ends did not, and every utterance spends exactly 40%.
+
+Two consequences nobody chose: **the speaker's glances come out shorter than the
+listener's** (2.95 s against 1.26 s), because a five-second turn has three free
+seconds that must contain one second of gaze and a full-length look does not fit
+in it; and a turn too short to afford a whole terminal gaze gets a shorter one
+rather than an overspent budget.
+
+### The circular assertion, for the fourth release running
+
+Sixteen mutations, three rounds. The first round left three survivors and two
+were the same bug: the gate walked the last `TERMINAL_GAZE` seconds of an
+utterance and counted, so setting `TERMINAL_GAZE` to zero collapsed the loop to
+nothing, `held` stayed at 0, and `0 < 0 − 2·dt` is false. **The gate reported a
+pass on a model with no turn-yielding signal in it.** Identical for
+`PLANNING_AVERSION`.
+
+`BLINK_OPEN`/`BLINK_CLOSE` in 0.66.0, `CORNER_TRAVEL` in 0.68.0, `PUPIL_LATENCY`
+and `IRIS_MM` in 0.69.0, and two more here. It is invisible in review because
+the assertion reads as though it checks something. The replacement asks a
+structural question with no constant in it — *does the speaker's eye land on the
+listener at the moment they stop talking?* — and it is 100% of utterances or it
+is not a signal.
+
+The other survivors were as useful: a mutation pinning the glance count at one
+survived everything, because at five-second turns there is only ever one glance
+to place and nothing sampled a long turn; a mutation bunching every glance
+against one edge of the utterance survived for the same reason. And the
+two-sided bound on handover time exists because dropping the requirement that
+the listener be looking made transitions *faster*, and the gate only bounded
+them from above. Stivers et al. (2009) put the gap between turns across ten
+languages within a couple of hundred milliseconds of zero, not at zero.
+
+Two of the sixteen turned out to be equivalent mutants — dead clamps that could
+not fire. Both are now deleted rather than left looking like prudence.
+
+### The model was right and the verification was wrong, again
+
+The gate caught two model bugs before any of that: drawing look-or-away
+independently each interval lets consecutive looks merge, so a listener came out
+at **90%** instead of 75% — a rate nobody published, arrived at from two numbers
+that were both right; and the free part of an utterance, sampled as a renewal
+process over a window about one cycle long, is decided by whichever state it
+opens in (53% against the 37% asked for). The glances are placed against a
+budget now rather than sampled.
+
+Everything after that was the scene. The heads were turned 35° the wrong way, so
+both faces pointed at the camera and `Floor`'s "looking right at you" aimed at
+nobody. `Saccades.look()` speaks **degrees** and was handed the normalised −1..1
+pair, commanding six tenths of one degree — and a `Saccades` left without a
+target is free-viewing, which walked the eyes around over the top of it. The
+screenshot looked plausible in both states; **a probe that measured the eye
+angle found the aversions were averaging 2.5° where the model produces 20°.**
+They average 8.5° now, and the two states are distinguishable on the face.
+
+### Verified
+
+1025 tests, 28 gates, 48/48 playgrounds. Kendon (1967) is the seventh paper
+driving that one face, after Klatt, Bentivoglio, Bahill, Rayner, Duchenne and
+Moon & Spencer — and none of them have heard of each other.
+
 ## [0.69.0] — 2026-08-05
 
 **The pupil is not an emotion dial. It is a light meter.** Every rig dilates
