@@ -579,6 +579,7 @@ export {
   utterance,
   LIVE_WINDOW,
   shapedUtterance,
+
   utteranceLength,
   visemeOf,
   type MouthProp,
@@ -589,3 +590,22 @@ export {
   type MouthSource,
   type SpeechOptions,
 } from './speech';
+
+// Brows — a brow raise is PUNCTUATION before it is emotion (Ekman 1979), and
+// about seven in ten of them land on a rise in F0 (Cavé et al. 1996). So the
+// brow does not need a mood, it needs a pitch contour — and GAMA's
+// `SpokenLine.pitchAt` has exactly the signature `PitchSource` asks for.
+export {
+  ACCENT_SEMITONES,
+  BASELINE_TAU,
+  BROW_FLASH,
+  BROW_SPEED,
+  BROW_TRAVEL,
+  Brows,
+  createBrows,
+  type BrowOptions,
+  type BrowProp,
+  type BrowShape,
+  type PitchSource,
+} from './brows';
+

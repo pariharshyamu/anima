@@ -6785,7 +6785,8 @@ game.start();
 // talks. A missing voice costs you the audio, not the animation.
 //
 // Click the face to hear it.
-import { createHumanoid, createMouth, Locomotion, Speech, ANTICIPATION } from 'anima3d';
+import { createHumanoid, createMouth, createBrows, Locomotion, Speech, Brows,
+         ANTICIPATION, ACCENT_SEMITONES } from 'anima3d';
 import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
 // STUDIO already imports Mesh and MeshStandardMaterial.
 import { BoxGeometry } from 'three';
@@ -6808,6 +6809,22 @@ scene.add(rig.object);
 const idle = new Locomotion(rig);
 const mouth = createMouth(rig);
 const speech = new Speech('', {});
+
+// THE SECOND HALF OF THE SEAM, and it is the same shape as the first.
+//
+// Ekman's "About Brows" (1979): a brow raise is a CONVERSATIONAL signal before
+// it is an emotional one — it marks the emphasised word and it goes up on a
+// question. Cavé et al. (1996) put about seven in ten of them on a rise in F0.
+// So the brows do not need a mood. They need the pitch contour, and
+// SpokenLine.pitchAt has exactly the signature PitchSource asks for.
+//
+// What the brow tracks is pitch above a RUNNING FLOOR, not pitch. English
+// declines about half a semitone a second, so over this line the whole contour
+// sinks a couple of semitones while the accents keep landing — a brow wired
+// straight to pitch would sink with it and the speaker would look like they
+// were falling asleep by the full stop.
+const brows = createBrows(rig);
+const face = new Brows();
 
 // The word ticks: one block per word, lighting up as the platform reports it.
 // Nothing here schedules them — they arrive when the engine says so.
@@ -6843,7 +6860,9 @@ const say = () => {
   // the mouth should be, at the line's own clock, until the line says it is
   // done. anima3d adds its own ANTICIPATION lead to that clock, because a mouth
   // arriving before the sound is a fact about faces and belongs on this side.
-  speech.attach(line.mouthAt, { clock: () => Math.max(0, line.elapsed()), done: () => line.done });
+  const clock = () => Math.max(0, line.elapsed());
+  speech.attach(line.mouthAt, { clock, done: () => line.done });
+  face.attach(line.pitchAt, { clock, done: () => line.done });
 };
 game.renderer.domElement.addEventListener('pointerdown', say);
 
@@ -6855,6 +6874,7 @@ game.onUpdate(({ delta }) => {
 
   idle.update(dt, { speed: 0 });
   mouth.apply(speech.update(dt));
+  brows.apply(face.update(dt));
 
   game.camera.position.set(0, 1.70, 1.30);
   game.camera.lookAt(0, 1.70, 0);
@@ -6876,6 +6896,11 @@ window.aloudDebug = () => {
     elapsed: line ? Number(Math.max(-1, line.elapsed()).toFixed(2)) : -1,
     speaking: !!line && !line.done && line.elapsed() >= 0,
     anticipation: ANTICIPATION,
+    accentSemitones: ACCENT_SEMITONES,
+    // The contour the face is punctuating with, and the lift it produced.
+    pitch: line ? Number(line.pitchAt().toFixed(2)) : 0,
+    brow: Number(face.shape.raise.toFixed(3)),
+    browY: Number(brows.group.children[0].position.y.toFixed(5)),
     mouth: {
       open: Number(s.open.toFixed(3)),
       close: Number(s.close.toFixed(3)),

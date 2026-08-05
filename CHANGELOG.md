@@ -20,6 +20,52 @@ release found.
 
 ## Releases
 
+## [0.65.0] — 2026-08-04
+
+**A brow raise is punctuation before it is emotion.** Ekman's *About Brows*
+(1979): it marks the emphasised word, it goes up on a question, and it fires on
+greeting whether or not anyone is pleased about anything. Cavé et al. (1996) put
+about seven in ten of them on a rise in F0. So the brow does not need a mood — it
+needs a pitch contour, and GAMA 0.53.0's `SpokenLine.pitchAt` has exactly the
+signature `PitchSource` asks for.
+
+### Added
+
+- **`Brows` and `createBrows(rig)`** — a pair parented to the Head, driven by
+  pitch above a running baseline, rate-limited by a speed nobody chose.
+- **`flash()`** — Eibl-Eibesfeldt's (1972) cross-cultural greeting flash, a
+  sixth of a second, which is also where the speed limit comes from: a flash is
+  up and back, so up is half of it, and 10 mm in 83 ms is 0.12 m/s.
+- **`npm run brows`**, and the `aloud` playground scene now drives a mouth AND a
+  pair of brows off one line, from two functions, with no import between the
+  packages that produce them.
+
+### Fixed
+
+- **A symmetric baseline is the wrong model.** 't Hart, Collier & Cohen draw the
+  declination line through the VALLEYS — accents ride on it and do not define it
+  — so a baseline that could also rise gets pulled up by the accent train, and
+  each accent is measured against a floor its own predecessors raised. The last
+  accent of a six-second line held 92% of the first when it should hold all of
+  it, and the gate showed it was not the muscle: the TARGET held 92% before the
+  speed limit ever saw it. The line only falls now. 94% held, against 64% for the
+  same model with no baseline at all.
+
+### Known — three of the four failures were the gate, not the model
+
+- **The shuffled control was correlated against its own input**, so it scored
+  0.897 against the subject's 0.869: faithfully following the wrong contour and
+  being praised for it. Both are scored against the true contour now, and it
+  drops to −0.12.
+- **The no-baseline control sat clamped at 1.0.** The test contour started four
+  semitones up, so a naive `pitch / accent` model saturated end to end and held
+  100% for free — which made deleting the baseline entirely PASS. The contour now
+  sits where `pronounce` puts one, declining through the speaker's own f0.
+- **The budget was a round number.** It asserted 0.95, measured 0.94, and said
+  nothing about whether 0.94 was right. It is now the lag of a first-order filter
+  on a ramp — `rate × tau`, 8% of an accent — so more than that is a bug and less
+  would mean the tracker is doing something unaccounted for.
+
 ## [0.64.0] — 2026-08-04
 
 **A face driven by a voice that has not decided yet.** GAMA moved its dialogue
