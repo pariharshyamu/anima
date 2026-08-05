@@ -43,6 +43,7 @@ import { Group, Mesh, MeshStandardMaterial, BoxGeometry } from 'three';
 import type { HumanoidRig } from './humanoid';
 import { irisOffset } from './saccades';
 import { CHEEK_LID } from './smile';
+import { IRIS_MM, PUPIL_MAX as PUPIL_MAX_MM, PUPIL_MIN as PUPIL_MIN_MM, pupilFor } from './pupils';
 
 /**
  * Spontaneous blink rate, blinks per minute, by what the face is doing.
@@ -133,6 +134,14 @@ export interface EyeShape {
    * ever looking like a half-blink. Two different muscles, two different edges.
    */
   cheek?: number;
+  /**
+   * Pupil diameter in MILLIMETRES — not a 0..1 like the rest of this shape.
+   *
+   * Because millimetres is what a pupil has. It is drawn as `pupil / IRIS_MM`
+   * of the iris, so a stylised face with a huge iris still shows the right
+   * FRACTION of it black. Defaults to the diameter a lit interior settles at.
+   */
+  pupil?: number;
 }
 
 export interface BlinkOptions {
@@ -260,6 +269,8 @@ export interface EyeProp {
   apply(shape: EyeShape): void;
   /** The visible aperture of one eye, metres. Zero when shut. */
   aperture(): number;
+  /** The pupil diameter the mesh is drawing, millimetres. */
+  pupilMm(): number;
   /**
    * How far the iris sits off centre, metres. Negative is the character's left.
    *
@@ -307,20 +318,29 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   const travel = patchHalf - irisHalf;
   const white = (): Mesh =>
     new Mesh(
-      new BoxGeometry(patchHalf * 2, 0.0205 * H * face.eyes.size, 0.001 * H),
+      new BoxGeometry(patchHalf * 2, 0.0205 * H * face.eyes.size, 0.0006 * H),
       new MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.75 })
     );
   const iris = (): Mesh =>
     new Mesh(
-      new BoxGeometry(irisHalf * 2, 0.013 * H * face.eyes.size, 0.001 * H),
+      new BoxGeometry(irisHalf * 2, 0.013 * H * face.eyes.size, 0.0006 * H),
       new MeshStandardMaterial({ color: face.eyes.color, roughness: 0.55 })
     );
   const lid = (): Mesh =>
     new Mesh(
-      new BoxGeometry(w * 1.06, h, 0.001 * H),
+      new BoxGeometry(w * 1.06, h, 0.0006 * H),
       new MeshStandardMaterial({ color: skin, roughness: 0.9 })
     );
-  // THREE THIN LAYERS, half a millimetre apart, rather than three thick ones.
+  // THE PUPIL — a hole, so it is the darkest thing on the face and it is drawn
+  // in FRONT of the iris rather than punched out of it.
+  const pupil = (): Mesh =>
+    new Mesh(
+      new BoxGeometry(irisHalf * 2, 0.013 * H * face.eyes.size, 0.0006 * H),
+      new MeshStandardMaterial({ color: 0x120d10, roughness: 0.35 })
+    );
+  const leftPupil = pupil();
+  const rightPupil = pupil();
+  // FIVE THIN LAYERS, half a millimetre apart, rather than three thick ones.
   // Stacked at the lid's old 6 mm depth the assembly stood 8 mm proud of the
   // nose tip and the character had eyes on stalks; at 1 mm each the whole thing
   // clears the baked iris and still sits behind the nose.
@@ -331,27 +351,29 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   // for and the reason a squint and a crinkle look nothing alike.
   const cheekLid = (): Mesh =>
     new Mesh(
-      new BoxGeometry(w * 1.06, h, 0.001 * H),
+      new BoxGeometry(w * 1.06, h, 0.0006 * H),
       new MeshStandardMaterial({ color: skin, roughness: 0.9 })
     );
   const leftCheek = cheekLid();
   const rightCheek = cheekLid();
-  leftCheek.position.set(-ex, 0, 0.0022 * H);
-  rightCheek.position.set(ex, 0, 0.0022 * H);
+  leftCheek.position.set(-ex, 0, 0.0027 * H);
+  rightCheek.position.set(ex, 0, 0.0027 * H);
   const leftWhite = white();
   const rightWhite = white();
   leftWhite.position.set(-ex, 0, 0);
   rightWhite.position.set(ex, 0, 0);
   const leftIris = iris();
   const rightIris = iris();
-  leftIris.position.set(-ex, 0, 0.0015 * H);
-  rightIris.position.set(ex, 0, 0.0015 * H);
+  leftIris.position.set(-ex, 0, 0.0009 * H);
+  rightIris.position.set(ex, 0, 0.0009 * H);
+  leftPupil.position.set(-ex, 0, 0.0018 * H);
+  rightPupil.position.set(ex, 0, 0.0018 * H);
   const left = lid();
   const right = lid();
-  left.position.set(-ex, 0, 0.003 * H);
-  right.position.set(ex, 0, 0.003 * H);
+  left.position.set(-ex, 0, 0.0036 * H);
+  right.position.set(ex, 0, 0.0036 * H);
   // White, then iris, then lid — the only order in which a blink hides a pupil.
-  group.add(leftWhite, rightWhite, leftIris, rightIris, leftCheek, rightCheek, left, right);
+  group.add(leftWhite, rightWhite, leftIris, rightIris, leftPupil, rightPupil, leftCheek, rightCheek, left, right);
   // IN FRONT OF THE PUPIL, not in front of the white.
   //
   // `createHumanoid` puts the whites at 0.0565 H and then the irises 0.004 H
@@ -366,6 +388,7 @@ export function createEyes(rig: HumanoidRig): EyeProp {
   let shown = 0;
   let looking = 0;
   let raised = 0;
+  let wide = pupilFor(50);
   return {
     group,
     apply(shape: EyeShape): void {
@@ -394,6 +417,19 @@ export function createEyes(rig: HumanoidRig): EyeProp {
       looking = x;
       leftIris.position.x = -ex + x;
       rightIris.position.x = ex + x;
+      // THE PUPIL IS A FRACTION OF THE IRIS, and the fraction is the only part
+      // that is real: an adult iris is twelve millimetres and the pupil runs 2
+      // to 8 of them, so a face drawn with an enormous iris shows the same
+      // PROPORTION black rather than the same millimetres. It rides the iris,
+      // because it is a hole in it.
+      const mm = clamp(shape.pupil ?? pupilFor(50), PUPIL_MIN_MM, PUPIL_MAX_MM);
+      wide = mm;
+      const s = mm / IRIS_MM;
+      leftPupil.scale.set(s, s, 1);
+      rightPupil.scale.set(s, s, 1);
+      leftPupil.position.x = -ex + x;
+      rightPupil.position.x = ex + x;
+      leftPupil.visible = rightPupil.visible = closed < 0.999;
       // A shut eye has no visible iris or white, and a lid drawn over ones that
       // are still there leaves a rim at some resolutions.
       leftIris.visible = rightIris.visible = closed < 0.999;
@@ -419,6 +455,9 @@ export function createEyes(rig: HumanoidRig): EyeProp {
     },
     pupil(): number {
       return looking;
+    },
+    pupilMm(): number {
+      return wide;
     },
   };
 }

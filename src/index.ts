@@ -682,3 +682,25 @@ export {
   type SmileProp,
   type SmileShape,
 } from './smile';
+
+// Pupils — a light meter, not an emotion dial.
+// Moon & Spencer (1944) put pupil diameter at 4.9 − 3 tanh(0.4 log L), which
+// covers 5.5 mm across eight decades of luminance. Hess & Polt (1964) and
+// Kahneman & Beatty (1966) found mental effort dilates the pupil too — by half
+// a millimetre. So a rig whose pupils answer to drama and ignore the scene's
+// lighting has it upside down by a factor of eleven, and — the interesting half
+// — you cannot read a mood off a pupil unless you hold the light constant.
+export {
+  CONSTRICT_TAU,
+  DILATE_TAU,
+  EFFORT_DILATION,
+  EFFORT_TAU,
+  IRIS_MM,
+  PUPIL_LATENCY,
+  PUPIL_MAX,
+  PUPIL_MIN,
+  Pupils,
+  pupilFor,
+  type PupilOptions,
+  type PupilState,
+} from './pupils';

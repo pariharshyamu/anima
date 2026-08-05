@@ -6786,8 +6786,8 @@ game.start();
 //
 // Click the face to hear it.
 import { createHumanoid, createMouth, createBrows, createEyes, Locomotion, Speech,
-         Brows, Blinking, Saccades, Smile, createSmile, readSmile, ANTICIPATION,
-         ACCENT_SEMITONES, BLINK_RATE, ORBITAL_RANGE } from 'anima3d';
+         Brows, Blinking, Saccades, Smile, createSmile, readSmile, Pupils,
+         ANTICIPATION, ACCENT_SEMITONES, BLINK_RATE, ORBITAL_RANGE } from 'anima3d';
 import { speakAloud, speechAvailable, voiceOf } from 'gama3d';
 // STUDIO already imports Mesh and MeshStandardMaterial.
 import { BoxGeometry } from 'three';
@@ -6871,6 +6871,25 @@ const gaze = new Saccades({ task: 'scene', seed: 4 });
 //
 // This face alternates between them every other line. Watch the eyes, not the
 // mouth: the mouth does the same thing both times.
+// AND THE PUPIL IS A LIGHT METER, NOT AN EMOTION DIAL.
+//
+// Moon & Spencer (1944): D = 4.9 - 3 tanh(0.4 log L). Across eight decades of
+// luminance that is five and a half millimetres. Mental effort dilates the
+// pupil too — Hess & Polt (1964), Kahneman & Beatty (1966) — by half of one.
+// Eleven to one.
+//
+// Which has a consequence nobody expects: you cannot read a mood off a pupil
+// unless you hold the light still. That is why every pupillometry protocol
+// fixes the luminance first, and it is why this scene changes it.
+//
+// THE LIGHT IS DRIVEN FROM THE LUMINANCE, not the other way round: the number
+// handed to Pupils is the same one the key light is set from, so the pupil is
+// metering this scene rather than a number invented alongside it.
+const pupils = new Pupils({ luminance: 400 });
+const DUSK = 0.4;
+const NOON = 3000;
+let lux = NOON;
+let sceneClock = 0;
 const cheeks = createSmile(rig);
 const grin = new Smile();
 // The observer's tape, plus the gap between each pair of samples — because
@@ -6961,6 +6980,17 @@ game.onUpdate(({ delta }) => {
   // Two tables from two papers, and neither module has heard of the other. The
   // lid rides the same gaze the eye is pointing along, so an eye that looks
   // down is hooded without Blinking knowing what a saccade is.
+  // A hard step every six seconds, because the asymmetry is the visible part:
+  // the pupil snaps shut against the light and takes four times as long to open
+  // back up. Sphincter pupillae is fast, dilator pupillae is not.
+  sceneClock += dt;
+  lux = Math.floor(sceneClock / 6) % 2 ? DUSK : NOON;
+  key.intensity = 0.18 + 1.5 * Math.max(0, Math.min(1, (Math.log10(lux) + 1) / 4.5));
+  fill.intensity = key.intensity * 0.3;
+  // Speaking is a mental load, so it is worth its half millimetre — and the
+  // readout shows you cannot see it happen against a change of light.
+  pupils.update(dt, { luminance: lux, effort: speaking ? 1 : 0 });
+
   gaze.update(dt, { task: speaking ? 'search' : 'scene' });
   const grinned = grin.update(dt);
   cheeks.apply(grinned);
@@ -7000,6 +7030,7 @@ game.onUpdate(({ delta }) => {
     yaw: gaze.shape.yaw,
     // AU6 narrows the eye from BELOW, where a blink comes down from above.
     cheek: grinned.cheek,
+    pupil: pupils.diameter,
   });
 
   game.camera.position.set(0, 1.70, 1.30);
@@ -7039,6 +7070,13 @@ window.aloudDebug = () => {
     yawDeg: Number(gaze.angles.yaw.toFixed(2)),
     pitchDeg: Number(gaze.angles.pitch.toFixed(2)),
     orbitalRange: ORBITAL_RANGE,
+    // The pupil: what it is, what the light alone would make it, and how much
+    // of it is the mind. The third number is always the small one.
+    luminance: lux,
+    pupilMm: Number(pupils.diameter.toFixed(2)),
+    pupilFromLight: Number(pupils.fromLight.toFixed(2)),
+    pupilFromEffort: Number(pupils.fromEffort.toFixed(2)),
+    pupilDrawn: Number(eyes.pupilMm().toFixed(2)),
     // The smile: what it was asked for, and what an observer reading only the
     // face would conclude. They agree, which is the whole release.
     // OFF THE CONTROLLER, NEVER OFF A LOCAL. Three releases running, a debug

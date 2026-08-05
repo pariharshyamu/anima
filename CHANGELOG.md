@@ -20,6 +20,86 @@ release found.
 
 ## Releases
 
+## [0.69.0] — 2026-08-05
+
+**The pupil is not an emotion dial. It is a light meter.** Every rig dilates
+pupils for interest and shrinks them for fear. Hess & Polt (1964) and Kahneman &
+Beatty (1966) did find the pupil responds to mental effort — by half a
+millimetre, against the five and a half the light reflex covers across eight
+decades of luminance. Eleven to one.
+
+### And the consequence runs the other way, which is the interesting half
+
+**You cannot read a mood off a pupil unless you hold the light constant.** That
+is why every pupillometry protocol ever published fixes the luminance first, and
+it is a claim this model can be held to:
+
+```
+                      effort readable   tracks the light
+changing light           r=0.23            r=0.98
+fixed light              r=1.00            r=0.00
+
+4.3x more readable with the light held still.
+the mood-dial control: 1.0x — it says the same thing in any light,
+and tracks the luminance at r=0.15, which is to say not at all.
+```
+
+The control is a mood dial: a pupil that answers to the character and has never
+heard of the scene's lighting. It gets the published result exactly backwards.
+
+### Added
+
+- **`Pupils`** — Moon & Spencer's (1944) `D = 4.9 − 3 tanh(0.4 log₁₀ L)`, a
+  reflex latency, constriction four times faster than redilation, and the
+  task-evoked response added on its own slower pathway.
+- **`createEyes` draws the pupil** at `D / 12` of the iris, because an adult
+  iris is twelve millimetres. A stylised face shows the same *fraction* black
+  rather than the same millimetres.
+- **`npm run pupils`**, and the `aloud` playground now steps the stage light
+  between dusk and noon every six seconds — **driven from the luminance the
+  model is given**, so the pupil is metering that scene rather than a number
+  invented alongside it.
+
+### The cross-check is the weak one, and the gate says so
+
+De Groot & Gebhard's (1952) independent fit disagrees with Moon & Spencer by up
+to **1.39 mm — a quarter of the whole range**, and that spread is the budget. But
+unlike the saccade gate, where the model was given Bahill's duration law and held
+to a peak-velocity law it had never seen, **this model IS Moon & Spencer**.
+Comparing it to De Groot measures two 1940s curve fits against each other and not
+the quality of anything here. It is kept for what it does catch — a units error,
+a wrong branch, dynamics that fail to settle, an effort term big enough to drag
+the settled value out of the band — and labelled for what it does not.
+
+What is independently falsifiable: the anatomical 2–8 mm range, the logarithmic
+shape (a decade at dusk moves the pupil **801×** what the same nine units move it
+at noon, where a log law gives 257 and a linear one gives 1), and the
+mood-readability result above.
+
+### Fixed
+
+- **The task response was compounding into the reflex.** The first version added
+  the effort term into `diameter` and let the next frame's reflex chase from
+  there, so a face thinking hard in a fixed light drifted open without limit
+  until the clamp caught it. The reflex has its own state now.
+
+### The same gate bug, for the third release running
+
+Two of seven mutations survived the first run, and both were **the gate
+computing its expectation from the constant it was testing**:
+
+- the latency window was `PUPIL_LATENCY * 0.9`, so setting the latency to zero
+  shrank the loop to nothing and it passed — a literal 150 ms now, inside
+  anybody's measurement of the published 200–250;
+- the iris ratio was asserted against `IRIS_MM` on both sides, so setting it to 6
+  sailed straight through — the gate says twelve now.
+
+`BLINK_OPEN / BLINK_CLOSE` in 0.66.0, `CORNER_TRAVEL` in 0.68.0, and two at once
+here. It is invisible in review because the assertion reads as though it checks
+something. **Mutation testing is the only thing that finds it**, which is the
+argument for running mutations before writing the documentation rather than
+after.
+
 ## [0.68.0] — 2026-08-05
 
 **A smile is two muscles, and only one of them can be faked.** Duchenne de

@@ -35,6 +35,7 @@ const PAGES: Array<{ id: string; title: string }> = [
   { id: 'blink', title: 'Blink: the rate is what the agent is doing' },
   { id: 'saccades', title: 'Saccades: two laws for one movement' },
   { id: 'smile', title: 'The smile: only one muscle can be faked' },
+  { id: 'pupils', title: 'Pupils: a light meter, not an emotion dial' },
   { id: 'motion', title: 'Motion matching: the weights were units' },
   { id: 'handshake', title: 'GAMA & SCENA: the trio' },
 ];
@@ -80,6 +81,8 @@ const SECTION_PLAYGROUNDS: Record<string, string> = {
   'the-iris-is-a-spot-on-a-ball': 'aloud',
   'the-observer': 'aloud',
   'which-is-a-fact-about-an-api-not-just-about-a-face': 'aloud',
+  'and-the-consequence-runs-the-other-way-which-is-the-interesting-half': 'aloud',
+  'the-two-muscles-are-not-the-same-muscle': 'aloud',
 };
 
 const sidebar = document.getElementById('sidebar') as HTMLElement;
